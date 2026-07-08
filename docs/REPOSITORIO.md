@@ -8,8 +8,8 @@ Este documento explica **como publicar o CriaSys Editor no GitHub** e **como cad
 
 ```
 CriaSys_Editor/          ← repositório Git
-├── main                 ← branch padrão (releases)
-├── 001 … 005            ← branches históricas por fase
+├── main                 ← branch padrão (releases) — equivale à 006
+├── 001 … 006            ← branches históricas por fase
 ├── docs/
 │   ├── INSTALACAO.md    ← guia do usuário final (LEIA ISTO)
 │   ├── DESENVOLVIMENTO.md
@@ -40,10 +40,10 @@ cd C:/laragon/www/CriaSys_Editor
 
 # Enviar branch 005 como main no GitHub (sem alterar branches locais)
 git remote add origin https://github.com/SEU_USUARIO/CriaSys_Editor.git
-git push -u origin 005:main
+git push -u origin 006:main
 
 # Enviar histórico de fases (opcional)
-git push origin 001 002 003 004 005 master
+git push origin 001 002 003 004 005 006 master
 ```
 
 Autenticação: use **Personal Access Token** (GitHub → Settings → Developer settings → Tokens) como senha.

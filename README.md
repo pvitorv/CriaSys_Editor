@@ -47,10 +47,10 @@ Login: **UserDev** com a senha que **você** definiu em `ADMIN_PASSWORD` — [gu
 ## Publicar repositório remoto (primeira vez)
 
 ```bash
-# Você está na branch 005 localmente — envie como main no GitHub:
+# Você está na branch 006 (última) — envie como main no GitHub:
 git remote add origin https://github.com/SEU_USUARIO/CriaSys_Editor.git
-git push -u origin 005:main
-git push origin 001 002 003 004 005
+git push -u origin 006:main
+git push origin 001 002 003 004 005 006
 ```
 
 Detalhes: **[docs/REPOSITORIO.md](docs/REPOSITORIO.md)**
