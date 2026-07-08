@@ -21,7 +21,7 @@ class RenderVideoJob implements ShouldQueue
 
     public function handle(FfmpegRenderService $ffmpeg): void
     {
-        $job = RenderJob::with(['project.slides'])->findOrFail($this->renderJobId);
+        $job = RenderJob::with(['project.slides', 'project.audioTracks'])->findOrFail($this->renderJobId);
         $preset = ExportPreset::where('slug', $job->preset)->firstOrFail();
 
         $job->update([

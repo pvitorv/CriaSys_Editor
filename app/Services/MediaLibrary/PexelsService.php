@@ -35,6 +35,7 @@ class PexelsService
             return [
                 'id' => $photo['id'],
                 'source' => 'pexels',
+                'type' => 'image',
                 'preview_url' => $photo['src']['medium'] ?? $photo['src']['small'],
                 'download_url' => $photo['src']['large2x'] ?? $photo['src']['large'],
                 'photographer' => $photo['photographer'] ?? 'Desconhecido',

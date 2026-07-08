@@ -20,18 +20,64 @@ window.editorApp = function (projectId) {
         narration: null,
         narrationLoading: false,
         mediaQuery: '',
+        mediaSource: 'all',
+        mediaType: 'image',
         mediaResults: [],
+        mediaErrors: [],
+        exportPresets: [],
+        exportPackages: [],
+        audioTrack: { volume: 0.35, ducking_enabled: true },
         renderJobs: [],
         saving: false,
         message: '',
         error: '',
         pollInterval: null,
+        saveTimeout: null,
 
         async init() {
-            await this.loadSlides();
-            await this.loadNarration();
-            await this.loadRenderJobs();
-            this.pollInterval = setInterval(() => this.loadRenderJobs(), 3000);
+            await Promise.all([
+                this.loadSlides(),
+                this.loadNarration(),
+                this.loadRenderJobs(),
+                this.loadExportPresets(),
+                this.loadExportPackages(),
+                this.loadAudioTrack(),
+            ]);
+            this.pollInterval = setInterval(() => {
+                this.loadRenderJobs();
+                this.loadExportPackages();
+            }, 3000);
+
+            document.addEventListener('keydown', (e) => this.handleShortcut(e));
+        },
+
+        handleShortcut(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                this.saveSlide();
+            }
+        },
+
+        scheduleSave() {
+            clearTimeout(this.saveTimeout);
+            this.saveTimeout = setTimeout(() => this.saveSlide(), 800);
+        },
+
+        async loadExportPresets() {
+            const { data } = await api.get('/export-presets');
+            this.exportPresets = data;
+        },
+
+        async loadExportPackages() {
+            const { data } = await api.get(`/projects/${this.projectId}/export-packages`);
+            this.exportPackages = data;
+        },
+
+        async loadAudioTrack() {
+            const { data } = await api.get(`/projects/${this.projectId}/audio-tracks`);
+            if (data.length) {
+                this.audioTrack = data[0];
+            }
         },
 
         async loadSlides() {
@@ -77,9 +123,11 @@ window.editorApp = function (projectId) {
             this.saving = true;
             this.error = '';
             try {
+                const payload = { ...this.selectedSlide };
+                delete payload.image_url;
                 const { data } = await api.put(
                     `/projects/${this.projectId}/slides/${this.selectedSlide.id}`,
-                    this.selectedSlide
+                    payload
                 );
                 Object.assign(this.selectedSlide, this.enrichSlide(data));
                 const idx = this.slides.findIndex(s => s.id === data.id);
@@ -96,42 +144,94 @@ window.editorApp = function (projectId) {
         async uploadImage(event) {
             const file = event.target.files[0];
             if (!file || !this.selectedSlide) return;
+            await this.uploadAsset(file, 'image');
+        },
 
-            const form = new FormData();
-            form.append('file', file);
+        async uploadAudio(event) {
+            const file = event.target.files[0];
+            if (!file) return;
 
             try {
-                const { data: asset } = await api.post(
-                    `/projects/${this.projectId}/assets/upload`,
-                    form,
-                    { headers: { 'Content-Type': 'multipart/form-data' } }
-                );
+                const asset = await this.uploadAsset(file, 'audio', false);
+                await api.post(`/projects/${this.projectId}/audio-tracks`, {
+                    asset_id: asset.id,
+                    file_path: asset.file_path,
+                    volume: this.audioTrack.volume,
+                    ducking_enabled: this.audioTrack.ducking_enabled,
+                });
+                await this.loadAudioTrack();
+                this.message = 'Trilha importada';
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao importar áudio';
+            }
+        },
+
+        async uploadAsset(file, type, attachToSlide = true) {
+            const form = new FormData();
+            form.append('file', file);
+            form.append('type', type);
+
+            const { data: asset } = await api.post(
+                `/projects/${this.projectId}/assets/upload`,
+                form,
+                { headers: { 'Content-Type': 'multipart/form-data' } }
+            );
+
+            if (attachToSlide && this.selectedSlide) {
                 this.selectedSlide.image_path = asset.file_path;
                 this.selectedSlide.image_url = `/api/projects/${this.projectId}/assets/${asset.id}`;
                 await this.saveSlide();
+            }
+
+            return asset;
+        },
+
+        async saveAudioTrack() {
+            if (!this.audioTrack?.id) return;
+            try {
+                const { data } = await api.put(
+                    `/projects/${this.projectId}/audio-tracks/${this.audioTrack.id}`,
+                    this.audioTrack
+                );
+                this.audioTrack = data;
+                this.message = 'Trilha atualizada';
             } catch (e) {
-                this.error = e.response?.data?.message || 'Erro no upload';
+                this.error = e.response?.data?.message || 'Erro ao salvar trilha';
             }
         },
 
         async searchMedia() {
             if (!this.mediaQuery.trim()) return;
+            this.mediaErrors = [];
             try {
-                const { data } = await api.get('/media/search', { params: { query: this.mediaQuery } });
+                const { data } = await api.get('/media/search', {
+                    params: {
+                        query: this.mediaQuery,
+                        source: this.mediaSource,
+                        type: this.mediaType,
+                    },
+                });
                 this.mediaResults = data.results || [];
+                this.mediaErrors = data.errors || [];
             } catch (e) {
-                this.error = e.response?.data?.message || 'Erro na busca Pexels';
+                this.error = e.response?.data?.message || 'Erro na busca';
             }
         },
 
-        async importPhoto(photo) {
-            if (!this.selectedSlide) return;
+        async importMedia(item) {
+            const target = item.type === 'audio' ? 'audio_track' : 'slide';
             try {
-                const { data: asset } = await api.post(`/projects/${this.projectId}/media/import`, { photo });
-                this.selectedSlide.image_path = asset.file_path;
-                this.selectedSlide.image_url = `/api/projects/${this.projectId}/assets/${asset.id}`;
-                await this.saveSlide();
-                this.message = 'Imagem inserida';
+                const { data } = await api.post(`/projects/${this.projectId}/media/import`, { item, target });
+                if (target === 'slide' && this.selectedSlide) {
+                    const asset = data.asset || data;
+                    this.selectedSlide.image_path = asset.file_path;
+                    this.selectedSlide.image_url = `/api/projects/${this.projectId}/assets/${asset.id}`;
+                    await this.saveSlide();
+                    this.message = 'Imagem inserida';
+                } else {
+                    await this.loadAudioTrack();
+                    this.message = 'Áudio inserido na trilha';
+                }
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao importar';
             }
@@ -149,9 +249,7 @@ window.editorApp = function (projectId) {
             this.narrationLoading = true;
             this.error = '';
             try {
-                const { data } = await api.post(`/projects/${this.projectId}/narration/generate`, {
-                    voice: this.voice,
-                });
+                const { data } = await api.post(`/projects/${this.projectId}/narration/generate`, { voice: this.voice });
                 if (data?.audio_path) {
                     data.audio_url = this.fileUrl('audio', data.audio_path.split(/[/\\]/).pop());
                 }
@@ -189,11 +287,8 @@ window.editorApp = function (projectId) {
 
         async renderVideo(preset) {
             try {
-                await api.post(`/projects/${this.projectId}/render-jobs`, {
-                    preset,
-                    generate_thumb: false,
-                });
-                this.message = 'Render enfileirado';
+                await api.post(`/projects/${this.projectId}/render-jobs`, { preset });
+                this.message = `Render ${preset} enfileirado`;
                 await this.loadRenderJobs();
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao enfileirar render';
@@ -203,9 +298,29 @@ window.editorApp = function (projectId) {
         async generateThumb() {
             try {
                 const { data } = await api.post(`/projects/${this.projectId}/thumbnail`);
-                this.message = 'Thumbnail gerada: ' + data.url;
+                this.message = 'Thumbnail gerada';
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao gerar thumb';
+            }
+        },
+
+        async exportSubtitles() {
+            try {
+                const { data } = await api.post(`/projects/${this.projectId}/subtitles`);
+                this.message = 'legendas.srt gerado';
+                if (data.url) window.open(data.url, '_blank');
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao exportar legendas';
+            }
+        },
+
+        async exportPackage() {
+            try {
+                await api.post(`/projects/${this.projectId}/export-packages`, { preset: 'youtube_landscape' });
+                this.message = 'Pacote enfileirado';
+                await this.loadExportPackages();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao exportar pacote';
             }
         },
     };

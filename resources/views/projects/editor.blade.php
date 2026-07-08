@@ -80,7 +80,7 @@
             <div class="p-4 space-y-3" x-show="selectedSlide">
                 <div>
                     <label class="text-xs text-zinc-400">Título</label>
-                    <input type="text" x-model="selectedSlide.title" @change="saveSlide()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                    <input type="text" x-model="selectedSlide.title" @input="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
                 </div>
                 <div>
                     <label class="text-xs text-zinc-400">Subtítulo</label>
@@ -127,7 +127,7 @@
     {{-- Abas inferiores --}}
     <div class="rounded-xl border border-zinc-800 bg-zinc-900">
         <div class="flex border-b border-zinc-800">
-            <template x-for="tab in ['roteiro', 'biblioteca', 'exportar']" :key="tab">
+            <template x-for="tab in ['roteiro', 'audio', 'biblioteca', 'exportar']" :key="tab">
                 <button
                     @click="activeTab = tab"
                     :class="activeTab === tab ? 'border-violet-500 text-white' : 'border-transparent text-zinc-400'"
@@ -142,7 +142,7 @@
             <div x-show="activeTab === 'roteiro'" class="space-y-4">
                 <div x-show="selectedSlide">
                     <label class="text-xs text-zinc-400">Texto de narração (slide selecionado)</label>
-                    <textarea x-model="selectedSlide.narration_text" @change="saveSlide()" rows="4" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm"></textarea>
+                    <textarea x-model="selectedSlide.narration_text" @input="scheduleSave()" rows="4" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm"></textarea>
                 </div>
                 <div class="flex flex-wrap gap-3 items-end">
                     <div>
@@ -164,16 +164,55 @@
                 </template>
             </div>
 
+            {{-- Áudio --}}
+            <div x-show="activeTab === 'audio'" class="space-y-4">
+                <div class="flex flex-wrap gap-3 items-end">
+                    <div>
+                        <label class="text-xs text-zinc-400">Volume trilha</label>
+                        <input type="range" min="0" max="1" step="0.05" x-model.number="audioTrack.volume" @change="saveAudioTrack()" class="block w-40 mt-1">
+                    </div>
+                    <label class="flex items-center gap-2 text-sm">
+                        <input type="checkbox" x-model="audioTrack.ducking_enabled" @change="saveAudioTrack()">
+                        Ducking (abaixa trilha na narração)
+                    </label>
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">Importar trilha local (MP3/WAV)</label>
+                    <input type="file" accept="audio/*" @change="uploadAudio($event)" class="w-full mt-1 text-sm text-zinc-400">
+                </div>
+                <template x-if="audioTrack?.file_path">
+                    <p class="text-xs text-emerald-400">Trilha configurada</p>
+                </template>
+            </div>
+
             {{-- Biblioteca --}}
             <div x-show="activeTab === 'biblioteca'" class="space-y-3">
-                <div class="flex gap-2">
-                    <input type="text" x-model="mediaQuery" placeholder="Buscar imagens no Pexels..." class="flex-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
+                <div class="flex flex-wrap gap-2">
+                    <select x-model="mediaSource" class="rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
+                        <option value="all">Todas fontes</option>
+                        <option value="pexels">Pexels</option>
+                        <option value="pixabay">Pixabay</option>
+                        <option value="unsplash">Unsplash</option>
+                        <option value="mixkit">Mixkit (áudio)</option>
+                    </select>
+                    <select x-model="mediaType" class="rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
+                        <option value="image">Imagens</option>
+                        <option value="audio">Áudio</option>
+                    </select>
+                    <input type="text" x-model="mediaQuery" placeholder="Buscar mídia..." class="flex-1 min-w-[200px] rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
                     <button @click="searchMedia()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Buscar</button>
                 </div>
+                <p x-show="mediaErrors.length" class="text-xs text-yellow-400" x-text="mediaErrors.join(' | ')"></p>
                 <div class="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
-                    <template x-for="photo in mediaResults" :key="photo.id">
-                        <div class="relative group cursor-pointer rounded overflow-hidden border border-zinc-700" @click="importPhoto(photo)">
-                            <img :src="photo.preview_url" class="w-full h-20 object-cover">
+                    <template x-for="item in mediaResults" :key="item.source + '-' + item.id">
+                        <div class="relative group cursor-pointer rounded overflow-hidden border border-zinc-700 p-2" @click="importMedia(item)">
+                            <template x-if="item.type === 'audio'">
+                                <div class="h-20 flex items-center justify-center bg-zinc-800 text-xs text-center" x-text="item.title || 'Áudio'"></div>
+                            </template>
+                            <template x-if="item.type !== 'audio'">
+                                <img :src="item.preview_url" class="w-full h-20 object-cover">
+                            </template>
+                            <span x-show="item.requires_attribution" class="absolute top-1 right-1 text-[10px] bg-yellow-600/80 px-1 rounded">Crédito</span>
                             <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs">Inserir</div>
                         </div>
                     </template>
@@ -182,13 +221,27 @@
 
             {{-- Exportar --}}
             <div x-show="activeTab === 'exportar'" class="space-y-4">
-                <div class="flex flex-wrap gap-3">
-                    <button @click="renderVideo('youtube_landscape')" class="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm">
-                        Renderizar MP4 16:9
-                    </button>
-                    <button @click="generateThumb()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">
-                        Gerar thumbnail
-                    </button>
+                <div>
+                    <h3 class="text-sm font-medium text-zinc-300 mb-2">Render vídeo</h3>
+                    <div class="flex flex-wrap gap-2">
+                        <template x-for="preset in exportPresets.filter(p => p.slug !== 'thumbnail')" :key="preset.slug">
+                            <button @click="renderVideo(preset.slug)" class="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-xs" x-text="preset.name"></button>
+                        </template>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button @click="generateThumb()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Gerar thumbnail</button>
+                    <button @click="exportSubtitles()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Exportar legendas.srt</button>
+                    <button @click="exportPackage()" class="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-sm">Pacote Premiere/Affinity</button>
+                </div>
+                <div class="space-y-2">
+                    <h3 class="text-sm font-medium text-zinc-300">Pacotes de export</h3>
+                    <template x-for="pkg in exportPackages" :key="pkg.id">
+                        <div class="rounded-lg bg-zinc-800 p-2 text-xs flex justify-between">
+                            <span x-text="'Pacote #' + pkg.id"></span>
+                            <span x-text="pkg.status" :class="pkg.status === 'completed' ? 'text-emerald-400' : 'text-yellow-400'"></span>
+                        </div>
+                    </template>
                 </div>
                 <div class="space-y-2">
                     <h3 class="text-sm font-medium text-zinc-300">Fila de render</h3>

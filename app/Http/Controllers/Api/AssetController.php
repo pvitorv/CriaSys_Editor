@@ -19,8 +19,17 @@ class AssetController extends Controller
     public function upload(Request $request, Project $project): JsonResponse
     {
         $request->validate([
-            'file' => ['required', 'image', 'max:10240'],
+            'file' => ['required', 'file', 'max:20480'],
+            'type' => ['nullable', 'in:image,audio'],
         ]);
+
+        $type = $request->input('type', 'image');
+        $mime = $request->file('file')->getMimeType() ?? '';
+        if ($type === 'image') {
+            $request->validate(['file' => ['image']]);
+        } elseif (! str_starts_with($mime, 'audio/')) {
+            return response()->json(['message' => 'Arquivo deve ser de áudio.'], 422);
+        }
 
         $this->storage->ensureStructure($project);
         $file = $request->file('file');
@@ -32,7 +41,7 @@ class AssetController extends Controller
 
         $asset = Asset::create([
             'project_id' => $project->id,
-            'type' => 'image',
+            'type' => $type,
             'file_path' => $path,
             'file_hash' => $hash,
             'source' => 'local',

@@ -46,26 +46,8 @@ class FfmpegRenderService
 
         $job->update(['progress' => 60]);
 
-        $narration = $project->latestNarration();
-        if ($narration?->audio_path && file_exists($narration->audio_path)) {
-            $result = Process::timeout(600)->run([
-                $ffmpeg, '-y',
-                '-i', $tempVideo,
-                '-i', $narration->audio_path,
-                '-c:v', 'copy',
-                '-c:a', 'aac', '-b:a', '192k',
-                '-shortest',
-                $outputPath,
-            ]);
-
-            if (! $result->successful()) {
-                throw new \RuntimeException('FFmpeg mix falhou: '.$result->errorOutput());
-            }
-
-            File::delete($tempVideo);
-        } else {
-            File::move($tempVideo, $outputPath);
-        }
+        $this->mixAudioTracks($tempVideo, $project, $outputPath);
+        File::delete($tempVideo);
 
         $job->update(['progress' => 90]);
 
@@ -109,5 +91,74 @@ class FfmpegRenderService
         }
 
         return (float) trim($result->output());
+    }
+
+    private function mixAudioTracks(string $videoPath, Project $project, string $outputPath): void
+    {
+        $ffmpeg = config('criasys.ffmpeg_path');
+        $narration = $project->latestNarration();
+        $musicTrack = $project->audioTracks()->where('type', 'music')->first();
+
+        $narrationPath = ($narration?->audio_path && file_exists($narration->audio_path))
+            ? $narration->audio_path : null;
+        $musicPath = ($musicTrack?->file_path && file_exists($musicTrack->file_path))
+            ? $musicTrack->file_path : null;
+
+        if (! $narrationPath && ! $musicPath) {
+            File::move($videoPath, $outputPath);
+
+            return;
+        }
+
+        if ($narrationPath && ! $musicPath) {
+            $result = Process::timeout(600)->run([
+                $ffmpeg, '-y', '-i', $videoPath, '-i', $narrationPath,
+                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', $outputPath,
+            ]);
+            $this->assertFfmpegSuccess($result, 'mix narração');
+
+            return;
+        }
+
+        if (! $narrationPath && $musicPath) {
+            $volume = $musicTrack->volume ?? 0.5;
+            $result = Process::timeout(600)->run([
+                $ffmpeg, '-y', '-i', $videoPath, '-i', $musicPath,
+                '-filter_complex', "[1:a]volume={$volume},afade=t=in:st=0:d=2,afade=t=out:st=0:d=2[a]",
+                '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-shortest', $outputPath,
+            ]);
+            $this->assertFfmpegSuccess($result, 'mix trilha');
+
+            return;
+        }
+
+        $musicVolume = $musicTrack->volume ?? 0.3;
+        $ducking = $musicTrack->ducking_enabled ?? true;
+
+        if ($ducking) {
+            $filter = "[2:a]volume={$musicVolume},afade=t=in:st=0:d=2[music];[1:a][music]sidechaincompress=threshold=0.03:ratio=8:attack=200:release=800[ducked];[1:a][ducked]amix=inputs=2:duration=first:dropout_transition=2[aout]";
+        } else {
+            $filter = "[2:a]volume={$musicVolume}[music];[1:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]";
+        }
+
+        $result = Process::timeout(600)->run([
+            $ffmpeg, '-y',
+            '-i', $videoPath,
+            '-i', $narrationPath,
+            '-i', $musicPath,
+            '-filter_complex', $filter,
+            '-map', '0:v', '-map', '[aout]',
+            '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
+            '-shortest', $outputPath,
+        ]);
+
+        $this->assertFfmpegSuccess($result, 'mix narração + trilha com ducking');
+    }
+
+    private function assertFfmpegSuccess(\Illuminate\Contracts\Process\ProcessResult $result, string $context): void
+    {
+        if (! $result->successful()) {
+            throw new \RuntimeException("FFmpeg {$context} falhou: ".$result->errorOutput());
+        }
     }
 }

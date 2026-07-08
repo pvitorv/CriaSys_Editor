@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Api\AssetController;
+use App\Http\Controllers\Api\AudioTrackController;
+use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\MediaLibraryController;
 use App\Http\Controllers\Api\NarrationController;
 use App\Http\Controllers\Api\ProjectController;
@@ -26,6 +28,16 @@ Route::get('projects/{project}/files/{type}/{filename}', [AssetController::class
 
 Route::get('media/search', [MediaLibraryController::class, 'search']);
 Route::post('projects/{project}/media/import', [MediaLibraryController::class, 'import']);
+
+Route::get('projects/{project}/audio-tracks', [AudioTrackController::class, 'index']);
+Route::post('projects/{project}/audio-tracks', [AudioTrackController::class, 'store']);
+Route::put('projects/{project}/audio-tracks/{audioTrack}', [AudioTrackController::class, 'update']);
+Route::delete('projects/{project}/audio-tracks/{audioTrack}', [AudioTrackController::class, 'destroy']);
+
+Route::get('projects/{project}/export-packages', [ExportController::class, 'index']);
+Route::post('projects/{project}/export-packages', [ExportController::class, 'store']);
+Route::get('projects/{project}/export-packages/{exportPackage}', [ExportController::class, 'show']);
+Route::post('projects/{project}/subtitles', [ExportController::class, 'subtitles']);
 
 Route::get('projects/{project}/narration', [NarrationController::class, 'show']);
 Route::post('projects/{project}/narration/generate', [NarrationController::class, 'generate']);
