@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AlertController;
 use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\AudioTrackController;
 use App\Http\Controllers\Api\ExportController;
@@ -48,3 +49,8 @@ Route::post('projects/{project}/render-jobs', [RenderController::class, 'store']
 Route::get('projects/{project}/render-jobs/{renderJob}', [RenderController::class, 'show']);
 Route::post('projects/{project}/render-jobs/{renderJob}/retry', [RenderController::class, 'retry']);
 Route::post('projects/{project}/thumbnail', [RenderController::class, 'thumbnail']);
+
+Route::get('alerts', [AlertController::class, 'index']);
+Route::get('alerts/unread', [AlertController::class, 'unread']);
+Route::post('alerts/{alert}/read', [AlertController::class, 'markRead']);
+Route::post('alerts/read-all', [AlertController::class, 'markAllRead']);

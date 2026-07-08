@@ -25,7 +25,7 @@ class ProjectWebController extends Controller
             'aspect_ratio' => ['required', 'in:16:9,9:16'],
         ]);
 
-        $project = Project::create([
+        $project = auth()->user()->projects()->create([
             'name' => $data['name'],
             'description' => $data['description'] ?? null,
             'settings' => ['aspect_ratio' => $data['aspect_ratio']],
@@ -38,6 +38,7 @@ class ProjectWebController extends Controller
 
     public function editor(Project $project): View
     {
+        $this->authorize('view', $project);
         $project->load('slides');
 
         return view('projects.editor', compact('project'));

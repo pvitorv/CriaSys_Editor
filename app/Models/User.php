@@ -2,48 +2,69 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
+    public const STATUS_ACTIVE = 'active';
+
+    public const STATUS_PAUSED = 'paused';
+
     protected $fillable = [
         'name',
+        'username',
         'email',
         'password',
+        'is_admin',
+        'status',
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_admin' => 'boolean',
         ];
+    }
+
+    public function projects(): HasMany
+    {
+        return $this->hasMany(Project::class);
+    }
+
+    public function alertsReceived(): HasMany
+    {
+        return $this->hasMany(UserAlert::class, 'to_user_id');
+    }
+
+    public function alertsSent(): HasMany
+    {
+        return $this->hasMany(UserAlert::class, 'from_user_id');
+    }
+
+    public function isAdmin(): bool
+    {
+        return (bool) $this->is_admin;
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === self::STATUS_ACTIVE;
+    }
+
+    public function isPaused(): bool
+    {
+        return $this->status === self::STATUS_PAUSED;
     }
 }

@@ -14,7 +14,9 @@ class ProjectController extends Controller
 
     public function index(): JsonResponse
     {
-        return response()->json(Project::latest()->get());
+        return response()->json(
+            auth()->user()->projects()->latest()->get()
+        );
     }
 
     public function store(Request $request): JsonResponse
@@ -25,7 +27,7 @@ class ProjectController extends Controller
             'settings' => ['nullable', 'array'],
         ]);
 
-        $project = Project::create($data);
+        $project = auth()->user()->projects()->create($data);
         $this->storage->ensureStructure($project);
 
         return response()->json($project, 201);
@@ -33,11 +35,14 @@ class ProjectController extends Controller
 
     public function show(Project $project): JsonResponse
     {
+        $this->authorize('view', $project);
+
         return response()->json($project->load('slides'));
     }
 
     public function update(Request $request, Project $project): JsonResponse
     {
+        $this->authorize('update', $project);
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
@@ -52,6 +57,7 @@ class ProjectController extends Controller
 
     public function destroy(Project $project): JsonResponse
     {
+        $this->authorize('delete', $project);
         $project->delete();
 
         return response()->json(['message' => 'Projeto excluído.']);
@@ -59,8 +65,10 @@ class ProjectController extends Controller
 
     public function duplicate(Project $project): JsonResponse
     {
+        $this->authorize('view', $project);
         $copy = $project->replicate(['status']);
         $copy->name = $project->name.' (cópia)';
+        $copy->user_id = auth()->id();
         $copy->save();
 
         foreach ($project->slides as $slide) {
@@ -76,6 +84,7 @@ class ProjectController extends Controller
 
     public function archive(Project $project): JsonResponse
     {
+        $this->authorize('update', $project);
         $project->update(['status' => 'archived']);
 
         return response()->json($project);

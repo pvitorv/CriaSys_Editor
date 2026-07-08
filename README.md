@@ -44,6 +44,21 @@ CRIASYS_PROJECTS_PATH=
 CRIASYS_EXPORTS_PATH=
 ```
 
+## Autenticação multi-usuário
+
+- Login por **usuário** ou **e-mail** + senha
+- Recuperação de senha por e-mail (`/forgot-password`)
+- Cada usuário vê apenas seus projetos
+- Admin padrão: **UserDev** (configurável no `.env`)
+
+```env
+ADMIN_USERNAME=UserDev
+ADMIN_EMAIL=seu@email.com
+ADMIN_PASSWORD=sua_senha_segura
+```
+
+Após migrar: `php artisan db:seed --class=AdminUserSeeder`
+
 ## Desenvolvimento (navegador)
 
 ```bash

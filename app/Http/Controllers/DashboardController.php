@@ -3,15 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\Project;
-use App\Services\ProjectStorageService;
-use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
     public function index(): View
     {
-        $projects = Project::query()
+        $projects = auth()->user()
+            ->projects()
             ->where('status', '!=', 'archived')
             ->latest()
             ->get();
