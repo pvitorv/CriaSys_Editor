@@ -1,18 +1,67 @@
 {
     "$schema": "https://www.schemastore.org/package.json",
+    "name": "criasys-editor",
+    "productName": "CriaSys Editor",
+    "version": "1.0.0",
+    "description": "Gerador de slideshow narrado — desktop",
     "private": true,
     "type": "module",
+    "main": "electron/main.js",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "electron": "electron .",
+        "electron:dev": "npm run build && electron .",
+        "electron:build": "npm run build && electron-builder --win"
+    },
+    "build": {
+        "appId": "com.criasys.editor",
+        "productName": "CriaSys Editor",
+        "directories": {
+            "output": "dist-electron"
+        },
+        "files": [
+            "electron/**/*",
+            "app/**/*",
+            "bootstrap/**/*",
+            "config/**/*",
+            "database/**/*",
+            "public/**/*",
+            "resources/**/*",
+            "routes/**/*",
+            "storage/app/criasys/**/*",
+            "vendor/**/*",
+            "artisan",
+            "composer.json",
+            "composer.lock"
+        ],
+        "extraResources": [
+            {
+                "from": "electron/ffmpeg",
+                "to": "ffmpeg",
+                "filter": ["**/*"]
+            }
+        ],
+        "win": {
+            "target": ["nsis"],
+            "icon": "public/favicon.ico"
+        },
+        "nsis": {
+            "oneClick": false,
+            "allowToChangeInstallationDirectory": true
+        }
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.0.0",
         "axios": "^1.11.0",
         "concurrently": "^9.0.1",
+        "cross-env": "^10.1.0",
+        "electron": "^43.1.0",
+        "electron-builder": "^26.15.3",
         "laravel-vite-plugin": "^2.0.0",
         "tailwindcss": "^4.0.0",
-        "vite": "^7.0.7"
+        "vite": "^7.0.7",
+        "wait-on": "^9.0.10"
     },
     "dependencies": {
         "@alpinejs/sort": "^3.15.12",

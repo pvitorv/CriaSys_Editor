@@ -3,6 +3,13 @@
 @section('title', 'Dashboard — CriaSys Editor')
 
 @section('header-actions')
+    <button
+        x-data
+        x-show="window.criasys"
+        @click="window.criasys?.openExportsFolder()"
+        class="text-zinc-400 hover:text-white text-sm hidden"
+        x-init="$el.classList.remove('hidden')"
+    >Abrir exports</button>
     <a href="{{ route('projects.create') }}" class="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-medium transition">
         Novo projeto
     </a>

@@ -14,6 +14,7 @@
                 CriaSys <span class="text-violet-400">Editor</span>
             </a>
             <nav class="flex items-center gap-3 text-sm">
+                <span x-data x-show="window.criasys?.isDesktop" class="text-xs text-violet-400 hidden" x-init="$el.classList.remove('hidden')">Desktop</span>
                 @yield('header-actions')
             </nav>
         </div>

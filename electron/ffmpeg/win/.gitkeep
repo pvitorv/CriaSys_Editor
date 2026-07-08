@@ -1,0 +1,2 @@
+# Coloque ffmpeg.exe e ffprobe.exe nesta pasta para uso embutido no Electron (Windows).
+# Download: https://www.gyan.dev/ffmpeg/builds/ (ffmpeg-release-essentials.zip)
