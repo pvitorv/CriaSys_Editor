@@ -6,6 +6,7 @@ Alpine.plugin(sort);
 window.Alpine = Alpine;
 
 import './alerts';
+import './dashboard';
 import './editor';
 
 Alpine.start();

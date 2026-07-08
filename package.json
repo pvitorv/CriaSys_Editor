@@ -50,12 +50,16 @@
             {
                 "from": "electron/ffmpeg",
                 "to": "ffmpeg",
-                "filter": ["**/*"]
+                "filter": [
+                    "**/*"
+                ]
             },
             {
                 "from": "electron/php",
                 "to": "php",
-                "filter": ["**/*"]
+                "filter": [
+                    "**/*"
+                ]
             },
             {
                 "from": "docs/PORTABLE_LEIA-ME.txt",
@@ -64,8 +68,18 @@
         ],
         "win": {
             "target": [
-                { "target": "portable", "arch": ["x64"] },
-                { "target": "nsis", "arch": ["x64"] }
+                {
+                    "target": "portable",
+                    "arch": [
+                        "x64"
+                    ]
+                },
+                {
+                    "target": "nsis",
+                    "arch": [
+                        "x64"
+                    ]
+                }
             ],
             "icon": "public/favicon.ico",
             "artifactName": "CriaSys-Editor-${version}-Windows-${arch}.${ext}"
@@ -80,8 +94,18 @@
         },
         "linux": {
             "target": [
-                { "target": "AppImage", "arch": ["x64"] },
-                { "target": "deb", "arch": ["x64"] }
+                {
+                    "target": "AppImage",
+                    "arch": [
+                        "x64"
+                    ]
+                },
+                {
+                    "target": "deb",
+                    "arch": [
+                        "x64"
+                    ]
+                }
             ],
             "category": "AudioVideo",
             "icon": "public/favicon.ico",
@@ -89,8 +113,20 @@
         },
         "mac": {
             "target": [
-                { "target": "dmg", "arch": ["x64", "arm64"] },
-                { "target": "zip", "arch": ["x64", "arm64"] }
+                {
+                    "target": "dmg",
+                    "arch": [
+                        "x64",
+                        "arm64"
+                    ]
+                },
+                {
+                    "target": "zip",
+                    "arch": [
+                        "x64",
+                        "arm64"
+                    ]
+                }
             ],
             "category": "public.app-category.video",
             "icon": "public/favicon.ico",
@@ -114,6 +150,7 @@
     },
     "dependencies": {
         "@alpinejs/sort": "^3.15.12",
-        "alpinejs": "^3.15.12"
+        "alpinejs": "^3.15.12",
+        "edge-tts-universal": "^1.4.0"
     }
 }

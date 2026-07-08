@@ -36,11 +36,16 @@
                 <template x-for="(slide, index) in slides" :key="slide.id">
                     <li
                         @click="selectSlide(slide)"
+                        draggable="true"
+                        @dragstart="dragStart(index)"
+                        @dragover.prevent
+                        @drop.prevent="dropSlide(index)"
                         :class="selectedSlide?.id === slide.id ? 'bg-violet-900/40 border-violet-600' : 'bg-zinc-800/50 border-zinc-700 hover:border-zinc-600'"
-                        class="rounded-lg border p-2 cursor-pointer transition"
+                        class="rounded-lg border p-2 cursor-grab active:cursor-grabbing transition"
                         :data-id="slide.id"
                     >
                         <div class="flex items-center gap-2">
+                            <span class="text-xs text-zinc-600 select-none" title="Arrastar">⋮⋮</span>
                             <span class="text-xs text-zinc-500 w-5" x-text="index + 1"></span>
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm truncate" x-text="slide.title || 'Slide sem título'"></p>
@@ -84,19 +89,19 @@
                 </div>
                 <div>
                     <label class="text-xs text-zinc-400">Subtítulo</label>
-                    <input type="text" x-model="selectedSlide.subtitle" @change="saveSlide()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                    <input type="text" x-model="selectedSlide.subtitle" @input="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
                 </div>
                 <div>
                     <label class="text-xs text-zinc-400">Corpo</label>
-                    <textarea x-model="selectedSlide.body_text" @change="saveSlide()" rows="3" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm"></textarea>
+                    <textarea x-model="selectedSlide.body_text" @input="scheduleSave()" rows="3" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm"></textarea>
                 </div>
                 <div>
                     <label class="text-xs text-zinc-400">Duração (s)</label>
-                    <input type="number" step="0.1" min="0.5" x-model.number="selectedSlide.duration_seconds" @change="saveSlide()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                    <input type="number" step="0.1" min="0.5" x-model.number="selectedSlide.duration_seconds" @input="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
                 </div>
                 <div>
                     <label class="text-xs text-zinc-400">Transição</label>
-                    <select x-model="selectedSlide.transition_type" @change="saveSlide()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                    <select x-model="selectedSlide.transition_type" @change="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
                         <option value="fade">Fade</option>
                         <option value="cut">Corte</option>
                         <option value="slide">Slide</option>
@@ -255,7 +260,10 @@
                                 <div class="bg-violet-500 h-1.5 rounded transition-all" :style="'width:' + job.progress + '%'"></div>
                             </div>
                             <p x-show="job.error_log" x-text="job.error_log" class="text-red-400 text-xs mt-1"></p>
-                            <a x-show="job.output_url" :href="job.output_url" target="_blank" class="text-violet-400 text-xs mt-1 inline-block">Abrir vídeo</a>
+                            <div class="flex gap-2 mt-2">
+                                <button x-show="job.status === 'failed'" @click="retryRender(job)" class="text-xs text-yellow-400 hover:text-yellow-300">Tentar novamente</button>
+                                <a x-show="job.output_url" :href="job.output_url" target="_blank" class="text-violet-400 text-xs">Abrir vídeo</a>
+                            </div>
                         </div>
                     </template>
                 </div>

@@ -43,6 +43,7 @@ window.editorApp = function (projectId) {
         error: '',
         pollInterval: null,
         saveTimeout: null,
+        dragFromIndex: null,
 
         async init() {
             await Promise.all([
@@ -65,6 +66,41 @@ window.editorApp = function (projectId) {
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
                 this.saveSlide();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+                e.preventDefault();
+                this.addSlide();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
+                e.preventDefault();
+                this.syncNarration();
+            }
+        },
+
+        dragStart(index) {
+            this.dragFromIndex = index;
+        },
+
+        dropSlide(toIndex) {
+            if (this.dragFromIndex === null || this.dragFromIndex === toIndex) return;
+            const moved = this.slides.splice(this.dragFromIndex, 1)[0];
+            this.slides.splice(toIndex, 0, moved);
+            this.dragFromIndex = null;
+            this.persistSlideOrder();
+        },
+
+        async persistSlideOrder() {
+            try {
+                const { data } = await api.put(`/projects/${this.projectId}/slides/reorder`, {
+                    slide_ids: this.slides.map(s => s.id),
+                });
+                this.slides = data.map(s => this.enrichSlide(s));
+                if (this.selectedSlide) {
+                    this.selectedSlide = this.slides.find(s => s.id === this.selectedSlide.id) || this.slides[0];
+                }
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao reordenar slides';
+                await this.loadSlides();
             }
         },
 
@@ -302,6 +338,16 @@ window.editorApp = function (projectId) {
                 await this.loadRenderJobs();
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao enfileirar render';
+            }
+        },
+
+        async retryRender(job) {
+            try {
+                await api.post(`/projects/${this.projectId}/render-jobs/${job.id}/retry`);
+                this.message = 'Render reenfileirado';
+                await this.loadRenderJobs();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao reenfileirar';
             }
         },
 

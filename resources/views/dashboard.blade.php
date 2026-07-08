@@ -16,9 +16,13 @@
 @endsection
 
 @section('content')
-<div>
+<div x-data="dashboardApp()">
     <h1 class="text-2xl font-bold mb-2">Projetos recentes</h1>
-    <p class="text-zinc-400 mb-6">Gerador de slideshow narrado — uso local.</p>
+    <p class="text-zinc-400 mb-2">Gerador de slideshow narrado — uso local.</p>
+    <p class="text-xs text-zinc-500 mb-6">Atalhos no editor: Ctrl+S salvar · Ctrl+N novo slide · Ctrl+Shift+S sincronizar narração</p>
+
+    <p x-show="message" x-text="message" class="text-emerald-400 text-sm mb-4"></p>
+    <p x-show="error" x-text="error" class="text-red-400 text-sm mb-4"></p>
 
     @if($projects->isEmpty())
         <div class="rounded-xl border border-zinc-800 bg-zinc-900 p-8 text-center">
@@ -36,10 +40,19 @@
                         <p class="text-zinc-400 text-sm mb-3 line-clamp-2">{{ $project->description }}</p>
                     @endif
                     <p class="text-xs text-zinc-500 mb-4">{{ $project->updated_at->diffForHumans() }}</p>
-                    <div class="flex gap-2">
+                    <div class="flex flex-wrap gap-2">
                         <a href="{{ route('projects.editor', $project) }}" class="px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm">
                             Abrir
                         </a>
+                        <button @click="duplicateProject({{ $project->id }})" class="px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm text-zinc-300">
+                            Duplicar
+                        </button>
+                        <button @click="archiveProject({{ $project->id }})" class="px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm text-zinc-400">
+                            Arquivar
+                        </button>
+                        <button @click="deleteProject({{ $project->id }})" class="px-3 py-1.5 rounded-md bg-red-900/40 hover:bg-red-900/60 text-sm text-red-300">
+                            Excluir
+                        </button>
                     </div>
                 </div>
             @endforeach
