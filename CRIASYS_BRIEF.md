@@ -1,10 +1,11 @@
 ================================================================================
                     CRIASYS_EDITOR — DOCUMENTO MESTRE DO PROJETO
 ================================================================================
-Versão: 1.0
+Versão: 1.1
 Data: 08/07/2026
 Autor do conceito: Vitor
 Uso: Briefing completo para desenvolvimento com agente de IA (Cursor Agent)
+Nota v1.1: Adicionada autenticação multi-usuário com admin UserDev (branch 004)
 ================================================================================
 1. VISÃO GERAL
 ================================================================================
@@ -61,6 +62,7 @@ Senha: preenchida manualmente no .env pelo desenvolvedor
 5.1 GESTÃO DE PROJETOS
 --------------------------------------------------------------------------------
 - Criar, listar, duplicar, arquivar e excluir projetos
+- Cada projeto pertence a UM usuário (user_id) — isolamento total
 - Cada projeto contém: slides, roteiro, áudios, assets, presets, histórico
 - Auto-save de rascunho
 - Estrutura de pastas local:
@@ -189,16 +191,44 @@ Usar pacote de assets padrão da indústria.
 - Barra de progresso e log de erro
 - Reprocessar job falho
 - Laravel Queue + worker local
+--------------------------------------------------------------------------------
+5.10 AUTENTICAÇÃO E MULTI-USUÁRIO
+--------------------------------------------------------------------------------
+Login e senha obrigatórios para acessar o sistema.
+Recuperação de senha via e-mail (link de reset).
+Cadastro de novos usuários (self-service).
+Cada usuário possui dados isolados — projetos, slides, assets e exports
+pertencem exclusivamente ao usuário logado (campo user_id em projects).
+Login aceita USUÁRIO ou E-MAIL + senha.
+Conta pausada não consegue acessar o sistema (middleware active).
+Troca de e-mail e senha (tela Minha conta):
+- Exige senha atual para confirmar alteração
+- Alternativa: fluxo "Esqueci minha senha" por e-mail
+Administrador padrão:
+- Username: UserDev (desenvolvedor — Vitor)
+- Configurável via .env (ADMIN_USERNAME, ADMIN_EMAIL, ADMIN_PASSWORD)
+- Seed: php artisan db:seed --class=AdminUserSeeder
+Poderes do administrador (painel /admin/users):
+- Listar todos os usuários
+- Pausar / reativar conta de qualquer usuário
+- Excluir usuário (exceto admins e a própria conta)
+- Enviar mensagem de ALERTA para qualquer usuário
+Alertas ao usuário:
+- Banner amarelo no topo da aplicação
+- Tabela user_alerts (from_user_id, to_user_id, subject, message, read_at)
+- Usuário pode dispensar (marcar como lido)
+Projetos existentes sem dono são atribuídos ao UserDev no seed.
+Branch Git: 004
 ================================================================================
 6. O QUE NÃO FAZER NO MVP
 ================================================================================
 - Edição pesada de vídeo (cortes complexos, multicam, chroma key)
 - Auto-post em redes sociais
-- Multi-tenant / billing / assinaturas
+- Billing / assinaturas / cobrança por usuário
 - Render em nuvem
-- Login complexo (usuário único local basta no início)
 - Integração automática com bibliotecas pagas (Shutterstock, Envato API)
-- Legendas palavra por palavra estilo TikTok (Fase 3)
+- Legendas palavra por palavra estilo TikTok (Fase 4)
+- OAuth social (Google/Facebook login) — apenas login/senha local
 ================================================================================
 7. ESTRUTURA TÉCNICA ESPERADA
 ================================================================================
@@ -207,23 +237,39 @@ Usar pacote de assets padrão da indústria.
 --------------------------------------------------------------------------------
 app/
 ├── Models/
+│   ├── User.php
+│   ├── UserAlert.php
 │   ├── Project.php
 │   ├── Slide.php
 │   ├── Asset.php
-│   ├── AssetLicense.php
 │   ├── Narration.php
 │   ├── AudioTrack.php
 │   ├── RenderJob.php
 │   ├── ExportPreset.php
 │   └── ExportPackage.php
-├── Http/Controllers/Api/
-│   ├── ProjectController.php
-│   ├── SlideController.php
-│   ├── AssetController.php
-│   ├── MediaLibraryController.php
-│   ├── NarrationController.php
-│   ├── RenderController.php
-│   └── ExportController.php
+├── Http/Controllers/
+│   ├── Auth/
+│   │   ├── LoginController.php
+│   │   ├── RegisterController.php
+│   │   ├── ForgotPasswordController.php
+│   │   └── ResetPasswordController.php
+│   ├── Admin/
+│   │   └── UserController.php
+│   ├── ProfileController.php
+│   └── Api/
+│       ├── AlertController.php
+│       ├── ProjectController.php
+│       ├── SlideController.php
+│       ├── AssetController.php
+│       ├── MediaLibraryController.php
+│       ├── NarrationController.php
+│       ├── RenderController.php
+│       └── ExportController.php
+├── Http/Middleware/
+│   ├── EnsureUserIsActive.php
+│   └── EnsureUserIsAdmin.php
+├── Policies/
+│   └── ProjectPolicy.php
 ├── Services/
 │   ├── Tts/
 │   │   ├── TtsEngineInterface.php
@@ -264,32 +310,40 @@ electron/
 7.3 FRONTEND (BLADE + ALPINE)
 --------------------------------------------------------------------------------
 resources/views/
-├── layouts/app.blade.php
+├── layouts/
+│   ├── app.blade.php
+│   └── guest.blade.php
+├── auth/
+│   ├── login.blade.php
+│   ├── register.blade.php
+│   ├── forgot-password.blade.php
+│   └── reset-password.blade.php
+├── profile/
+│   └── edit.blade.php
+├── admin/users/
+│   └── index.blade.php
 ├── dashboard.blade.php
 ├── projects/
-│   ├── index.blade.php
 │   ├── create.blade.php
 │   └── editor.blade.php
-└── components/
-    ├── slide-list.blade.php
-    ├── slide-preview.blade.php
-    ├── narration-panel.blade.php
-    ├── media-library-modal.blade.php
-    ├── timeline.blade.php
-    ├── render-queue.blade.php
-    └── export-panel.blade.php
 resources/js/
 ├── app.js
 ├── editor.js
-├── slide-manager.js
-├── narration.js
-├── media-library.js
-└── render-status.js
+├── alerts.js
+└── bootstrap.js
 ================================================================================
 8. BANCO DE DADOS — MIGRATIONS
 ================================================================================
+users
+- id, name, username (unique), email (unique), password
+- is_admin (boolean), status (active/paused)
+- email_verified_at, remember_token, created_at, updated_at
+user_alerts
+- id, from_user_id (nullable), to_user_id, subject, message
+- read_at, created_at, updated_at
 projects
-- id, name, description, status, settings (json), created_at, updated_at
+- id, user_id (FK), name, description, status, settings (json)
+- created_at, updated_at
 slides
 - id, project_id, order, title, subtitle, body_text, image_path
 - text_style (json), duration_seconds, transition_type
@@ -341,10 +395,28 @@ CRIASYS_PROJECTS_PATH=
 CRIASYS_EXPORTS_PATH=
 # FFmpeg
 FFMPEG_PATH=
+FFPROBE_PATH=
+# Administrador principal (seed UserDev)
+ADMIN_USERNAME=UserDev
+ADMIN_EMAIL=
+ADMIN_PASSWORD=
+# E-mail (recuperação de senha)
+MAIL_MAILER=smtp
+MAIL_HOST=
+MAIL_PORT=
+MAIL_USERNAME=
+MAIL_PASSWORD=
+MAIL_FROM_ADDRESS=
+MAIL_FROM_NAME="${APP_NAME}"
 ================================================================================
 11. FLUXO DO USUÁRIO (UX) — TELAS
 ================================================================================
-TELA 1 — Dashboard
+TELA 0 — Autenticação (guest)
+- Login (usuário ou e-mail + senha)
+- Cadastro (nome, usuário, e-mail, senha)
+- Esqueci minha senha → e-mail com link de reset
+- Redefinir senha (via link do e-mail)
+TELA 1 — Dashboard (auth required)
 - Listar projetos recentes
 - Botões: Novo projeto, Abrir, Duplicar, Arquivar
 TELA 2 — Novo projeto
@@ -378,9 +450,20 @@ TELA 7 — Aba Exportar
 - Renderizar vídeos
 - Exportar pacote Premiere/Affinity
 - Fila de renders com progresso
+TELA 8 — Minha conta (/profile)
+- Alterar e-mail (exige senha atual)
+- Alterar senha (exige senha atual)
+- Link para recuperação por e-mail
+TELA 9 — Administração (/admin/users) — somente admin UserDev
+- Listar usuários (status, projetos, e-mail)
+- Pausar / reativar usuário
+- Excluir usuário
+- Enviar alerta (assunto + mensagem)
+- Banner de alertas visível para o usuário destinatário
 ================================================================================
 12. FASES DE IMPLEMENTAÇÃO (ORDEM OBRIGATÓRIA)
 ================================================================================
+Branches Git sequenciais: 001, 002, 003, 004 ...
 --------------------------------------------------------------------------------
 FASE 1 — FUNDAÇÃO (MVP USÁVEL)
 --------------------------------------------------------------------------------
@@ -412,6 +495,21 @@ FASE 2 — EXPORT SOCIAL E PACOTE PROFISSIONAL
 CRITÉRIO DE PRONTO FASE 2:
 Um projeto gera MP4 em 3 formatos + pacote para Premiere.
 --------------------------------------------------------------------------------
+FASE 2B — AUTENTICAÇÃO MULTI-USUÁRIO (branch 004)
+--------------------------------------------------------------------------------
+Implementar ANTES ou JUNTO com Fase 3 — prioridade do desenvolvedor.
+1.  Login / logout (usuário ou e-mail + senha)
+2.  Cadastro self-service
+3.  Recuperação de senha por e-mail
+4.  user_id em projects + isolamento total de dados
+5.  Troca de e-mail e senha com senha atual
+6.  Admin UserDev (seed) + painel /admin/users
+7.  Pausar / excluir usuários + enviar alertas
+8.  Banner de alertas na UI
+CRITÉRIO DE PRONTO FASE 2B:
+Dois usuários não veem projetos um do outro; UserDev gerencia usuários
+e envia alerta; recuperação de senha funciona; troca de senha exige atual.
+--------------------------------------------------------------------------------
 FASE 3 — ELECTRON E POLISH
 --------------------------------------------------------------------------------
 1.  Empacotar Laravel + frontend no Electron
@@ -432,7 +530,7 @@ FASE 4 — EVOLUÇÃO (SOMENTE APÓS FASES 1–3 ESTÁVEIS)
 3.  Coqui TTS local como alternativa
 4.  Motores TTS pagos (interface)
 5.  Templates de projeto
-6.  Múltiplos usuários / equipe
+6.  Permissões granulares por equipe (roles além de admin)
 7.  Legendas estilo TikTok
 ================================================================================
 13. REQUISITOS DE QUALIDADE E CONVENÇÕES
@@ -458,18 +556,20 @@ Gerar README.md com:
 7.  Estrutura de pastas do projeto
 8.  Como importar export no Premiere/Affinity/Photoshop
 9.  Licenciamento de assets e credits.txt
-10. Roadmap Fase 1–4
+10. Roadmap Fase 1–4 + Fase 2B (auth)
 ================================================================================
 15. REGRAS PARA O AGENTE DE IA
 ================================================================================
 1.  NÃO reinstalar Laravel — trabalhar sobre instalação existente
 2.  NÃO alterar DB_PASSWORD — desenvolvedor preenche
-3.  Implementar FASE POR FASE — confirmar Fase 1 antes de Fase 2
-4.  Priorizar funcionar localmente no WINDOWS (SO principal)
-5.  Commits pequenos e descritivos em português
-6.  Ao terminar cada fase: listar o que foi feito, o que testar, pendências
-7.  Se dependência externa falhar (API, TTS, FFmpeg), documentar fallback
-8.  Manter escopo enxuto — não adicionar features fora deste documento
+3.  Implementar FASE POR FASE — confirmar cada fase antes da próxima
+4.  Criar branch Git sequencial por fase (001, 002, 003, 004 ...)
+5.  Priorizar funcionar localmente no WINDOWS (SO principal)
+6.  Commits pequenos e descritivos em português
+7.  Ao terminar cada fase: listar o que foi feito, o que testar, pendências
+8.  Se dependência externa falhar (API, TTS, FFmpeg), documentar fallback
+9.  Manter escopo enxuto — não adicionar features fora deste documento
+10. NÃO alterar ADMIN_PASSWORD no .env — desenvolvedor preenche
 ================================================================================
 16. COMANDO INICIAL PARA O AGENTE (copiar ao abrir nova sessão)
 ================================================================================
@@ -505,6 +605,17 @@ FASE 2:
 [ ] credits.txt lista assets que exigem atribuição
 [ ] Busca Pixabay e Unsplash funcionam
 [ ] Busca de áudio funciona
+FASE 2B (AUTH — branch 004):
+[ ] Login com UserDev funciona
+[ ] Cadastro de novo usuário funciona
+[ ] Dois usuários NÃO veem projetos um do outro
+[ ] Recuperação de senha envia e-mail (ou log em dev)
+[ ] Troca de senha exige senha atual
+[ ] Troca de e-mail exige senha atual
+[ ] UserDev acessa /admin/users
+[ ] Admin pausa usuário — usuário pausado não loga
+[ ] Admin envia alerta — usuário vê banner
+[ ] Admin exclui usuário (não exclui a si nem outros admins)
 FASE 3:
 [ ] App abre pelo ícone (Electron) sem terminal manual
 [ ] Laravel inicia automaticamente ao abrir o app
@@ -521,7 +632,8 @@ FASE 3:
 - TTS gratuito como padrão (Edge TTS)
 - Export profissional via PACOTE DE ASSETS, não formato nativo fechado
 - Bibliotecas pagas via import manual, não API automática
-- Uso pessoal primeiro; caminho aberto para MVP futuro
+- Multi-usuário com login/senha e admin UserDev (Fase 2B — branch 004)
+- Uso pessoal/equipe; caminho aberto para MVP futuro
 - MySQL com banco CriaSysEditor, usuário vitor
 ================================================================================
 19. COMO USAR ESTE DOCUMENTO
