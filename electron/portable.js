@@ -95,18 +95,49 @@ export function markPortableInitialized(dataPath) {
     fs.writeFileSync(path.join(dataPath, '.initialized'), new Date().toISOString(), 'utf8');
 }
 
+function generatePortablePassword(length = 12) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    const bytes = crypto.randomBytes(length);
+    let password = '';
+    for (let i = 0; i < length; i++) {
+        password += chars[bytes[i] % chars.length];
+    }
+    return password;
+}
+
 export function loadPortableSecrets(dataPath) {
     const secretsFile = path.join(dataPath, 'secrets.json');
     if (fs.existsSync(secretsFile)) {
         return JSON.parse(fs.readFileSync(secretsFile, 'utf8'));
     }
 
+    const password = generatePortablePassword();
     const secrets = {
         admin_username: 'UserDev',
-        admin_email: 'pontodeimpacto790@gmail.com',
-        admin_password: 'Aa123456',
+        admin_email: 'admin@local',
+        admin_password: password,
     };
 
     fs.writeFileSync(secretsFile, JSON.stringify(secrets, null, 2), 'utf8');
+
+    const firstAccessFile = path.join(dataPath, 'PRIMEIRO_ACESSO.txt');
+    fs.writeFileSync(
+        firstAccessFile,
+        [
+            'CriaSys Editor — credenciais desta instalação',
+            '================================================',
+            '',
+            'Estas credenciais são únicas deste PC/pendrive.',
+            'Altere-as em Conta após o primeiro login ou edite secrets.json.',
+            '',
+            `Usuário: ${secrets.admin_username}`,
+            `E-mail:  ${secrets.admin_email}`,
+            `Senha:   ${secrets.admin_password}`,
+            '',
+            'Arquivo de configuração: secrets.json (mesma pasta)',
+        ].join('\n'),
+        'utf8'
+    );
+
     return secrets;
 }

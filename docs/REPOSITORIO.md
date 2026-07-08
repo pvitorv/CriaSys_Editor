@@ -156,9 +156,14 @@ Secrets necessários: **nenhum** para build básico.
 
 ---
 
-## Privacidade e `.env`
+## Privacidade e credenciais
 
 **Nunca** commite `.env`, senhas ou `CriaSysData/`.  
 O `.gitignore` já exclui esses arquivos.
 
-Credenciais do admin portátil ficam apenas em `CriaSysData/secrets.json` na máquina do usuário.
+| Cenário | Onde ficam as credenciais |
+|---------|---------------------------|
+| **Clone do GitHub (dev)** | `.env` local — cada pessoa preenche `DB_*` e `ADMIN_*` | [DESENVOLVIMENTO.md](DESENVOLVIMENTO.md) |
+| **App portable/instalador** | `CriaSysData/secrets.json` + `PRIMEIRO_ACESSO.txt` na 1ª execução | [INSTALACAO.md](INSTALACAO.md) |
+
+Quem clona o repo **não** deve usar e-mail/senha do mantenedor — configure o próprio UserDev no `.env`.

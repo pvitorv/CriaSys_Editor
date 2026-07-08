@@ -29,9 +29,12 @@ Releases oficiais ficam no repositório remoto:
 2. Copie o arquivo para o PC ou pendrive
 3. Dê duplo clique no `.exe`
 4. Na **primeira execução**, o app cria a pasta `CriaSysData/` ao lado do executável
-5. Faça login:
-   - **Usuário:** `UserDev`
-   - **Senha:** a definida em `CriaSysData/secrets.json` (padrão na primeira instalação: ver README do release)
+5. Faça login com as credenciais **desta instalação**:
+   - Na **primeira execução**, o app cria `CriaSysData/secrets.json` e `CriaSysData/PRIMEIRO_ACESSO.txt`
+   - Abra `PRIMEIRO_ACESSO.txt` para ver usuário e senha gerados (únicos deste PC)
+   - **Não** use credenciais de outra pessoa ou do desenvolvedor do repositório
+
+**Antes de distribuir um pendrive:** edite `CriaSysData/secrets.json` (modelo em [secrets.json.example](secrets.json.example)) ou altere a senha em **Conta** após login.
 
 **Pendrive:** copie o `.exe` **e** a pasta `CriaSysData/` juntos — seus projetos vão no pendrive.
 
@@ -132,34 +135,41 @@ criasys-editor   # ou abra pelo menu de aplicativos
 
 ---
 
-## Login padrão (primeira execução portátil)
+## Login (versão portátil / instalador)
 
-| Campo | Valor inicial |
-|-------|----------------|
-| Usuário | `UserDev` |
-| E-mail | `pontodeimpacto790@gmail.com` |
-| Senha | Ver `CriaSysData/secrets.json` |
+Cada instalação tem **credenciais próprias** — não compartilhe as do mantenedor do GitHub.
 
-**Altere a senha** em **Conta** após o primeiro login ou edite `secrets.json` antes de distribuir pendrives.
+| Onde | O que fazer |
+|------|-------------|
+| **Primeira execução** | Leia `CriaSysData/PRIMEIRO_ACESSO.txt` (senha gerada automaticamente) |
+| **Depois** | Login com usuário/senha de `CriaSysData/secrets.json` |
+| **Personalizar antes** | Copie [secrets.json.example](secrets.json.example) → `CriaSysData/secrets.json` **antes** de abrir o app (apague `.initialized` se já tiver rodado uma vez) |
+| **Alterar depois** | Menu **Conta** no app ou edite `secrets.json` + apague `CriaSysData/.initialized` e reinicie (recria admin) |
+
+Usuário padrão: `UserDev` — e-mail e senha são **seus**, definidos em `secrets.json` ou gerados na 1ª execução.
 
 ---
 
-## Modo desenvolvimento (Windows + Laragon)
+## Modo desenvolvimento (clone do GitHub)
 
 Se você **clonou o repositório** para desenvolver (não é o instalador):
 
 ```bash
 composer install
-cp .env.example .env    # configure MySQL
+cp .env.example .env
+# Configure DB_* e ADMIN_* com dados do SEU PC — veja guia completo
+php artisan key:generate
 php artisan migrate --seed
 npm install && npm run build
 composer dev
 ```
 
-Detalhes: [DESENVOLVIMENTO.md](DESENVOLVIMENTO.md)
+**Obrigatório no `.env`:** banco (`DB_*`) + `ADMIN_EMAIL` + `ADMIN_PASSWORD` — credenciais do **seu** ambiente.
+
+Detalhes passo a passo: **[DESENVOLVIMENTO.md](DESENVOLVIMENTO.md)**
 
 ---
 
 ## Suporte
 
-E-mail: pontodeimpacto790@gmail.com
+Abra uma **Issue** no repositório GitHub do projeto.

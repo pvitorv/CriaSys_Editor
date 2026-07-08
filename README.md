@@ -23,7 +23,7 @@ Gerador de **slideshow narrado** — desktop, portátil (pendrive) e multi-plata
 | Documento | Público |
 |-----------|---------|
 | [docs/INSTALACAO.md](docs/INSTALACAO.md) | Usuário final — Windows, Linux, macOS |
-| [docs/DESENVOLVIMENTO.md](docs/DESENVOLVIMENTO.md) | Desenvolvedor — Laragon, clone, composer dev |
+| [docs/DESENVOLVIMENTO.md](docs/DESENVOLVIMENTO.md) | Clone GitHub — `.env`, MySQL, UserDev **por máquina** |
 | [docs/REPOSITORIO.md](docs/REPOSITORIO.md) | Publicar no GitHub, Releases, CI/CD |
 | [CRIASYS_BRIEF.md](CRIASYS_BRIEF.md) | Especificação completa do projeto |
 
@@ -33,12 +33,14 @@ Gerador de **slideshow narrado** — desktop, portátil (pendrive) e multi-plata
 
 ```bash
 composer install && cp .env.example .env
+# Edite .env: DB_* (seu MySQL) + ADMIN_EMAIL + ADMIN_PASSWORD (seu admin)
+php artisan key:generate
 php artisan migrate --seed
 npm install && npm run build
 composer dev
 ```
 
-Login admin: **UserDev** — veja `.env` (`ADMIN_*`)
+Login: **UserDev** com a senha que **você** definiu em `ADMIN_PASSWORD` — [guia completo do .env](docs/DESENVOLVIMENTO.md)
 
 ---
 
