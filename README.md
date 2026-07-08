@@ -62,7 +62,8 @@ Detalhes: **[docs/REPOSITORIO.md](docs/REPOSITORIO.md)**
 | Branch | Fase |
 |--------|------|
 | `main` | Release estável |
-| `001`–`005` | Histórico (MVP → portátil multi-SO) |
+| `005` | Portátil multi-SO + docs |
+| `006` | Fase 4 — burn-in, evolução |
 
 ---
 
@@ -71,4 +72,4 @@ Detalhes: **[docs/REPOSITORIO.md](docs/REPOSITORIO.md)**
 - **Fases 1–3** ✅ MVP, export social, Electron
 - **Fase 2B** ✅ Autenticação multi-usuário (UserDev admin)
 - **Fase 005** ✅ Portátil pendrive + builds Win/Linux/macOS
-- **Fase 4** Legendas burn-in, Coqui TTS, templates
+- **Fase 4 (006)** 🔄 Legendas burn-in · Coqui TTS · templates (em andamento)

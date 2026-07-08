@@ -31,11 +31,13 @@ class RenderController extends Controller
         $data = $request->validate([
             'preset' => ['required', 'string', 'exists:export_presets,slug'],
             'generate_thumb' => ['nullable', 'boolean'],
+            'burn_subtitles' => ['nullable', 'boolean'],
         ]);
 
         $job = RenderJob::create([
             'project_id' => $project->id,
             'preset' => $data['preset'],
+            'burn_subtitles' => $data['burn_subtitles'] ?? false,
             'status' => RenderStatus::Pending,
             'progress' => 0,
         ]);

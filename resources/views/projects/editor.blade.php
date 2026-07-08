@@ -228,6 +228,10 @@
             <div x-show="activeTab === 'exportar'" class="space-y-4">
                 <div>
                     <h3 class="text-sm font-medium text-zinc-300 mb-2">Render vídeo</h3>
+                    <label class="flex items-center gap-2 text-sm text-zinc-400 mb-3">
+                        <input type="checkbox" x-model="burnSubtitles">
+                        Queimar legendas no vídeo (burn-in via SRT)
+                    </label>
                     <div class="flex flex-wrap gap-2">
                         <template x-for="preset in exportPresets.filter(p => p.slug !== 'thumbnail')" :key="preset.slug">
                             <button @click="renderVideo(preset.slug)" class="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-xs" x-text="preset.name"></button>

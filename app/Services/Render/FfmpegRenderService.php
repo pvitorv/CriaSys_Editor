@@ -5,6 +5,7 @@ namespace App\Services\Render;
 use App\Models\ExportPreset;
 use App\Models\Project;
 use App\Models\RenderJob;
+use App\Services\Export\SrtGenerator;
 use App\Services\ProjectStorageService;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -48,6 +49,11 @@ class FfmpegRenderService
 
         $this->mixAudioTracks($tempVideo, $project, $outputPath);
         File::delete($tempVideo);
+
+        if ($job->burn_subtitles) {
+            $job->update(['progress' => 85]);
+            $outputPath = $this->applyBurnInSubtitles($project, $job, $outputPath, $exportDir);
+        }
 
         $job->update(['progress' => 90]);
 
@@ -160,5 +166,46 @@ class FfmpegRenderService
         if (! $result->successful()) {
             throw new \RuntimeException("FFmpeg {$context} falhou: ".$result->errorOutput());
         }
+    }
+
+    private function applyBurnInSubtitles(Project $project, RenderJob $job, string $videoPath, string $exportDir): string
+    {
+        $srtPath = $exportDir.DIRECTORY_SEPARATOR.'burnin_'.$job->id.'.srt';
+        $burnedPath = $exportDir.DIRECTORY_SEPARATOR.'burned_'.$job->id.'.mp4';
+
+        File::put($srtPath, app(SrtGenerator::class)->generate($project));
+
+        if (trim(File::get($srtPath)) === '') {
+            File::delete($srtPath);
+
+            return $videoPath;
+        }
+
+        $ffmpeg = config('criasys.ffmpeg_path');
+        $escaped = $this->escapeSubtitlesPath($srtPath);
+        $style = 'FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=48';
+        $vf = "subtitles='{$escaped}':force_style='{$style}'";
+
+        $result = Process::timeout(600)->run([
+            $ffmpeg, '-y', '-i', $videoPath,
+            '-vf', $vf,
+            '-c:a', 'copy',
+            $burnedPath,
+        ]);
+
+        $this->assertFfmpegSuccess($result, 'legendas burn-in');
+
+        File::delete($videoPath);
+        File::delete($srtPath);
+        File::move($burnedPath, $videoPath);
+
+        return $videoPath;
+    }
+
+    private function escapeSubtitlesPath(string $path): string
+    {
+        $path = str_replace('\\', '/', $path);
+
+        return str_replace("'", "'\\''", $path);
     }
 }

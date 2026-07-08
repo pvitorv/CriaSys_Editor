@@ -11,6 +11,7 @@ class RenderJob extends Model
     protected $fillable = [
         'project_id',
         'preset',
+        'burn_subtitles',
         'status',
         'progress',
         'output_path',
@@ -22,6 +23,7 @@ class RenderJob extends Model
     protected function casts(): array
     {
         return [
+            'burn_subtitles' => 'boolean',
             'status' => RenderStatus::class,
             'started_at' => 'datetime',
             'completed_at' => 'datetime',

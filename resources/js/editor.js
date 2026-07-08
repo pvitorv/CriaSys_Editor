@@ -44,6 +44,7 @@ window.editorApp = function (projectId) {
         pollInterval: null,
         saveTimeout: null,
         dragFromIndex: null,
+        burnSubtitles: false,
 
         async init() {
             await Promise.all([
@@ -333,7 +334,10 @@ window.editorApp = function (projectId) {
 
         async renderVideo(preset) {
             try {
-                await api.post(`/projects/${this.projectId}/render-jobs`, { preset });
+                await api.post(`/projects/${this.projectId}/render-jobs`, {
+                    preset,
+                    burn_subtitles: this.burnSubtitles,
+                });
                 this.message = `Render ${preset} enfileirado`;
                 await this.loadRenderJobs();
             } catch (e) {

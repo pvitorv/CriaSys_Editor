@@ -6,6 +6,7 @@ use App\Models\Narration;
 use App\Models\Project;
 use App\Models\Slide;
 use App\Services\Render\FfmpegRenderService;
+use App\Services\Tts\CoquiTtsEngine;
 use App\Services\Tts\EdgeTtsEngine;
 use App\Services\Tts\TtsEngineInterface;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,7 @@ class NarrationService
     public function engine(): TtsEngineInterface
     {
         return match (config('criasys.tts.default_engine')) {
+            'coqui' => app(CoquiTtsEngine::class),
             'edge' => app(EdgeTtsEngine::class),
             default => app(EdgeTtsEngine::class),
         };
