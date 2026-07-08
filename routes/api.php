@@ -23,6 +23,7 @@ Route::post('projects/{project}/archive', [ProjectController::class, 'archive'])
 
 Route::get('projects/{project}/slides', [SlideController::class, 'index']);
 Route::post('projects/{project}/slides', [SlideController::class, 'store']);
+Route::post('projects/{project}/slides/apply-script', [SlideController::class, 'applyScript']);
 Route::put('projects/{project}/slides/reorder', [SlideController::class, 'reorder']);
 Route::put('projects/{project}/slides/{slide}', [SlideController::class, 'update']);
 Route::delete('projects/{project}/slides/{slide}', [SlideController::class, 'destroy']);

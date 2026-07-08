@@ -58,6 +58,36 @@ class SlideController extends Controller
         return response()->json($slide->fresh());
     }
 
+    public function applyScript(Request $request, Project $project): JsonResponse
+    {
+        $data = $request->validate([
+            'blocks' => ['required', 'array', 'min:1'],
+            'blocks.*.narration_text' => ['required', 'string'],
+            'blocks.*.title' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $slides = $project->slides()->orderBy('order')->get();
+
+        foreach ($data['blocks'] as $index => $block) {
+            if ($slides->has($index)) {
+                $slides[$index]->update([
+                    'narration_text' => $block['narration_text'],
+                    'title' => $block['title'] ?? $slides[$index]->title,
+                ]);
+            } else {
+                $project->slides()->create([
+                    'order' => $index,
+                    'title' => $block['title'] ?? 'Slide '.($index + 1),
+                    'narration_text' => $block['narration_text'],
+                    'duration_seconds' => 5,
+                    'transition_type' => 'fade',
+                ]);
+            }
+        }
+
+        return response()->json($project->fresh('slides')->slides);
+    }
+
     public function destroy(Project $project, Slide $slide): JsonResponse
     {
         abort_unless($slide->project_id === $project->id, 404);

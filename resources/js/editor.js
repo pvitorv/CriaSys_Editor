@@ -26,6 +26,7 @@ window.editorApp = function (projectId) {
         slides: [],
         selectedSlide: null,
         activeTab: 'roteiro',
+        fullScript: '',
         voice: 'pt-BR-FranciscaNeural',
         ttsEngine: 'edge',
         ttsEngines: [],
@@ -36,6 +37,7 @@ window.editorApp = function (projectId) {
         mediaType: 'image',
         mediaResults: [],
         mediaErrors: [],
+        mediaSearching: false,
         exportPresets: [],
         exportPackages: [],
         audioTrack: { volume: 0.35, ducking_enabled: true },
@@ -99,9 +101,7 @@ window.editorApp = function (projectId) {
                     slide_ids: this.slides.map(s => s.id),
                 });
                 this.slides = data.map(s => this.enrichSlide(s));
-                if (this.selectedSlide) {
-                    this.selectedSlide = this.slides.find(s => s.id === this.selectedSlide.id) || this.slides[0];
-                }
+                this.syncSelection();
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao reordenar slides';
                 await this.loadSlides();
@@ -110,7 +110,29 @@ window.editorApp = function (projectId) {
 
         scheduleSave() {
             clearTimeout(this.saveTimeout);
-            this.saveTimeout = setTimeout(() => this.saveSlide(), 800);
+            this.saveTimeout = setTimeout(() => this.saveSlide(), 600);
+        },
+
+        syncSelection() {
+            if (this.selectedSlide?.id) {
+                const fresh = this.slides.find(s => s.id === this.selectedSlide.id);
+                this.selectedSlide = fresh ?? this.slides[0] ?? null;
+            } else {
+                this.selectedSlide = this.slides[0] ?? null;
+            }
+        },
+
+        slidePayload(slide) {
+            return {
+                title: slide.title ?? '',
+                subtitle: slide.subtitle ?? '',
+                body_text: slide.body_text ?? '',
+                narration_text: slide.narration_text ?? '',
+                duration_seconds: slide.duration_seconds ?? 5,
+                transition_type: slide.transition_type ?? 'fade',
+                text_style: slide.text_style ?? null,
+                image_path: slide.image_path ?? null,
+            };
         },
 
         async loadTtsEngines() {
@@ -143,12 +165,18 @@ window.editorApp = function (projectId) {
         async loadSlides() {
             const { data } = await api.get(`/projects/${this.projectId}/slides`);
             this.slides = data.map(s => this.enrichSlide(s));
-            if (!this.selectedSlide && this.slides.length) {
-                this.selectSlide(this.slides[0]);
-            }
+            this.syncSelection();
+            this.buildFullScriptFromSlides();
         },
 
         enrichSlide(slide) {
+            if (!slide.text_style) {
+                slide.text_style = {
+                    title_color: '#ffffff',
+                    title_size: 48,
+                    align: 'center',
+                };
+            }
             if (slide.image_path) {
                 slide.image_url = this.fileUrl('assets', slide.image_path.split(/[/\\]/).pop());
             }
@@ -160,7 +188,40 @@ window.editorApp = function (projectId) {
         },
 
         selectSlide(slide) {
-            this.selectedSlide = slide;
+            this.selectedSlide = this.slides.find(s => s.id === slide.id) ?? slide;
+        },
+
+        switchTab(tab) {
+            this.activeTab = tab;
+            if (tab === 'biblioteca') {
+                this.prepareMediaSearch();
+            }
+        },
+
+        prepareMediaSearch() {
+            const slide = this.selectedSlide;
+            if (!this.mediaQuery.trim() && slide?.title?.trim()) {
+                this.mediaQuery = slide.title.trim();
+                this.searchMedia();
+            }
+        },
+
+        searchFromSlideTitle() {
+            const slide = this.selectedSlide;
+            if (!slide?.title?.trim()) {
+                this.error = 'Defina um título no slide antes de buscar imagens.';
+                return;
+            }
+            this.mediaQuery = slide.title.trim();
+            this.activeTab = 'biblioteca';
+            this.searchMedia();
+        },
+
+        buildFullScriptFromSlides() {
+            this.fullScript = this.slides
+                .map(s => (s.narration_text || '').trim())
+                .filter(Boolean)
+                .join('\n\n');
         },
 
         async addSlide() {
@@ -168,36 +229,74 @@ window.editorApp = function (projectId) {
                 title: `Slide ${this.slides.length + 1}`,
             });
             this.slides.push(this.enrichSlide(data));
-            this.selectSlide(this.slides[this.slides.length - 1]);
+            this.selectSlide(data);
         },
 
         async removeSlide(slide) {
             if (!confirm('Remover este slide?')) return;
             await api.delete(`/projects/${this.projectId}/slides/${slide.id}`);
             this.slides = this.slides.filter(s => s.id !== slide.id);
-            this.selectedSlide = this.slides[0] || null;
+            this.syncSelection();
         },
 
         async saveSlide() {
-            if (!this.selectedSlide) return;
+            const slide = this.selectedSlide;
+            if (!slide) return;
             this.saving = true;
             this.error = '';
             try {
-                const payload = { ...this.selectedSlide };
-                delete payload.image_url;
                 const { data } = await api.put(
-                    `/projects/${this.projectId}/slides/${this.selectedSlide.id}`,
-                    payload
+                    `/projects/${this.projectId}/slides/${slide.id}`,
+                    this.slidePayload(slide)
                 );
-                Object.assign(this.selectedSlide, this.enrichSlide(data));
                 const idx = this.slides.findIndex(s => s.id === data.id);
-                if (idx >= 0) this.slides[idx] = this.selectedSlide;
+                if (idx >= 0) {
+                    this.slides[idx] = this.enrichSlide({ ...this.slides[idx], ...data });
+                    if (this.selectedSlide?.id === data.id) {
+                        this.selectedSlide = this.slides[idx];
+                    }
+                }
                 this.message = 'Salvo';
                 setTimeout(() => this.message = '', 2000);
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao salvar';
             } finally {
                 this.saving = false;
+            }
+        },
+
+        copyTitleToNarration() {
+            const slide = this.selectedSlide;
+            if (!slide) return;
+            const parts = [slide.title, slide.subtitle, slide.body_text].filter(v => v?.trim());
+            slide.narration_text = parts.join('. ');
+            this.scheduleSave();
+            this.message = 'Texto copiado para narração';
+        },
+
+        async applyFullScript() {
+            const text = this.fullScript.trim();
+            if (!text) {
+                this.error = 'Cole ou escreva o roteiro completo primeiro.';
+                return;
+            }
+            const blocks = text.split(/\n\s*\n+/).map(b => b.trim()).filter(Boolean);
+            if (!blocks.length) {
+                this.error = 'Separe os parágrafos com uma linha em branco.';
+                return;
+            }
+            try {
+                const { data } = await api.post(`/projects/${this.projectId}/slides/apply-script`, {
+                    blocks: blocks.map((narration_text, i) => ({
+                        narration_text,
+                        title: `Slide ${i + 1}`,
+                    })),
+                });
+                this.slides = data.map(s => this.enrichSlide(s));
+                this.syncSelection();
+                this.message = `Roteiro aplicado em ${blocks.length} slide(s)`;
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao aplicar roteiro';
             }
         },
 
@@ -261,24 +360,39 @@ window.editorApp = function (projectId) {
         },
 
         async searchMedia() {
-            if (!this.mediaQuery.trim()) return;
+            const query = this.mediaQuery.trim();
+            if (query.length < 2) {
+                this.error = 'Digite pelo menos 2 caracteres para buscar.';
+                return;
+            }
+            this.mediaSearching = true;
             this.mediaErrors = [];
+            this.error = '';
             try {
                 const { data } = await api.get('/media/search', {
                     params: {
-                        query: this.mediaQuery,
+                        query,
                         source: this.mediaSource,
                         type: this.mediaType,
                     },
                 });
                 this.mediaResults = data.results || [];
                 this.mediaErrors = data.errors || [];
+                if (this.mediaResults.length) {
+                    this.message = `${this.mediaResults.length} resultado(s) — clique para inserir`;
+                }
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro na busca';
+            } finally {
+                this.mediaSearching = false;
             }
         },
 
         async importMedia(item) {
+            if (!this.selectedSlide && item.type !== 'audio') {
+                this.error = 'Selecione um slide antes de inserir a imagem.';
+                return;
+            }
             const target = item.type === 'audio' ? 'audio_track' : 'slide';
             try {
                 const { data } = await api.post(`/projects/${this.projectId}/media/import`, { item, target });
@@ -287,7 +401,7 @@ window.editorApp = function (projectId) {
                     this.selectedSlide.image_path = asset.file_path;
                     this.selectedSlide.image_url = `/api/projects/${this.projectId}/assets/${asset.id}`;
                     await this.saveSlide();
-                    this.message = 'Imagem inserida';
+                    this.message = 'Imagem inserida no slide';
                 } else {
                     await this.loadAudioTrack();
                     this.message = 'Áudio inserido na trilha';
@@ -309,6 +423,7 @@ window.editorApp = function (projectId) {
             this.narrationLoading = true;
             this.error = '';
             try {
+                await this.saveSlide();
                 const { data } = await api.post(`/projects/${this.projectId}/narration/generate`, {
                     voice: this.voice,
                     engine: this.ttsEngine,
@@ -329,9 +444,7 @@ window.editorApp = function (projectId) {
             try {
                 const { data } = await api.post(`/projects/${this.projectId}/narration/sync`);
                 this.slides = data.map(s => this.enrichSlide(s));
-                if (this.selectedSlide) {
-                    this.selectedSlide = this.slides.find(s => s.id === this.selectedSlide.id) || this.slides[0];
-                }
+                this.syncSelection();
                 this.message = 'Slides sincronizados';
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao sincronizar';
@@ -373,7 +486,7 @@ window.editorApp = function (projectId) {
 
         async generateThumb() {
             try {
-                const { data } = await api.post(`/projects/${this.projectId}/thumbnail`);
+                await api.post(`/projects/${this.projectId}/thumbnail`);
                 this.message = 'Thumbnail gerada';
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao gerar thumb';

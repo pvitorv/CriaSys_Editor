@@ -18,10 +18,11 @@
             <h1 class="text-xl font-bold">{{ $project->name }}</h1>
             <p class="text-zinc-500 text-sm">Editor de slideshow</p>
         </div>
-        <div class="flex gap-2 text-sm">
+        <div class="flex gap-2 text-sm items-center">
             <span x-show="saving" class="text-zinc-500">Salvando...</span>
             <span x-show="message" x-text="message" class="text-emerald-400"></span>
             <span x-show="error" x-text="error" class="text-red-400"></span>
+            <button x-show="selectedSlide" @click="saveSlide()" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300">Salvar agora</button>
         </div>
     </div>
 
@@ -42,7 +43,6 @@
                         @drop.prevent="dropSlide(index)"
                         :class="selectedSlide?.id === slide.id ? 'bg-violet-900/40 border-violet-600' : 'bg-zinc-800/50 border-zinc-700 hover:border-zinc-600'"
                         class="rounded-lg border p-2 cursor-grab active:cursor-grabbing transition"
-                        :data-id="slide.id"
                     >
                         <div class="flex items-center gap-2">
                             <span class="text-xs text-zinc-600 select-none" title="Arrastar">⋮⋮</span>
@@ -69,7 +69,11 @@
                         <img :src="selectedSlide.image_url" class="absolute inset-0 w-full h-full object-cover opacity-80">
                     </template>
                     <div class="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-center p-6">
-                        <h3 class="text-2xl font-bold mb-2" x-text="selectedSlide?.title || ''"></h3>
+                        <h3
+                            class="font-bold mb-2"
+                            :style="'color:' + (selectedSlide?.text_style?.title_color || '#fff') + ';font-size:' + Math.min(selectedSlide?.text_style?.title_size || 32, 32) + 'px'"
+                            x-text="selectedSlide?.title || 'Selecione um slide'"
+                        ></h3>
                         <p class="text-lg text-zinc-300 mb-2" x-text="selectedSlide?.subtitle || ''"></p>
                         <p class="text-sm text-zinc-400" x-text="selectedSlide?.body_text || ''"></p>
                     </div>
@@ -79,39 +83,58 @@
 
         {{-- Propriedades --}}
         <div class="col-span-4 flex flex-col min-h-0 rounded-xl border border-zinc-800 bg-zinc-900 overflow-y-auto">
-            <div class="p-3 border-b border-zinc-800">
+            <div class="p-3 border-b border-zinc-800 flex justify-between items-center">
                 <h2 class="font-medium text-sm">Propriedades</h2>
+                <button x-show="selectedSlide" @click="searchFromSlideTitle()" class="text-xs text-violet-400 hover:text-violet-300">Buscar imagem pelo título</button>
             </div>
             <div class="p-4 space-y-3" x-show="selectedSlide">
                 <div>
                     <label class="text-xs text-zinc-400">Título</label>
-                    <input type="text" x-model="selectedSlide.title" @input="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                    <input type="text" x-model="selectedSlide.title" @input="scheduleSave()" placeholder="Título do slide" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
                 </div>
                 <div>
                     <label class="text-xs text-zinc-400">Subtítulo</label>
-                    <input type="text" x-model="selectedSlide.subtitle" @input="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                    <input type="text" x-model="selectedSlide.subtitle" @input="scheduleSave()" placeholder="Subtítulo opcional" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
                 </div>
                 <div>
                     <label class="text-xs text-zinc-400">Corpo</label>
-                    <textarea x-model="selectedSlide.body_text" @input="scheduleSave()" rows="3" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm"></textarea>
+                    <textarea x-model="selectedSlide.body_text" @input="scheduleSave()" rows="3" placeholder="Texto visível no slide" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="text-xs text-zinc-400">Duração (s)</label>
+                        <input type="number" step="0.1" min="0.5" x-model.number="selectedSlide.duration_seconds" @input="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-xs text-zinc-400">Transição</label>
+                        <select x-model="selectedSlide.transition_type" @change="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                            <option value="fade">Fade</option>
+                            <option value="cut">Corte</option>
+                            <option value="slide">Slide</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="text-xs text-zinc-400">Cor do título</label>
+                        <input type="color" x-model="selectedSlide.text_style.title_color" @input="scheduleSave()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                    </div>
+                    <div>
+                        <label class="text-xs text-zinc-400">Tamanho título</label>
+                        <input type="number" min="12" max="96" x-model.number="selectedSlide.text_style.title_size" @input="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                    </div>
                 </div>
                 <div>
-                    <label class="text-xs text-zinc-400">Duração (s)</label>
-                    <input type="number" step="0.1" min="0.5" x-model.number="selectedSlide.duration_seconds" @input="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
-                </div>
-                <div>
-                    <label class="text-xs text-zinc-400">Transição</label>
-                    <select x-model="selectedSlide.transition_type" @change="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
-                        <option value="fade">Fade</option>
-                        <option value="cut">Corte</option>
-                        <option value="slide">Slide</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="text-xs text-zinc-400">Imagem</label>
+                    <label class="text-xs text-zinc-400">Imagem de fundo</label>
                     <input type="file" accept="image/*" @change="uploadImage($event)" class="w-full mt-1 text-sm text-zinc-400">
                 </div>
+                <div class="flex flex-wrap gap-2 pt-1">
+                    <button type="button" @click="copyTitleToNarration()" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">Título → narração</button>
+                    <button type="button" @click="saveSlide()" class="text-xs px-2 py-1 rounded bg-violet-700 hover:bg-violet-600">Salvar propriedades</button>
+                </div>
             </div>
+            <p x-show="!selectedSlide && slides.length" class="p-4 text-sm text-zinc-500">Selecione um slide na lista.</p>
+            <p x-show="!slides.length" class="p-4 text-sm text-zinc-500">Adicione um slide para começar.</p>
         </div>
     </div>
 
@@ -121,7 +144,9 @@
         <div class="flex gap-1 h-8">
             <template x-for="slide in slides" :key="'tl-' + slide.id">
                 <div
-                    class="rounded bg-violet-800/60 border border-violet-600/50 flex items-center justify-center text-xs truncate px-1"
+                    class="rounded bg-violet-800/60 border border-violet-600/50 flex items-center justify-center text-xs truncate px-1 cursor-pointer"
+                    :class="selectedSlide?.id === slide.id ? 'ring-1 ring-violet-400' : ''"
+                    @click="selectSlide(slide)"
                     :style="'flex: ' + slide.duration_seconds"
                     x-text="slide.title || 'Slide'"
                 ></div>
@@ -134,7 +159,7 @@
         <div class="flex border-b border-zinc-800">
             <template x-for="tab in ['roteiro', 'audio', 'biblioteca', 'exportar']" :key="tab">
                 <button
-                    @click="activeTab = tab"
+                    @click="switchTab(tab)"
                     :class="activeTab === tab ? 'border-violet-500 text-white' : 'border-transparent text-zinc-400'"
                     class="px-4 py-2 text-sm border-b-2 capitalize"
                     x-text="tab"
@@ -145,11 +170,37 @@
         <div class="p-4">
             {{-- Roteiro --}}
             <div x-show="activeTab === 'roteiro'" class="space-y-4">
-                <div x-show="selectedSlide">
-                    <label class="text-xs text-zinc-400">Texto de narração (slide selecionado)</label>
-                    <textarea x-model="selectedSlide.narration_text" @input="scheduleSave()" rows="4" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm"></textarea>
+                <div>
+                    <label class="text-xs text-zinc-400">Roteiro completo (cole ou escreva — parágrafos separados por linha em branco)</label>
+                    <textarea
+                        x-model="fullScript"
+                        rows="5"
+                        placeholder="Parágrafo do slide 1...
+
+Parágrafo do slide 2...
+
+Parágrafo do slide 3..."
+                        class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm font-mono"
+                    ></textarea>
+                    <div class="flex flex-wrap gap-2 mt-2">
+                        <button type="button" @click="applyFullScript()" class="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm">Aplicar roteiro nos slides</button>
+                        <button type="button" @click="buildFullScriptFromSlides()" class="px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Carregar dos slides</button>
+                    </div>
                 </div>
-                <div class="flex flex-wrap gap-3 items-end">
+
+                <div x-show="selectedSlide" class="border-t border-zinc-800 pt-4">
+                    <label class="text-xs text-zinc-400">Narração do slide selecionado</label>
+                    <textarea
+                        x-model="selectedSlide.narration_text"
+                        @input="scheduleSave()"
+                        rows="4"
+                        placeholder="Texto que será lido na narração deste slide..."
+                        class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm"
+                    ></textarea>
+                    <button type="button" @click="copyTitleToNarration()" class="mt-2 text-xs text-violet-400 hover:text-violet-300">Usar título + subtítulo + corpo</button>
+                </div>
+
+                <div class="flex flex-wrap gap-3 items-end border-t border-zinc-800 pt-4">
                     <div>
                         <label class="text-xs text-zinc-400">Motor TTS</label>
                         <select x-model="ttsEngine" class="block mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
@@ -157,7 +208,6 @@
                                 <option :value="eng.slug" :disabled="!eng.available" x-text="eng.name + (eng.available ? '' : ' (indisponível)')"></option>
                             </template>
                         </select>
-                        <p class="text-[10px] text-zinc-500 mt-1" x-show="ttsEngines.find(e => e.slug === ttsEngine)?.note" x-text="ttsEngines.find(e => e.slug === ttsEngine)?.note"></p>
                     </div>
                     <div>
                         <label class="text-xs text-zinc-400">Voz</label>
@@ -170,7 +220,7 @@
                         <span x-text="narrationLoading ? 'Gerando...' : 'Gerar narração'"></span>
                     </button>
                     <button @click="syncNarration()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">
-                        Sincronizar slides
+                        Sincronizar duração
                     </button>
                 </div>
                 <template x-if="narration?.audio_url">
@@ -201,9 +251,11 @@
 
             {{-- Biblioteca --}}
             <div x-show="activeTab === 'biblioteca'" class="space-y-3">
+                <p class="text-xs text-zinc-500">Imagens gratuitas (Creative Commons). Busca automática pelo título do slide ao abrir esta aba.</p>
                 <div class="flex flex-wrap gap-2">
                     <select x-model="mediaSource" class="rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
-                        <option value="all">Todas fontes</option>
+                        <option value="all">Todas (gratuitas + APIs)</option>
+                        <option value="openverse">Openverse (sem chave)</option>
                         <option value="pexels">Pexels</option>
                         <option value="pixabay">Pixabay</option>
                         <option value="unsplash">Unsplash</option>
@@ -213,21 +265,32 @@
                         <option value="image">Imagens</option>
                         <option value="audio">Áudio</option>
                     </select>
-                    <input type="text" x-model="mediaQuery" placeholder="Buscar mídia..." class="flex-1 min-w-[200px] rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
-                    <button @click="searchMedia()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Buscar</button>
+                    <input
+                        type="text"
+                        x-model="mediaQuery"
+                        @keydown.enter.prevent="searchMedia()"
+                        placeholder="Buscar pelo título ou palavra-chave..."
+                        class="flex-1 min-w-[200px] rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm"
+                    >
+                    <button @click="searchFromSlideTitle()" :disabled="!selectedSlide?.title" class="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-sm">Título</button>
+                    <button @click="searchMedia()" :disabled="mediaSearching" class="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-sm">
+                        <span x-text="mediaSearching ? 'Buscando...' : 'Buscar'"></span>
+                    </button>
                 </div>
-                <p x-show="mediaErrors.length" class="text-xs text-yellow-400" x-text="mediaErrors.join(' | ')"></p>
-                <div class="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
+                <p x-show="mediaErrors.length && !mediaResults.length" class="text-xs text-yellow-400" x-text="mediaErrors.join(' ')"></p>
+                <p x-show="mediaResults.length" class="text-xs text-emerald-400">Clique na imagem para inserir no slide selecionado.</p>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-56 overflow-y-auto">
                     <template x-for="item in mediaResults" :key="item.source + '-' + item.id">
-                        <div class="relative group cursor-pointer rounded overflow-hidden border border-zinc-700 p-2" @click="importMedia(item)">
+                        <div class="relative group cursor-pointer rounded overflow-hidden border border-zinc-700 bg-zinc-800" @click="importMedia(item)">
                             <template x-if="item.type === 'audio'">
-                                <div class="h-20 flex items-center justify-center bg-zinc-800 text-xs text-center" x-text="item.title || 'Áudio'"></div>
+                                <div class="h-24 flex items-center justify-center text-xs text-center p-2" x-text="item.title || item.author || 'Áudio'"></div>
                             </template>
                             <template x-if="item.type !== 'audio'">
-                                <img :src="item.preview_url" class="w-full h-20 object-cover">
+                                <img :src="item.preview_url" :alt="item.title || 'Imagem'" class="w-full h-24 object-cover" loading="lazy">
                             </template>
+                            <span class="absolute bottom-0 left-0 right-0 bg-black/70 text-[10px] px-1 py-0.5 truncate" x-text="item.source"></span>
                             <span x-show="item.requires_attribution" class="absolute top-1 right-1 text-[10px] bg-yellow-600/80 px-1 rounded">Crédito</span>
-                            <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs">Inserir</div>
+                            <div class="absolute inset-0 bg-violet-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs font-medium">Inserir</div>
                         </div>
                     </template>
                 </div>

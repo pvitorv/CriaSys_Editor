@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Services\MediaLibrary\MediaImportService;
 use App\Services\MediaLibrary\MixkitService;
+use App\Services\MediaLibrary\OpenverseService;
 use App\Services\MediaLibrary\PexelsService;
 use App\Services\MediaLibrary\PixabayService;
 use App\Services\MediaLibrary\UnsplashService;
@@ -15,6 +16,7 @@ use Illuminate\Http\Request;
 class MediaLibraryController extends Controller
 {
     public function __construct(
+        private OpenverseService $openverse,
         private PexelsService $pexels,
         private PixabayService $pixabay,
         private UnsplashService $unsplash,
@@ -26,7 +28,7 @@ class MediaLibraryController extends Controller
     {
         $data = $request->validate([
             'query' => ['required', 'string', 'min:2'],
-            'source' => ['nullable', 'in:pexels,pixabay,unsplash,mixkit,all'],
+            'source' => ['nullable', 'in:openverse,pexels,pixabay,unsplash,mixkit,all'],
             'type' => ['nullable', 'in:image,audio'],
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
@@ -36,42 +38,90 @@ class MediaLibraryController extends Controller
         $query = $data['query'];
         $page = $data['page'] ?? 1;
         $results = [];
-        $errors = [];
 
         if ($type === 'audio') {
             try {
                 $results = array_merge($results, $this->mixkit->searchMusic($query));
-            } catch (\Throwable $e) {
-                $errors[] = $e->getMessage();
+            } catch (\Throwable) {
+                // Mixkit catálogo local — ignora falhas
             }
 
-            if (in_array($source, ['pixabay', 'all'], true)) {
+            if (in_array($source, ['pixabay', 'all'], true) && config('criasys.media.pixabay_api_key')) {
                 try {
                     $results = array_merge($results, $this->pixabay->searchAudio($query, $page));
-                } catch (\Throwable $e) {
-                    $errors[] = $e->getMessage();
+                } catch (\Throwable) {
+                    // opcional
                 }
             }
 
-            return response()->json(['results' => $results, 'errors' => $errors]);
+            return response()->json([
+                'results' => $results,
+                'errors' => empty($results) ? ['Nenhum áudio encontrado para esta busca.'] : [],
+            ]);
         }
 
-        $sources = $source === 'all' ? ['pexels', 'pixabay', 'unsplash'] : [$source];
+        $imageSources = $this->resolveImageSources($source);
 
-        foreach ($sources as $src) {
+        foreach ($imageSources as $src) {
             try {
-                $results = array_merge($results, match ($src) {
+                $chunk = match ($src) {
+                    'openverse' => $this->openverse->searchImages($query, $page),
                     'pexels' => $this->pexels->searchPhotos($query, $page),
                     'pixabay' => $this->pixabay->searchImages($query, $page),
                     'unsplash' => $this->unsplash->searchPhotos($query, $page),
                     default => [],
-                });
-            } catch (\Throwable $e) {
-                $errors[] = $e->getMessage();
+                };
+                $results = array_merge($results, $chunk);
+            } catch (\Throwable) {
+                // Não expor erros de API key — tenta outras fontes
             }
         }
 
-        return response()->json(['results' => $results, 'errors' => $errors]);
+        $results = collect($results)->unique(fn ($item) => ($item['source'] ?? '').'-'.($item['id'] ?? ''))->values()->all();
+
+        return response()->json([
+            'results' => $results,
+            'errors' => empty($results)
+                ? ['Nenhuma imagem encontrada para "'.$query.'". Tente outro termo.']
+                : [],
+        ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function resolveImageSources(string $source): array
+    {
+        if ($source === 'openverse') {
+            return ['openverse'];
+        }
+
+        if ($source === 'pexels') {
+            return config('criasys.media.pexels_api_key') ? ['pexels'] : ['openverse'];
+        }
+
+        if ($source === 'pixabay') {
+            return config('criasys.media.pixabay_api_key') ? ['pixabay'] : ['openverse'];
+        }
+
+        if ($source === 'unsplash') {
+            return config('criasys.media.unsplash_access_key') ? ['unsplash'] : ['openverse'];
+        }
+
+        // all: Openverse sempre (gratuito) + APIs configuradas
+        $sources = ['openverse'];
+
+        if (config('criasys.media.pexels_api_key')) {
+            $sources[] = 'pexels';
+        }
+        if (config('criasys.media.pixabay_api_key')) {
+            $sources[] = 'pixabay';
+        }
+        if (config('criasys.media.unsplash_access_key')) {
+            $sources[] = 'unsplash';
+        }
+
+        return $sources;
     }
 
     public function import(Request $request, Project $project): JsonResponse
