@@ -3,7 +3,7 @@
     "name": "criasys-editor",
     "productName": "CriaSys Editor",
     "version": "1.0.0",
-    "description": "Gerador de slideshow narrado — desktop",
+    "description": "Gerador de slideshow narrado — desktop portátil",
     "private": true,
     "type": "module",
     "main": "electron/main.js",
@@ -12,7 +12,11 @@
         "dev": "vite",
         "electron": "electron .",
         "electron:dev": "npm run build && electron .",
-        "electron:build": "npm run build && electron-builder --win"
+        "electron:build:win": "npm run build && electron-builder --win --x64",
+        "electron:build:linux": "npm run build && electron-builder --linux --x64",
+        "electron:build:mac": "npm run build && electron-builder --mac --x64 --arm64",
+        "electron:build:all": "npm run build && electron-builder -mwl --x64",
+        "portable:prepare": "node scripts/prepare-portable.mjs"
     },
     "build": {
         "appId": "com.criasys.editor",
@@ -22,33 +26,78 @@
         },
         "files": [
             "electron/**/*",
-            "app/**/*",
-            "bootstrap/**/*",
-            "config/**/*",
-            "database/**/*",
-            "public/**/*",
-            "resources/**/*",
-            "routes/**/*",
-            "storage/app/criasys/**/*",
-            "vendor/**/*",
-            "artisan",
-            "composer.json",
-            "composer.lock"
+            "package.json"
         ],
         "extraResources": [
+            {
+                "from": ".",
+                "to": "laravel",
+                "filter": [
+                    "app/**/*",
+                    "bootstrap/**/*",
+                    "config/**/*",
+                    "database/**/*",
+                    "public/**/*",
+                    "resources/**/*",
+                    "routes/**/*",
+                    "storage/**/*",
+                    "vendor/**/*",
+                    "artisan",
+                    "composer.json",
+                    "composer.lock"
+                ]
+            },
             {
                 "from": "electron/ffmpeg",
                 "to": "ffmpeg",
                 "filter": ["**/*"]
+            },
+            {
+                "from": "electron/php",
+                "to": "php",
+                "filter": ["**/*"]
+            },
+            {
+                "from": "docs/PORTABLE_LEIA-ME.txt",
+                "to": "LEIA-ME_PORTABLE.txt"
             }
         ],
         "win": {
-            "target": ["nsis"],
-            "icon": "public/favicon.ico"
+            "target": [
+                { "target": "portable", "arch": ["x64"] },
+                { "target": "nsis", "arch": ["x64"] }
+            ],
+            "icon": "public/favicon.ico",
+            "artifactName": "CriaSys-Editor-${version}-Windows-${arch}.${ext}"
         },
         "nsis": {
             "oneClick": false,
-            "allowToChangeInstallationDirectory": true
+            "allowToChangeInstallationDirectory": true,
+            "artifactName": "CriaSys-Editor-${version}-Setup-${arch}.${ext}"
+        },
+        "portable": {
+            "artifactName": "CriaSys-Editor-${version}-Portable-${arch}.exe"
+        },
+        "linux": {
+            "target": [
+                { "target": "AppImage", "arch": ["x64"] },
+                { "target": "deb", "arch": ["x64"] }
+            ],
+            "category": "AudioVideo",
+            "icon": "public/favicon.ico",
+            "artifactName": "CriaSys-Editor-${version}-Linux-${arch}.${ext}"
+        },
+        "mac": {
+            "target": [
+                { "target": "dmg", "arch": ["x64", "arm64"] },
+                { "target": "zip", "arch": ["x64", "arm64"] }
+            ],
+            "category": "public.app-category.video",
+            "icon": "public/favicon.ico",
+            "artifactName": "CriaSys-Editor-${version}-macOS-${arch}.${ext}"
+        },
+        "dmg": {
+            "artifactName": "CriaSys-Editor-${version}-macOS-${arch}.dmg"
         }
     },
     "devDependencies": {

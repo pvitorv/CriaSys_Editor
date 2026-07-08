@@ -2,9 +2,20 @@
 
 return [
 
-    'projects_path' => env('CRIASYS_PROJECTS_PATH') ?: storage_path('app/criasys/projetos'),
+    'projects_path' => env('CRIASYS_PROJECTS_PATH') ?: (
+        env('CRIASYS_DATA_PATH')
+            ? env('CRIASYS_DATA_PATH').DIRECTORY_SEPARATOR.'storage'.DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'criasys'.DIRECTORY_SEPARATOR.'projetos'
+            : storage_path('app/criasys/projetos')
+    ),
 
-    'exports_path' => env('CRIASYS_EXPORTS_PATH') ?: storage_path('app/criasys/exports'),
+    'exports_path' => env('CRIASYS_EXPORTS_PATH') ?: (
+        env('CRIASYS_DATA_PATH')
+            ? env('CRIASYS_DATA_PATH').DIRECTORY_SEPARATOR.'storage'.DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'criasys'.DIRECTORY_SEPARATOR.'exports'
+            : storage_path('app/criasys/exports')
+    ),
+
+    'portable' => env('CRIASYS_PORTABLE', false),
+    'data_path' => env('CRIASYS_DATA_PATH'),
 
     'ffmpeg_path' => env('FFMPEG_PATH') ?: 'ffmpeg',
 

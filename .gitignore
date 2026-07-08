@@ -19,6 +19,8 @@
 /storage/*.key
 /storage/pail
 /vendor
-Homestead.json
+/portable-data
+/CriaSysData
+/dist-electron
 Homestead.yaml
 Thumbs.db

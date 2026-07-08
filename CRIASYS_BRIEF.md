@@ -220,6 +220,28 @@ Alertas ao usuário:
 - Usuário pode dispensar (marcar como lido)
 Projetos existentes sem dono são atribuídos ao UserDev no seed.
 Branch Git: 004
+--------------------------------------------------------------------------------
+5.11 DISTRIBUIÇÃO PORTÁTIL MULTI-PLATAFORMA (branch 005)
+--------------------------------------------------------------------------------
+App copiável via pendrive ou download — executável único por SO.
+Plataformas alvo:
+- Windows 10/11 (x64): .exe Portable (sem instalar) + Setup NSIS
+- Linux (x64): AppImage + .deb
+- macOS (Intel + Apple Silicon): .dmg + .zip
+Modo portátil (empacotado):
+- NÃO exige MySQL — SQLite em CriaSysData/database/criasys.sqlite
+- Dados graváveis ao lado do executável: pasta CriaSysData/
+  (projetos, exports, storage, secrets.json, app.key)
+- PHP + FFmpeg embutidos em resources/php e resources/ffmpeg
+- Primeira execução: migrate + seed UserDev automaticamente
+- secrets.json editável no pendrive (login/senha admin)
+Modo desenvolvimento (electron:dev):
+- Usa .env local + MySQL Laragon (comportamento anterior)
+Build:
+- npm run electron:build:win | :linux | :mac | :all
+- npm run portable:prepare (verifica runtimes)
+Pendrive: copiar pasta do build + CriaSysData/ com os dados do usuário
+Branch Git: 005
 ================================================================================
 6. O QUE NÃO FAZER NO MVP
 ================================================================================

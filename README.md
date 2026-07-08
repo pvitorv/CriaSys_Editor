@@ -68,12 +68,47 @@ php artisan queue:listen  # se não usar composer dev
 
 Acesse: http://127.0.0.1:8000
 
-## Desktop (Electron)
+## Desktop portátil (pendrive / download)
+
+O app empacotado roda **sem instalar MySQL** — usa SQLite na pasta `CriaSysData/` ao lado do executável.
+
+### Preparar runtimes (antes do build)
 
 ```bash
-npm run electron:dev      # build assets + abre app (inicia Laravel automaticamente)
-npm run electron:build    # gera instalador .exe em dist-electron/
+# 1. Coloque PHP e FFmpeg em electron/php/{win|linux|mac} e electron/ffmpeg/{win|linux|mac}
+#    Ver electron/php/README.md e electron/ffmpeg/README.md
+
+npm run portable:prepare   # verifica estrutura
+composer install --no-dev
+npm run build
 ```
+
+### Gerar executáveis
+
+```bash
+npm run electron:build:win     # Portable.exe + Setup.exe (Windows 10/11 x64)
+npm run electron:build:linux   # AppImage + .deb (Linux x64)
+npm run electron:build:mac     # .dmg + .zip (macOS Intel + Apple Silicon)
+npm run electron:build:all     # Windows + Linux + macOS (requer SO compatível)
+```
+
+Arquivos gerados em `dist-electron/`.
+
+### Pendrive
+
+1. Copie o `.exe` Portable ou a pasta completa do build
+2. A pasta **`CriaSysData/`** contém banco, projetos e configurações
+3. Leve o pendrive — seus dados vão junto
+
+Credenciais iniciais portátil: editáveis em `CriaSysData/secrets.json`
+
+### Desenvolvimento Electron (Laragon/MySQL)
+
+```bash
+npm run electron:dev      # usa .env local + MySQL
+```
+
+## Desktop (Electron) — legado dev
 
 ### FFmpeg embutido
 
@@ -113,6 +148,8 @@ Assets de bibliotecas externas salvam metadados de licença. O arquivo `credits.
 | `001` | Fundação MVP |
 | `002` | Export social + pacote profissional |
 | `003` | Electron + polish |
+| `004` | Autenticação multi-usuário |
+| `005` | Distribuição portátil multi-SO |
 
 ## Roadmap
 

@@ -1,0 +1,36 @@
+================================================================================
+CRIASYS EDITOR — VERSÃO PORTÁTIL (PENDRIVE / DOWNLOAD)
+================================================================================
+
+COMO USAR NO WINDOWS
+--------------------
+1. Copie a pasta inteira ou o arquivo "CriaSys-Editor-*-Portable.exe"
+2. Execute o .exe (Portable) ou instale via Setup
+3. Na primeira execução, os dados são criados em: CriaSysData/
+4. Login: UserDev / senha definida em CriaSysData/secrets.json
+
+COMO USAR NO LINUX
+------------------
+1. Baixe o AppImage ou .deb
+2. AppImage: chmod +x CriaSys-Editor-*.AppImage && ./CriaSys-Editor-*.AppImage
+3. Dados gravados em: ./CriaSysData/ (ao lado do executável)
+
+COMO USAR NO macOS
+------------------
+1. Abra o arquivo .dmg e arraste para Aplicativos
+2. Se o macOS bloquear: Preferências > Segurança > Abrir mesmo assim
+3. Dados em: CriaSysData/ ao lado do app
+
+PENDRIVE
+--------
+- Copie a pasta completa do build Portable (Windows) ou AppImage (Linux)
+- A pasta CriaSysData/ contém SEUS projetos — leve junto no pendrive
+- Não precisa instalar MySQL — usa SQLite internamente
+
+REQUISITOS OPCIONAIS
+--------------------
+- Edge TTS: Python + pip install edge-tts (para narração)
+- FFmpeg e PHP já vêm embutidos se o build foi feito corretamente
+
+SUPORTE: pontodeimpacto790@gmail.com
+================================================================================

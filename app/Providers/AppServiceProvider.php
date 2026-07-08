@@ -13,7 +13,9 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        if ($storagePath = env('LARAVEL_STORAGE_PATH')) {
+            $this->app->useStoragePath($storagePath);
+        }
     }
 
     public function boot(): void

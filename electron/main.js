@@ -1,36 +1,21 @@
 import { app, BrowserWindow, dialog } from 'electron';
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerFilesystemIpc } from './ipc/filesystem.js';
 import { registerLaravelIpc, startLaravel, stopLaravel } from './ipc/laravel.js';
 import { registerRenderIpc } from './ipc/render.js';
+import { getLaravelRoot, resolveRuntimePaths } from './portable.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
-const projectRoot = isDev
-    ? path.resolve(__dirname, '..')
-    : app.getAppPath();
+const resourcesPath = process.resourcesPath;
+const execPath = process.execPath;
+const electronDir = __dirname;
+
+const projectRoot = getLaravelRoot(isDev, resourcesPath, app.getAppPath());
+const runtimePaths = resolveRuntimePaths(isDev, electronDir, resourcesPath, execPath);
 
 let mainWindow = null;
-
-function getFfmpegPath() {
-    const platform = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
-    const binary = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-    const bundled = isDev
-        ? path.join(__dirname, 'ffmpeg', platform, binary)
-        : path.join(process.resourcesPath, 'ffmpeg', platform, binary);
-
-    try {
-        if (fs.existsSync(bundled)) {
-            return bundled;
-        }
-    } catch {
-        // fallback to PATH
-    }
-
-    return process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-}
 
 async function createWindow() {
     mainWindow = new BrowserWindow({
@@ -47,14 +32,14 @@ async function createWindow() {
         },
     });
 
-    const url = process.env.CRIASYS_URL || 'http://127.0.0.1:8000';
+    const url = `http://127.0.0.1:${runtimePaths.port}`;
 
     try {
         await mainWindow.loadURL(url);
     } catch (err) {
         dialog.showErrorBox(
             'CriaSys Editor — Erro ao carregar',
-            `Não foi possível abrir ${url}.\n\nVerifique se o Laravel está rodando.\n\n${err.message}`
+            `Não foi possível abrir ${url}.\n\n${err.message}`
         );
     }
 
@@ -64,17 +49,17 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
-    registerFilesystemIpc(projectRoot);
-    registerLaravelIpc(projectRoot, getFfmpegPath());
+    registerFilesystemIpc(projectRoot, runtimePaths.dataPath);
+    registerLaravelIpc(projectRoot, runtimePaths);
     registerRenderIpc();
 
     try {
-        await startLaravel(projectRoot, getFfmpegPath());
+        await startLaravel(projectRoot, runtimePaths);
         await createWindow();
     } catch (err) {
         dialog.showErrorBox(
             'CriaSys Editor — Falha ao iniciar',
-            `${err.message}\n\nCertifique-se de que PHP está no PATH (Laragon) e o .env está configurado.`
+            `${err.message}\n\nModo portátil: coloque PHP e FFmpeg em electron/php e electron/ffmpeg.\nDados gravados em: ${runtimePaths.dataPath}`
         );
         app.quit();
     }
