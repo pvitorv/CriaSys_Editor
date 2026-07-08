@@ -8,11 +8,11 @@ Gerador de **slideshow narrado** — desktop, portátil (pendrive) e multi-plata
 
 | Sistema | O que baixar | Guia completo |
 |---------|--------------|---------------|
-| **Windows 10/11** | `*-Portable-x64.exe` nas [Releases](https://github.com/SEU_USUARIO/CriaSys_Editor/releases) | [Instalação Windows](docs/INSTALACAO.md#windows-10--11) |
+| **Windows 10/11** | `*-Portable-x64.exe` nas [Releases](https://github.com/pvitorv/CriaSys_Editor/releases) | [Instalação Windows](docs/INSTALACAO.md#windows-10--11) |
 | **Linux** | `*.AppImage` ou `*.deb` | [Instalação Linux](docs/INSTALACAO.md#linux-x64) |
 | **macOS** | `*.dmg` (arm64 ou x64) | [Instalação macOS](docs/INSTALACAO.md#macos-intel-e-apple-silicon) |
 
-> Substitua `SEU_USUARIO` pelo dono do repositório GitHub após publicar.
+> Repositório: [github.com/pvitorv/CriaSys_Editor](https://github.com/pvitorv/CriaSys_Editor)
 
 **Pendrive (Windows):** copie o `.exe` + pasta `CriaSysData/` — [instruções](docs/INSTALACAO.md#opção-a--portable-pendrive-sem-instalar-recomendado)
 
@@ -48,7 +48,7 @@ Login: **UserDev** com a senha que **você** definiu em `ADMIN_PASSWORD` — [gu
 
 ```bash
 # Você está na branch 006 (última) — envie como main no GitHub:
-git remote add origin https://github.com/SEU_USUARIO/CriaSys_Editor.git
+git remote add origin https://github.com/pvitorv/CriaSys_Editor.git
 git push -u origin 006:main
 git push origin 001 002 003 004 005 006
 ```

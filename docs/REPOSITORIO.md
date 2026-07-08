@@ -39,7 +39,7 @@ No PC Windows (Laragon), na pasta do projeto:
 cd C:/laragon/www/CriaSys_Editor
 
 # Enviar branch 005 como main no GitHub (sem alterar branches locais)
-git remote add origin https://github.com/SEU_USUARIO/CriaSys_Editor.git
+git remote add origin https://github.com/pvitorv/CriaSys_Editor.git
 git push -u origin 006:main
 
 # Enviar histórico de fases (opcional)
@@ -104,7 +104,7 @@ Anexe os arquivos de `dist-electron/`:
 **Link para compartilhar com usuários:**
 
 ```
-https://github.com/SEU_USUARIO/CriaSys_Editor/releases/latest
+https://github.com/pvitorv/CriaSys_Editor/releases/latest
 ```
 
 Inclua no pendrive (Windows):

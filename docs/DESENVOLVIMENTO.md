@@ -23,13 +23,10 @@ Para quem **clona o repositório no GitHub** e roda o projeto na própria máqui
 ## 1. Clonar o repositório
 
 ```bash
-git clone https://github.com/SEU_USUARIO/CriaSys_Editor.git
+git clone https://github.com/pvitorv/CriaSys_Editor.git
 cd CriaSys_Editor
 git checkout main
 ```
-
-Substitua `SEU_USUARIO` pelo dono do repositório.
-
 ---
 
 ## 2. Criar o arquivo `.env`
