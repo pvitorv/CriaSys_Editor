@@ -14,7 +14,7 @@ Para quem clona o repositório e desenvolve no **Windows com Laragon** (seu caso
 ```bash
 git clone https://github.com/SEU_USUARIO/CriaSys_Editor.git
 cd CriaSys_Editor
-git checkout main          # ou branch 005 — última estável
+git checkout main       # branch remota (equivale à 005)
 
 composer install
 cp .env.example .env

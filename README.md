@@ -45,7 +45,7 @@ Login admin: **UserDev** — veja `.env` (`ADMIN_*`)
 ## Publicar repositório remoto (primeira vez)
 
 ```bash
-git checkout main
+# Você está na branch 005 localmente — envie como main no GitHub:
 git remote add origin https://github.com/SEU_USUARIO/CriaSys_Editor.git
 git push -u origin 005:main
 git push origin 001 002 003 004 005
