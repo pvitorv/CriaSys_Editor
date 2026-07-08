@@ -11,12 +11,17 @@ class AdminUserSeeder extends Seeder
 {
     public function run(): void
     {
+        $password = env('ADMIN_PASSWORD');
+        if (! $password) {
+            throw new \RuntimeException('ADMIN_PASSWORD não definida no .env');
+        }
+
         $admin = User::updateOrCreate(
             ['username' => env('ADMIN_USERNAME', 'UserDev')],
             [
                 'name' => 'Desenvolvedor',
-                'email' => env('ADMIN_EMAIL', 'userdev@criasys.local'),
-                'password' => Hash::make(env('ADMIN_PASSWORD', 'UserDev@2026')),
+                'email' => env('ADMIN_EMAIL', 'pontodeimpacto790@gmail.com'),
+                'password' => Hash::make($password),
                 'is_admin' => true,
                 'status' => User::STATUS_ACTIVE,
             ]

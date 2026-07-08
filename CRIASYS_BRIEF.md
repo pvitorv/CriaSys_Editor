@@ -206,6 +206,7 @@ Troca de e-mail e senha (tela Minha conta):
 - Alternativa: fluxo "Esqueci minha senha" por e-mail
 Administrador padrão:
 - Username: UserDev (desenvolvedor — Vitor)
+- E-mail: pontodeimpacto790@gmail.com
 - Configurável via .env (ADMIN_USERNAME, ADMIN_EMAIL, ADMIN_PASSWORD)
 - Seed: php artisan db:seed --class=AdminUserSeeder
 Poderes do administrador (painel /admin/users):
