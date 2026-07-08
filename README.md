@@ -73,3 +73,4 @@ Detalhes: **[docs/REPOSITORIO.md](docs/REPOSITORIO.md)**
 - **Fase 2B** ✅ Autenticação multi-usuário (UserDev admin)
 - **Fase 005** ✅ Portátil pendrive + builds Win/Linux/macOS
 - **Fase 4 (006)** 🔄 Legendas burn-in · Coqui TTS · templates (em andamento)
+# CriaSys_Editor
