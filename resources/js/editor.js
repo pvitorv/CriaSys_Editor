@@ -27,6 +27,8 @@ window.editorApp = function (projectId) {
         selectedSlide: null,
         activeTab: 'roteiro',
         voice: 'pt-BR-FranciscaNeural',
+        ttsEngine: 'edge',
+        ttsEngines: [],
         narration: null,
         narrationLoading: false,
         mediaQuery: '',
@@ -54,6 +56,7 @@ window.editorApp = function (projectId) {
                 this.loadExportPresets(),
                 this.loadExportPackages(),
                 this.loadAudioTrack(),
+                this.loadTtsEngines(),
             ]);
             this.pollInterval = setInterval(() => {
                 this.loadRenderJobs();
@@ -108,6 +111,16 @@ window.editorApp = function (projectId) {
         scheduleSave() {
             clearTimeout(this.saveTimeout);
             this.saveTimeout = setTimeout(() => this.saveSlide(), 800);
+        },
+
+        async loadTtsEngines() {
+            const { data } = await api.get('/tts/engines');
+            this.ttsEngines = data;
+            const available = data.find(e => e.slug === this.ttsEngine && e.available);
+            if (!available && data.length) {
+                const first = data.find(e => e.available);
+                if (first) this.ttsEngine = first.slug;
+            }
         },
 
         async loadExportPresets() {
@@ -296,7 +309,10 @@ window.editorApp = function (projectId) {
             this.narrationLoading = true;
             this.error = '';
             try {
-                const { data } = await api.post(`/projects/${this.projectId}/narration/generate`, { voice: this.voice });
+                const { data } = await api.post(`/projects/${this.projectId}/narration/generate`, {
+                    voice: this.voice,
+                    engine: this.ttsEngine,
+                });
                 if (data?.audio_path) {
                     data.audio_url = this.fileUrl('audio', data.audio_path.split(/[/\\]/).pop());
                 }
@@ -371,6 +387,16 @@ window.editorApp = function (projectId) {
                 if (data.url) window.open(data.url, '_blank');
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao exportar legendas';
+            }
+        },
+
+        async exportPsd() {
+            try {
+                const { data } = await api.post(`/projects/${this.projectId}/export-psd`);
+                this.message = 'ZIP PSD/PNG gerado';
+                if (data.url) window.open(data.url, '_blank');
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao exportar PSD';
             }
         },
 

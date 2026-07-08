@@ -7,11 +7,15 @@ use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\MediaLibraryController;
 use App\Http\Controllers\Api\NarrationController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\ProjectTemplateController;
 use App\Http\Controllers\Api\RenderController;
 use App\Http\Controllers\Api\SlideController;
+use App\Http\Controllers\Api\TtsController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('export-presets', [RenderController::class, 'presets']);
+Route::get('tts/engines', [TtsController::class, 'engines']);
+Route::get('project-templates', [ProjectTemplateController::class, 'index']);
 
 Route::apiResource('projects', ProjectController::class);
 Route::post('projects/{project}/duplicate', [ProjectController::class, 'duplicate']);
@@ -39,6 +43,7 @@ Route::get('projects/{project}/export-packages', [ExportController::class, 'inde
 Route::post('projects/{project}/export-packages', [ExportController::class, 'store']);
 Route::get('projects/{project}/export-packages/{exportPackage}', [ExportController::class, 'show']);
 Route::post('projects/{project}/subtitles', [ExportController::class, 'subtitles']);
+Route::post('projects/{project}/export-psd', [ExportController::class, 'exportPsd']);
 
 Route::get('projects/{project}/narration', [NarrationController::class, 'show']);
 Route::post('projects/{project}/narration/generate', [NarrationController::class, 'generate']);

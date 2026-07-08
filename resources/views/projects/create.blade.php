@@ -10,7 +10,7 @@
 <div class="max-w-lg">
     <h1 class="text-2xl font-bold mb-6">Novo projeto</h1>
 
-    <form method="POST" action="{{ route('projects.store') }}" class="space-y-5">
+    <form method="POST" action="{{ route('projects.store') }}" class="space-y-5" x-data="{ templateId: '' }">
         @csrf
 
         <div>
@@ -27,6 +27,22 @@
         </div>
 
         <div>
+            <label for="template_id" class="block text-sm font-medium text-zinc-300 mb-1">Template</label>
+            <select name="template_id" id="template_id" x-model="templateId"
+                class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500">
+                <option value="">Em branco (manual)</option>
+                @foreach($templates as $template)
+                    <option value="{{ $template->id }}" @selected(old('template_id') == $template->id)>
+                        {{ $template->name }} ({{ $template->aspect_ratio }})
+                    </option>
+                @endforeach
+            </select>
+            @foreach($templates as $template)
+                <p x-show="templateId == '{{ $template->id }}'" class="text-xs text-zinc-500 mt-1">{{ $template->description }}</p>
+            @endforeach
+        </div>
+
+        <div x-show="!templateId">
             <label class="block text-sm font-medium text-zinc-300 mb-2">Proporção base</label>
             <div class="flex gap-4">
                 <label class="flex items-center gap-2 cursor-pointer">

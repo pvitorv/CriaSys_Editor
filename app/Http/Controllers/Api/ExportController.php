@@ -64,4 +64,27 @@ class ExportController extends Controller
             ]),
         ]);
     }
+
+    public function exportPsd(Request $request, Project $project): JsonResponse
+    {
+        $data = $request->validate([
+            'preset' => ['nullable', 'string', 'exists:export_presets,slug'],
+        ]);
+
+        try {
+            $path = app(\App\Services\Export\PsdExportService::class)
+                ->exportZip($project, $data['preset'] ?? 'youtube_landscape');
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'path' => $path,
+            'url' => route('api.projects.files', [
+                'project' => $project->id,
+                'type' => 'exports',
+                'filename' => basename($path),
+            ]),
+        ]);
+    }
 }

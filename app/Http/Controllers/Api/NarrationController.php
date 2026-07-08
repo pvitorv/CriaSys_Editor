@@ -20,19 +20,21 @@ class NarrationController extends Controller
     {
         $data = $request->validate([
             'voice' => ['nullable', 'string'],
+            'engine' => ['nullable', 'string', 'in:edge,coqui,elevenlabs,openai'],
             'async' => ['nullable', 'boolean'],
         ]);
 
         $voice = $data['voice'] ?? config('criasys.tts.default_voice');
+        $engine = $data['engine'] ?? config('criasys.tts.default_engine');
 
         if ($data['async'] ?? false) {
-            GenerateNarrationJob::dispatch($project->id, $voice);
+            GenerateNarrationJob::dispatch($project->id, $voice, $engine);
 
             return response()->json(['message' => 'Narração enfileirada.'], 202);
         }
 
         try {
-            $narration = $narrationService->generate($project, $voice);
+            $narration = $narrationService->generate($project, $voice, $engine);
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

@@ -13,6 +13,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             ExportPresetSeeder::class,
+            ProjectTemplateSeeder::class,
             AdminUserSeeder::class,
         ]);
     }

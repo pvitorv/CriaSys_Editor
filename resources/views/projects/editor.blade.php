@@ -151,6 +151,15 @@
                 </div>
                 <div class="flex flex-wrap gap-3 items-end">
                     <div>
+                        <label class="text-xs text-zinc-400">Motor TTS</label>
+                        <select x-model="ttsEngine" class="block mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
+                            <template x-for="eng in ttsEngines" :key="eng.slug">
+                                <option :value="eng.slug" :disabled="!eng.available" x-text="eng.name + (eng.available ? '' : ' (indisponível)')"></option>
+                            </template>
+                        </select>
+                        <p class="text-[10px] text-zinc-500 mt-1" x-show="ttsEngines.find(e => e.slug === ttsEngine)?.note" x-text="ttsEngines.find(e => e.slug === ttsEngine)?.note"></p>
+                    </div>
+                    <div>
                         <label class="text-xs text-zinc-400">Voz</label>
                         <select x-model="voice" class="block mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
                             <option value="pt-BR-FranciscaNeural">Francisca (feminina)</option>
@@ -241,6 +250,7 @@
                 <div class="flex flex-wrap gap-2">
                     <button @click="generateThumb()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Gerar thumbnail</button>
                     <button @click="exportSubtitles()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Exportar legendas.srt</button>
+                    <button @click="exportPsd()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Exportar slides PSD</button>
                     <button @click="exportPackage()" class="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-sm">Pacote Premiere/Affinity</button>
                 </div>
                 <div class="space-y-2">

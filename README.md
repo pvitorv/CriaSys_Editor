@@ -63,7 +63,8 @@ Detalhes: **[docs/REPOSITORIO.md](docs/REPOSITORIO.md)**
 |--------|------|
 | `main` | Release estável |
 | `005` | Portátil multi-SO + docs |
-| `006` | Fase 4 — burn-in, evolução |
+| `006` | Burn-in legendas |
+| `007` | Templates · TTS · PSD |
 
 ---
 
@@ -72,5 +73,5 @@ Detalhes: **[docs/REPOSITORIO.md](docs/REPOSITORIO.md)**
 - **Fases 1–3** ✅ MVP, export social, Electron
 - **Fase 2B** ✅ Autenticação multi-usuário (UserDev admin)
 - **Fase 005** ✅ Portátil pendrive + builds Win/Linux/macOS
-- **Fase 4 (006)** 🔄 Legendas burn-in · Coqui TTS · templates (em andamento)
-# CriaSys_Editor
+- **Fase 4 (007)** ✅ Burn-in · templates · TTS plugável · export PSD
+- **Fase 4 restante** Legendas TikTok · roles granulares

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Project;
+use App\Models\ProjectTemplate;
 use App\Services\ProjectStorageService;
+use App\Services\ProjectTemplateService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -14,16 +16,31 @@ class ProjectWebController extends Controller
 
     public function create(): View
     {
-        return view('projects.create');
+        $templates = ProjectTemplate::where('is_active', true)->orderBy('name')->get();
+
+        return view('projects.create', compact('templates'));
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, ProjectTemplateService $templates): RedirectResponse
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'aspect_ratio' => ['required', 'in:16:9,9:16'],
+            'aspect_ratio' => ['required_without:template_id', 'in:16:9,9:16'],
+            'template_id' => ['nullable', 'integer', 'exists:project_templates,id'],
         ]);
+
+        if (! empty($data['template_id'])) {
+            $template = ProjectTemplate::findOrFail($data['template_id']);
+            $project = $templates->createProjectFromTemplate(
+                auth()->user(),
+                $template,
+                $data['name'],
+                $data['description'] ?? null,
+            );
+
+            return redirect()->route('projects.editor', $project);
+        }
 
         $project = auth()->user()->projects()->create([
             'name' => $data['name'],

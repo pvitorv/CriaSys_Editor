@@ -13,11 +13,12 @@ class GenerateNarrationJob implements ShouldQueue
     public function __construct(
         public int $projectId,
         public string $voice,
+        public ?string $engine = null,
     ) {}
 
     public function handle(NarrationService $narrationService): void
     {
         $project = \App\Models\Project::with('slides')->findOrFail($this->projectId);
-        $narrationService->generate($project, $this->voice);
+        $narrationService->generate($project, $this->voice, $this->engine);
     }
 }
