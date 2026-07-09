@@ -83,6 +83,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
         descriptionSaveTimeout: null,
         dragFromIndex: null,
         burnSubtitles: false,
+        timelineZoom: 18,
 
         get previewSlide() {
             if (this.previewPlaying && this.slides.length) {
@@ -104,6 +105,29 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
         get selectedTtsEngineMeta() {
             return this.ttsEngines.find((e) => e.slug === this.ttsEngine) || null;
+        },
+
+        get timelineTotalSeconds() {
+            return this.slides.reduce((sum, s) => sum + parseFloat(s.duration_seconds || 5), 0);
+        },
+
+        get timelineTrackWidthPx() {
+            const gaps = Math.max(0, this.slides.length - 1) * 8;
+            return this.timelineTotalSeconds * this.timelineZoom + gaps + 16;
+        },
+
+        get timelineTicks() {
+            const total = this.timelineTotalSeconds;
+            const step = total > 120 ? 30 : total > 60 ? 15 : total > 20 ? 5 : 2;
+            const ticks = [];
+            for (let sec = 0; sec <= total + 0.01; sec += step) {
+                ticks.push({
+                    sec,
+                    px: sec * this.timelineZoom,
+                    label: this.formatTimelineTime(sec),
+                });
+            }
+            return ticks;
         },
 
         async init() {
@@ -437,6 +461,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.previewIndex = 0;
             this.previewPlayToken++;
             this.previewTransitioning = false;
+            this.scrollTimelineToSlide(0);
             this.schedulePreviewAdvance();
         },
 
@@ -468,6 +493,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             if (trans === 'cut') {
                 this.previewIndex = (this.previewIndex + 1) % this.slides.length;
                 this.previewPlayToken++;
+                this.scrollTimelineToSlide(this.previewIndex);
                 this.schedulePreviewAdvance();
                 return;
             }
@@ -478,6 +504,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 this.previewIndex = (this.previewIndex + 1) % this.slides.length;
                 this.previewPlayToken++;
                 this.previewTransitioning = false;
+                this.scrollTimelineToSlide(this.previewIndex);
                 this.schedulePreviewAdvance();
             }, 500);
         },
@@ -542,6 +569,52 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 this.stopSlideshow();
             }
             this.selectedSlide = this.slides.find(s => s.id === slide.id) ?? slide;
+            const index = this.slides.findIndex(s => s.id === slide.id);
+            if (index >= 0) {
+                this.scrollTimelineToSlide(index);
+            }
+        },
+
+        formatTimelineTime(seconds) {
+            const s = Math.max(0, parseFloat(seconds) || 0);
+            const m = Math.floor(s / 60);
+            const r = Math.round(s % 60);
+            if (m > 0) {
+                return `${m}:${String(r).padStart(2, '0')}`;
+            }
+
+            return `${Math.round(s * 10) / 10}s`;
+        },
+
+        timelineClipWidth(slide) {
+            const dur = parseFloat(slide?.duration_seconds || 5);
+
+            return Math.max(80, dur * this.timelineZoom);
+        },
+
+        timelineOffsetPx(index) {
+            let offset = 0;
+            for (let i = 0; i < index; i++) {
+                offset += this.timelineClipWidth(this.slides[i]) + 8;
+            }
+
+            return offset;
+        },
+
+        scrollTimelineToSlide(index) {
+            this.$nextTick(() => {
+                const scroller = this.$refs.timelineScroll;
+                if (!scroller || index < 0) return;
+                const offset = this.timelineOffsetPx(index);
+                const clipW = this.timelineClipWidth(this.slides[index]);
+                const viewW = scroller.clientWidth || 400;
+                const target = offset - (viewW / 2) + (clipW / 2);
+                scroller.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+            });
+        },
+
+        adjustTimelineZoom(delta) {
+            this.timelineZoom = Math.min(48, Math.max(6, this.timelineZoom + delta));
         },
 
         switchTab(tab) {

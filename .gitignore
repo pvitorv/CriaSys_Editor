@@ -27,5 +27,6 @@
 /bin/piper/*.onnx
 /bin/piper/*.onnx.json
 /bin/piper/piper.exe
+/bin/
 Homestead.yaml
 Thumbs.db

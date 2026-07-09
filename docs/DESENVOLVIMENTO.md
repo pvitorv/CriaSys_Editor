@@ -177,7 +177,7 @@ php artisan queue:work --tries=1 --timeout=0
 
 Login: http://127.0.0.1:8000
 
-Para retomar contexto das branches recentes, leia na raiz: `HANDOFF_012.md` (012), `HANDOFF_010.md` (010), `HANDOFF_008-fix-editor.md` (008/009).
+Para retomar contexto das branches recentes, leia na raiz: `HANDOFF_013.md` (013), `HANDOFF_012.md` (012), `HANDOFF_010.md` (010), `HANDOFF_008-fix-editor.md` (008/009).
 
 ---
 
@@ -316,9 +316,14 @@ Quem **baixar o .exe** não precisa de `.env` — credenciais ficam em `CriaSysD
 | `main` | Release estável |
 | `001`–`007` | Histórico por fase |
 | `008-fix-editor` | Correções editor: UTF-8, TTS Windows, busca imagens, integrações CMS |
-| `009` | Continuidade pós-008 (handoff + próximas features) |
+| `009` | Pacote Premiere ZIP + duplicar projeto |
+| `010` | Vídeos curtos nos slides + central de downloads |
+| `011` | Descrições por plataforma + créditos automáticos |
+| `012` | Licenças pagas (Envato) + busca PT→EN + preview slideshow |
+| `013` | Parser de roteiro + TTS multi-motor (OpenAI/Piper/Edge/ElevenLabs) |
+| `014` | Timeline profissional do editor *(em andamento)* |
 
-Documento de passagem: `HANDOFF_008-fix-editor.md`
+Documentos de passagem: `HANDOFF_013.md`, `HANDOFF_012.md`, `HANDOFF_008-fix-editor.md`
 
 ---
 

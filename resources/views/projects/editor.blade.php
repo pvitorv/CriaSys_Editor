@@ -34,7 +34,7 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-12 gap-4 flex-1 min-h-0">
+    <div class="grid grid-cols-12 gap-4 flex-1 min-h-0 shrink">
         {{-- Lista de slides --}}
         <div class="col-span-3 flex flex-col min-h-0 rounded-xl border border-zinc-800 bg-zinc-900">
             <div class="p-3 border-b border-zinc-800 flex justify-between items-center">
@@ -189,24 +189,92 @@
     </div>
 
     {{-- Timeline --}}
-    <div class="rounded-xl border border-zinc-800 bg-zinc-900 p-3">
-        <h2 class="font-medium text-sm mb-2">Timeline</h2>
-        <div class="flex gap-1 h-8">
-            <template x-for="slide in slides" :key="'tl-' + slide.id">
-                <div
-                    class="rounded bg-violet-800/60 border border-violet-600/50 flex items-center justify-center text-xs truncate px-1 cursor-pointer"
-                    :class="selectedSlide?.id === slide.id ? 'ring-1 ring-violet-400' : ''"
-                    @click="selectSlide(slide)"
-                    :style="'flex: ' + slide.duration_seconds"
-                    x-text="slide.title || 'Slide'"
-                ></div>
-            </template>
+    <div class="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden shrink-0">
+        <div class="px-4 py-3 border-b border-zinc-800 flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <h2 class="font-semibold text-sm text-white">Timeline</h2>
+                <p class="text-[11px] text-zinc-500 mt-0.5">
+                    <span x-text="slides.length"></span> clip(s) ·
+                    <span x-text="formatTimelineTime(timelineTotalSeconds)"></span> total
+                    <span x-show="narration?.audio_url" class="text-emerald-400 ml-1">· narração pronta</span>
+                </p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="button" @click="adjustTimelineZoom(-4)" class="w-7 h-7 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm" title="Diminuir zoom">−</button>
+                <span class="text-[10px] text-zinc-500 w-14 text-center tabular-nums" x-text="timelineZoom + ' px/s'"></span>
+                <button type="button" @click="adjustTimelineZoom(4)" class="w-7 h-7 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm" title="Aumentar zoom">+</button>
+                <button
+                    type="button"
+                    x-show="slides.length > 1"
+                    @click="previewPlaying ? stopSlideshow() : playSlideshow()"
+                    class="ml-2 text-xs px-3 py-1.5 rounded-lg"
+                    :class="previewPlaying ? 'bg-red-900/50 text-red-300' : 'bg-violet-700 text-white hover:bg-violet-600'"
+                    x-text="previewPlaying ? 'Parar' : '▶ Play timeline'"
+                ></button>
+            </div>
+        </div>
+
+        <div x-show="!slides.length" class="px-4 py-8 text-center text-sm text-zinc-500">
+            Adicione slides para montar a linha do tempo.
+        </div>
+
+        <div x-show="slides.length" x-ref="timelineScroll" class="overflow-x-auto overflow-y-hidden px-4 py-4" style="max-height: 160px;">
+            <div class="relative" :style="'width: ' + timelineTrackWidthPx + 'px; min-width: 100%'">
+                {{-- Régua de tempo --}}
+                <div class="relative h-5 mb-2 border-b border-zinc-700/80">
+                    <template x-for="tick in timelineTicks" :key="'tick-' + tick.sec">
+                        <div class="absolute top-0 h-full border-l border-zinc-700/60" :style="'left: ' + tick.px + 'px'">
+                            <span class="absolute -top-0.5 left-1 text-[9px] text-zinc-600 tabular-nums whitespace-nowrap" x-text="tick.label"></span>
+                        </div>
+                    </template>
+                </div>
+
+                {{-- Faixa de clips --}}
+                <div class="flex gap-2 items-stretch relative min-h-[88px]">
+                    <template x-for="(slide, index) in slides" :key="'tl-' + slide.id">
+                        <div
+                            draggable="true"
+                            @dragstart="dragStart(index)"
+                            @dragover.prevent
+                            @drop.prevent="dropSlide(index)"
+                            @click="selectSlide(slide)"
+                            class="flex-shrink-0 rounded-lg border-2 overflow-hidden cursor-grab active:cursor-grabbing transition-all flex flex-col group"
+                            :class="{
+                                'border-violet-400 ring-2 ring-violet-500/30 bg-violet-950/40': selectedSlide?.id === slide.id,
+                                'border-zinc-600 bg-zinc-800/90 hover:border-zinc-500': selectedSlide?.id !== slide.id,
+                                'border-emerald-500/90 ring-2 ring-emerald-500/25': previewPlaying && previewIndex === index,
+                            }"
+                            :style="'width: ' + timelineClipWidth(slide) + 'px'"
+                            :title="(slide.title || 'Slide ' + (index + 1)) + ' · ' + formatTimelineTime(slide.duration_seconds)"
+                        >
+                            <div class="h-11 bg-zinc-950 relative shrink-0 border-b border-zinc-700/50">
+                                <template x-if="slide.image_url">
+                                    <img :src="slide.image_url" alt="" class="absolute inset-0 w-full h-full object-cover opacity-75">
+                                </template>
+                                <template x-if="!slide.image_url">
+                                    <div class="absolute inset-0 bg-gradient-to-br from-zinc-800 to-zinc-900"></div>
+                                </template>
+                                <span class="absolute top-1 left-1 text-[9px] font-medium bg-black/75 px-1.5 py-0.5 rounded text-zinc-200" x-text="index + 1"></span>
+                                <span x-show="slide.video_path" class="absolute top-1 right-1 text-[8px] bg-violet-600/90 px-1 rounded text-white">VÍDEO</span>
+                                <span x-show="slide.narration_text?.trim()" class="absolute bottom-1 right-1 text-[8px] bg-emerald-900/80 px-1 rounded text-emerald-200">🎙</span>
+                            </div>
+                            <div class="p-2 flex-1 flex flex-col justify-between min-h-[36px]">
+                                <p class="text-[10px] text-zinc-200 font-medium leading-snug line-clamp-2" x-text="slide.title || 'Sem título'"></p>
+                                <div class="flex items-center justify-between mt-1 gap-1">
+                                    <span class="text-[9px] text-zinc-500 tabular-nums" x-text="formatTimelineTime(slide.duration_seconds)"></span>
+                                    <span class="text-[8px] text-zinc-600 uppercase truncate max-w-[4rem]" x-text="slide.transition_type || 'fade'"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
         </div>
     </div>
 
     {{-- Abas inferiores --}}
-    <div class="rounded-xl border border-zinc-800 bg-zinc-900">
-        <div class="flex border-b border-zinc-800">
+    <div class="rounded-xl border border-zinc-800 bg-zinc-900 flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div class="flex border-b border-zinc-800 shrink-0">
             <template x-for="tab in ['roteiro', 'audio', 'biblioteca', 'exportar']" :key="tab">
                 <button
                     @click="switchTab(tab)"
@@ -217,7 +285,7 @@
             </template>
         </div>
 
-        <div class="p-4">
+        <div class="p-4 flex-1 min-h-0 overflow-y-auto">
             {{-- Roteiro --}}
             <div x-show="activeTab === 'roteiro'" class="space-y-4">
                 <div>
