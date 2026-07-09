@@ -15,6 +15,7 @@ class EdgeTtsEngine implements TtsEngineInterface
 
         $node = NodeBinary::path();
         $script = base_path('scripts/generate-tts.mjs');
+        $outputPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $outputPath);
         $textFile = dirname($outputPath).DIRECTORY_SEPARATOR.'tts_input_'.uniqid().'.txt';
         File::put($textFile, Utf8::clean($text) ?? '');
 
@@ -22,6 +23,14 @@ class EdgeTtsEngine implements TtsEngineInterface
         $result = Process::timeout(120)
             ->path(base_path())
             ->run($command);
+
+        if (! file_exists($outputPath) || filesize($outputPath) === 0) {
+            // Node pode ter gravado via path.resolve (slashes normalizados)
+            $resolved = dirname($outputPath).DIRECTORY_SEPARATOR.basename($outputPath);
+            if ($resolved !== $outputPath && file_exists($resolved) && filesize($resolved) > 0) {
+                $outputPath = $resolved;
+            }
+        }
 
         if (file_exists($outputPath) && filesize($outputPath) > 0) {
             File::delete($textFile);
