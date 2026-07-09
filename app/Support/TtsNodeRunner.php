@@ -3,87 +3,94 @@
 namespace App\Support;
 
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Process;
 
 class TtsNodeRunner
 {
     public function synthesize(string $text, string $voice, string $outputPath): void
     {
+        @set_time_limit(0);
+
         $outputPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $outputPath);
         File::ensureDirectoryExists(dirname($outputPath));
 
+        $text = Utf8::clean($text) ?? '';
+        if (trim($text) === '') {
+            throw new \RuntimeException('Texto de narração vazio.');
+        }
+
         $node = NodeBinary::path();
-        $script = $this->resolveScript();
+        $script = base_path('scripts/generate-tts.cjs');
+
         $tmpDir = storage_path('framework/process-tmp');
         File::ensureDirectoryExists($tmpDir);
 
         $textFile = $tmpDir.DIRECTORY_SEPARATOR.'tts_in_'.uniqid('', false).'.txt';
-        File::put($textFile, Utf8::clean($text) ?? '');
-
-        if (trim(File::get($textFile)) === '') {
-            File::delete($textFile);
-            throw new \RuntimeException('Texto de narração vazio.');
-        }
-
         $tempOutput = $tmpDir.DIRECTORY_SEPARATOR.'tts_out_'.uniqid('', false).'.mp3';
+        File::put($textFile, $text);
 
-        if (PHP_OS_FAMILY === 'Windows') {
-            $this->runOnWindows($node, $script, $voice, $textFile, $tempOutput, $tmpDir);
-        } else {
-            ProcessRunner::run([$node, $script, '--voice', $voice, '--input', $textFile, '--output', $tempOutput]);
+        $env = [
+            'TEMP' => $tmpDir,
+            'TMP' => $tmpDir,
+            'TMPDIR' => $tmpDir,
+        ];
+
+        // php artisan serve sobrescreve $_SERVER com dados do request; sem SystemRoot/windir
+        // o WinSock/TLS do Node trava ao resolver DNS. Repassamos o ambiente real do SO.
+        foreach ([
+            'SystemRoot', 'windir', 'SystemDrive', 'PATH', 'PATHEXT',
+            'APPDATA', 'LOCALAPPDATA', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH',
+            'ProgramData', 'ProgramFiles', 'ProgramFiles(x86)', 'CommonProgramFiles',
+            'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE', 'COMPUTERNAME', 'USERNAME',
+        ] as $key) {
+            $value = getenv($key);
+            if ($value !== false && $value !== '') {
+                $env[$key] = $value;
+            }
         }
 
-        $this->waitForFile($tempOutput, 60);
+        if ($dbg = getenv('TTS_DEBUG_LOG')) {
+            $env['TTS_DEBUG_LOG'] = $dbg;
+        }
 
-        if (! file_exists($tempOutput) || filesize($tempOutput) === 0) {
-            File::delete($textFile);
+        try {
+            $result = Process::timeout(90)
+                ->path(base_path())
+                ->env($env)
+                ->run([
+                    $node,
+                    $script,
+                    '--voice', $voice,
+                    '--input', $textFile,
+                    '--output', $tempOutput,
+                ]);
+
+            $stdout = trim($result->output());
+            $stderr = trim($result->errorOutput());
+            $exists = file_exists($tempOutput);
+            $size = $exists ? filesize($tempOutput) : 0;
+
+            Log::info('TTS node run', [
+                'context' => app()->runningInConsole() ? 'cli' : 'web',
+                'node' => $node,
+                'exit' => $result->exitCode(),
+                'stdout' => $stdout,
+                'stderr' => $stderr,
+                'file_exists' => $exists,
+                'size' => $size,
+            ]);
+
+            if (! $exists || $size === 0) {
+                $detail = $stderr !== '' ? $stderr : ($stdout !== '' ? $stdout : 'exit='.$result->exitCode());
+
+                throw new \RuntimeException('Node TTS falhou. '.$detail);
+            }
+
+            File::copy($tempOutput, $outputPath);
+        } finally {
+            @File::delete($textFile);
             @File::delete($tempOutput);
-
-            throw new \RuntimeException('Áudio não gerado pelo Node.');
         }
-
-        File::copy($tempOutput, $outputPath);
-        File::delete($textFile);
-        File::delete($tempOutput);
-    }
-
-    private function runOnWindows(string $node, string $script, string $voice, string $textFile, string $tempOutput, string $tmpDir): void
-    {
-        $batch = implode("\r\n", [
-            '@echo off',
-            'setlocal',
-            'set TEMP='.$tmpDir,
-            'set TMP='.$tmpDir,
-            'cd /d "'.base_path().'"',
-            '"'.$node.'" "'.$script.'" --voice '.$voice.' --input "'.$textFile.'" --output "'.$tempOutput.'"',
-            'exit /b %ERRORLEVEL%',
-        ]);
-
-        $result = ProcessRunner::runWindowsBatch($batch);
-
-        if (! $result->successful() && (! file_exists($tempOutput) || filesize($tempOutput) === 0)) {
-            throw new \RuntimeException('Node TTS falhou. exit='.$result->exitCode());
-        }
-    }
-
-    private function waitForFile(string $path, int $maxSeconds): void
-    {
-        for ($i = 0; $i < $maxSeconds * 10; $i++) {
-            if (file_exists($path) && filesize($path) > 0) {
-                return;
-            }
-            usleep(100000);
-        }
-    }
-
-    private function resolveScript(): string
-    {
-        if (PHP_OS_FAMILY === 'Windows') {
-            $launch = base_path('scripts/generate-tts-launch.cjs');
-            if (file_exists($launch)) {
-                return $launch;
-            }
-        }
-
-        return base_path('scripts/generate-tts.cjs');
     }
 }

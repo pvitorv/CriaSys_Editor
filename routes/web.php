@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectWebController;
 use Illuminate\Support\Facades\Route;
@@ -32,6 +33,11 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('/profile/email', [ProfileController::class, 'updateEmail'])->name('profile.email');
     Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
+
+    Route::get('/integrations', [IntegrationController::class, 'edit'])->name('integrations.edit');
+    Route::put('/integrations/{provider}', [IntegrationController::class, 'update'])->name('integrations.update');
+    Route::post('/integrations/{provider}/test', [IntegrationController::class, 'test'])->name('integrations.test');
+    Route::delete('/integrations/{provider}', [IntegrationController::class, 'destroy'])->name('integrations.destroy');
 
     Route::middleware('admin')->prefix('admin')->name('admin.')->group(function () {
         Route::get('/users', [AdminUserController::class, 'index'])->name('users.index');

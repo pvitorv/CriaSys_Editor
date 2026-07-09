@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('export-presets', [RenderController::class, 'presets']);
 Route::get('tts/engines', [TtsController::class, 'engines']);
+Route::get('tts/engines/{provider}/voices', [TtsController::class, 'voices']);
 Route::get('project-templates', [ProjectTemplateController::class, 'index']);
 
 Route::apiResource('projects', ProjectController::class);

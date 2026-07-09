@@ -7,16 +7,19 @@ use App\Support\ExternalHttp;
 
 class ElevenLabsTtsEngine implements TtsEngineInterface
 {
-    public function __construct(private FfmpegRenderService $ffmpeg) {}
+    public function __construct(
+        private FfmpegRenderService $ffmpeg,
+        private TtsCredentials $credentials,
+    ) {}
 
     public function synthesize(string $text, string $voice, string $outputPath): array
     {
-        $apiKey = config('criasys.tts.elevenlabs_api_key');
+        $apiKey = $this->credentials->apiKey('elevenlabs');
         if (! $apiKey) {
-            throw new \RuntimeException('ElevenLabs: defina ELEVENLABS_API_KEY no .env');
+            throw new \RuntimeException('ElevenLabs sem chave. Configure em Integrações (ou ELEVENLABS_API_KEY no .env).');
         }
 
-        $voiceId = $voice ?: config('criasys.tts.elevenlabs_voice_id', '21m00Tcm4TlvDq8ikWAM');
+        $voiceId = $voice ?: $this->credentials->defaultVoice('elevenlabs') ?: '21m00Tcm4TlvDq8ikWAM';
 
         $response = ExternalHttp::client(120)->withHeaders(['xi-api-key' => $apiKey])
             ->post("https://api.elevenlabs.io/v1/text-to-speech/{$voiceId}", [

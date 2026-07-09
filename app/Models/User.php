@@ -43,6 +43,16 @@ class User extends Authenticatable
         return $this->hasMany(Project::class);
     }
 
+    public function integrations(): HasMany
+    {
+        return $this->hasMany(UserIntegration::class);
+    }
+
+    public function integrationFor(string $provider): ?UserIntegration
+    {
+        return $this->integrations()->where('provider', $provider)->first();
+    }
+
     public function alertsReceived(): HasMany
     {
         return $this->hasMany(UserAlert::class, 'to_user_id');

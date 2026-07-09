@@ -19,6 +19,13 @@ class GenerateNarrationJob implements ShouldQueue
     public function handle(NarrationService $narrationService): void
     {
         $project = \App\Models\Project::with('slides')->findOrFail($this->projectId);
+
+        // Na fila não há usuário autenticado; usamos o dono do projeto para
+        // que as credenciais TTS por usuário (Integrações) sejam resolvidas.
+        if ($owner = \App\Models\User::find($project->user_id)) {
+            auth()->setUser($owner);
+        }
+
         $narrationService->generate($project, $this->voice, $this->engine);
     }
 }

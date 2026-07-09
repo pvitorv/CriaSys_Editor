@@ -7,16 +7,19 @@ use App\Support\ExternalHttp;
 
 class OpenAiTtsEngine implements TtsEngineInterface
 {
-    public function __construct(private FfmpegRenderService $ffmpeg) {}
+    public function __construct(
+        private FfmpegRenderService $ffmpeg,
+        private TtsCredentials $credentials,
+    ) {}
 
     public function synthesize(string $text, string $voice, string $outputPath): array
     {
-        $apiKey = config('criasys.tts.openai_api_key');
+        $apiKey = $this->credentials->apiKey('openai');
         if (! $apiKey) {
-            throw new \RuntimeException('OpenAI TTS: defina OPENAI_API_KEY no .env');
+            throw new \RuntimeException('OpenAI TTS sem chave. Configure em Integrações (ou OPENAI_API_KEY no .env).');
         }
 
-        $voice = $voice ?: config('criasys.tts.openai_voice', 'nova');
+        $voice = $voice ?: $this->credentials->defaultVoice('openai') ?: 'nova';
 
         $response = ExternalHttp::client(120)->withToken($apiKey)
             ->post('https://api.openai.com/v1/audio/speech', [

@@ -27,9 +27,11 @@ window.editorApp = function (projectId) {
         selectedSlide: null,
         activeTab: 'roteiro',
         fullScript: '',
-        voice: 'pt-BR-FranciscaNeural',
-        ttsEngine: 'edge',
+        voice: '',
+        ttsEngine: 'elevenlabs',
         ttsEngines: [],
+        voices: [],
+        voicesLoading: false,
         narration: null,
         narrationLoading: false,
         previewLoading: false,
@@ -62,6 +64,7 @@ window.editorApp = function (projectId) {
                 this.loadAudioTrack(),
                 this.loadTtsEngines(),
             ]);
+            await this.loadVoices();
             this.pollInterval = setInterval(() => {
                 this.loadRenderJobs();
                 this.loadExportPackages();
@@ -145,6 +148,26 @@ window.editorApp = function (projectId) {
                 const first = data.find(e => e.available);
                 if (first) this.ttsEngine = first.slug;
             }
+        },
+
+        async loadVoices() {
+            this.voicesLoading = true;
+            try {
+                const { data } = await api.get(`/tts/engines/${this.ttsEngine}/voices`);
+                this.voices = data;
+                if (data.length && !data.some(v => v.id === this.voice)) {
+                    this.voice = data[0].id;
+                }
+            } catch (e) {
+                this.voices = [];
+            } finally {
+                this.voicesLoading = false;
+            }
+        },
+
+        async onEngineChange() {
+            this.voice = '';
+            await this.loadVoices();
         },
 
         async loadExportPresets() {

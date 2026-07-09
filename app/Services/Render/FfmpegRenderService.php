@@ -87,16 +87,29 @@ class FfmpegRenderService
     public function getAudioDuration(string $audioPath): float
     {
         $ffprobe = config('criasys.ffprobe_path');
-        $result = Process::timeout(30)->run([
-            $ffprobe, '-v', 'error', '-show_entries', 'format=duration',
-            '-of', 'default=noprint_wrappers=1:nokey=1', $audioPath,
-        ]);
 
-        if (! $result->successful()) {
-            throw new \RuntimeException('FFprobe falhou: '.$result->errorOutput());
+        try {
+            $result = Process::timeout(30)->run([
+                $ffprobe, '-v', 'error', '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1', $audioPath,
+            ]);
+
+            if ($result->successful()) {
+                $duration = (float) trim($result->output());
+                if ($duration > 0) {
+                    return $duration;
+                }
+            }
+        } catch (\Throwable $e) {
+            // ffprobe ausente/inacessível: cai para a estimativa abaixo.
         }
 
-        return (float) trim($result->output());
+        // Sem ffprobe (ex.: não instalado neste PC). O áudio já existe; estimamos
+        // a duração pelo tamanho do arquivo (~128 kbps) para não bloquear o TTS.
+        // Instale o ffmpeg e defina FFPROBE_PATH no .env para duração exata.
+        $bytes = @filesize($audioPath) ?: 0;
+
+        return max(1.0, round($bytes / 16000, 2));
     }
 
     private function mixAudioTracks(string $videoPath, Project $project, string $outputPath): void

@@ -203,7 +203,7 @@ Parágrafo do slide 3..."
                 <div class="flex flex-wrap gap-3 items-end border-t border-zinc-800 pt-4">
                     <div>
                         <label class="text-xs text-zinc-400">Motor TTS</label>
-                        <select x-model="ttsEngine" class="block mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
+                        <select x-model="ttsEngine" @change="onEngineChange()" class="block mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
                             <template x-for="eng in ttsEngines" :key="eng.slug">
                                 <option :value="eng.slug" :disabled="!eng.available" x-text="eng.name + (eng.available ? '' : ' (indisponível)')"></option>
                             </template>
@@ -212,8 +212,15 @@ Parágrafo do slide 3..."
                     <div>
                         <label class="text-xs text-zinc-400">Voz</label>
                         <select x-model="voice" class="block mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
-                            <option value="pt-BR-FranciscaNeural">Francisca (feminina)</option>
-                            <option value="pt-BR-AntonioNeural">Antonio (masculino)</option>
+                            <template x-if="voicesLoading">
+                                <option value="">Carregando vozes...</option>
+                            </template>
+                            <template x-if="!voicesLoading && !voices.length">
+                                <option value="">Nenhuma voz — configure em Integrações</option>
+                            </template>
+                            <template x-for="v in voices" :key="v.id">
+                                <option :value="v.id" x-text="v.name"></option>
+                            </template>
                         </select>
                     </div>
                     <button @click="testNarration()" :disabled="previewLoading || narrationLoading" class="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-sm">
@@ -225,6 +232,11 @@ Parágrafo do slide 3..."
                     <button @click="syncNarration()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">
                         Sincronizar duração
                     </button>
+                    <p class="w-full text-xs text-zinc-500">
+                        Quer usar sua própria voz? Conecte a ElevenLabs em
+                        <a href="{{ route('integrations.edit') }}" class="text-violet-400 hover:text-violet-300">Integrações</a>
+                        e sua voz clonada aparece aqui.
+                    </p>
                 </div>
 
                 <div class="rounded-lg border border-zinc-700 bg-zinc-800/50 p-4 space-y-3">

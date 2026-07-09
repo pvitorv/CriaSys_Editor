@@ -17,6 +17,7 @@
                 <span x-data x-show="window.criasys?.isDesktop" class="text-xs text-violet-400 hidden" x-init="$el.classList.remove('hidden')">Desktop</span>
                 @auth
                     <span class="text-zinc-400 hidden sm:inline">{{ auth()->user()->username }}</span>
+                    <a href="{{ route('integrations.edit') }}" class="text-zinc-400 hover:text-white">Integrações</a>
                     <a href="{{ route('profile.edit') }}" class="text-zinc-400 hover:text-white">Conta</a>
                     @if(auth()->user()->isAdmin())
                         <a href="{{ route('admin.users.index') }}" class="text-violet-400 hover:text-violet-300">Admin</a>

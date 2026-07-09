@@ -4,6 +4,8 @@ namespace App\Services\Tts;
 
 class TtsEngineFactory
 {
+    public function __construct(private TtsCredentials $credentials) {}
+
     public function resolve(?string $engine = null): TtsEngineInterface
     {
         $engine ??= config('criasys.tts.default_engine');
@@ -41,8 +43,8 @@ class TtsEngineFactory
         return match ($slug) {
             'edge' => true,
             'coqui' => (bool) config('criasys.tts.coqui_python'),
-            'elevenlabs' => (bool) config('criasys.tts.elevenlabs_api_key'),
-            'openai' => (bool) config('criasys.tts.openai_api_key'),
+            'elevenlabs' => $this->credentials->hasKey('elevenlabs'),
+            'openai' => $this->credentials->hasKey('openai'),
             default => false,
         };
     }

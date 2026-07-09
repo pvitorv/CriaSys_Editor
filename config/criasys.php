@@ -28,7 +28,7 @@ return [
     'node_path' => env('NODE_PATH'),
 
     'tts' => [
-        'default_engine' => env('TTS_DEFAULT_ENGINE', 'edge'),
+        'default_engine' => env('TTS_DEFAULT_ENGINE', 'elevenlabs'),
         'default_voice' => env('TTS_DEFAULT_VOICE', 'pt-BR-FranciscaNeural'),
         'coqui_python' => env('COQUI_PYTHON'),
         'elevenlabs_api_key' => env('ELEVENLABS_API_KEY'),
@@ -40,10 +40,10 @@ return [
             'pt-BR-AntonioNeural' => 'Antonio (masculino)',
         ],
         'engines' => [
+            ['slug' => 'elevenlabs', 'name' => 'ElevenLabs (voz própria)', 'unavailable_note' => 'Conecte sua chave em Integrações'],
             ['slug' => 'edge', 'name' => 'Edge TTS (gratuito)', 'unavailable_note' => null],
+            ['slug' => 'openai', 'name' => 'OpenAI TTS', 'unavailable_note' => 'Conecte sua chave em Integrações'],
             ['slug' => 'coqui', 'name' => 'Coqui XTTS (local)', 'unavailable_note' => 'Instale pip install TTS e defina COQUI_PYTHON no .env'],
-            ['slug' => 'elevenlabs', 'name' => 'ElevenLabs (pago)', 'unavailable_note' => 'Defina ELEVENLABS_API_KEY no .env'],
-            ['slug' => 'openai', 'name' => 'OpenAI TTS (pago)', 'unavailable_note' => 'Defina OPENAI_API_KEY no .env'],
         ],
     ],
 
