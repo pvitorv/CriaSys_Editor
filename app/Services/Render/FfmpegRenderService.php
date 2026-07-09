@@ -22,24 +22,33 @@ class FfmpegRenderService
         $this->storage->ensureStructure($project);
         $job->update(['progress' => 10, 'started_at' => now()]);
 
-        $slidePaths = $this->slideshowBuilder->buildSlideImages($project, $preset);
-        $durations = $project->slides->pluck('duration_seconds')->map(fn ($d) => (float) $d)->all();
-
         $exportDir = $this->storage->projectPath($project).DIRECTORY_SEPARATOR.'exports';
+        $tempDir = $exportDir.DIRECTORY_SEPARATOR.'render_segments_'.$job->id;
+        File::ensureDirectoryExists($tempDir);
+
+        $segmentPaths = $this->slideshowBuilder->buildSlideSegments($project, $preset, $tempDir);
         $listPath = $exportDir.DIRECTORY_SEPARATOR.'concat_'.$job->id.'.txt';
         $outputPath = $this->storage->exportPath($project, "render_{$job->id}_{$preset->slug}.mp4");
         $tempVideo = $exportDir.DIRECTORY_SEPARATOR."temp_video_{$job->id}.mp4";
 
-        $this->slideshowBuilder->buildConcatList($slidePaths, $durations, $listPath);
+        $this->slideshowBuilder->buildVideoConcatList($segmentPaths, $listPath);
         $job->update(['progress' => 30]);
 
         $ffmpeg = config('criasys.ffmpeg_path');
         $result = Process::timeout(600)->run([
             $ffmpeg, '-y', '-f', 'concat', '-safe', '0', '-i', $listPath,
-            '-vsync', 'vfr', '-pix_fmt', 'yuv420p',
-            '-s', "{$preset->width}x{$preset->height}",
+            '-c', 'copy',
             $tempVideo,
         ]);
+
+        if (! $result->successful()) {
+            $result = Process::timeout(600)->run([
+                $ffmpeg, '-y', '-f', 'concat', '-safe', '0', '-i', $listPath,
+                '-vsync', 'vfr', '-pix_fmt', 'yuv420p',
+                '-s', "{$preset->width}x{$preset->height}",
+                $tempVideo,
+            ]);
+        }
 
         if (! $result->successful()) {
             throw new \RuntimeException('FFmpeg concat falhou: '.$result->errorOutput());
@@ -58,10 +67,13 @@ class FfmpegRenderService
         $job->update(['progress' => 90]);
 
         File::delete($listPath);
-        foreach ($slidePaths as $path) {
+        foreach ($segmentPaths as $path) {
             if (file_exists($path)) {
                 @File::delete($path);
             }
+        }
+        if (File::isDirectory($tempDir)) {
+            @File::deleteDirectory($tempDir);
         }
 
         return $outputPath;

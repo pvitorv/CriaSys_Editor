@@ -49,7 +49,10 @@
                             <span class="text-xs text-zinc-500 w-5" x-text="index + 1"></span>
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm truncate" x-text="slide.title || 'Slide sem título'"></p>
-                                <p class="text-xs text-zinc-500" x-text="slide.duration_seconds + 's'"></p>
+                                <p class="text-xs text-zinc-500">
+                                    <span x-text="slide.duration_seconds + 's'"></span>
+                                    <span x-show="slide.video_path" class="text-violet-400 ml-1">▶ vídeo</span>
+                                </p>
                             </div>
                             <button @click.stop="removeSlide(slide)" class="text-zinc-500 hover:text-red-400 text-xs">✕</button>
                         </div>
@@ -65,7 +68,10 @@
             </div>
             <div class="flex-1 flex items-center justify-center p-4 overflow-hidden">
                 <div class="w-full aspect-video bg-zinc-950 rounded-lg border border-zinc-800 relative overflow-hidden">
-                    <template x-if="selectedSlide?.image_url">
+                    <template x-if="selectedSlide?.video_url">
+                        <video :src="selectedSlide.video_url" class="absolute inset-0 w-full h-full object-cover opacity-90" autoplay muted loop playsinline></video>
+                    </template>
+                    <template x-if="!selectedSlide?.video_url && selectedSlide?.image_url">
                         <img :src="selectedSlide.image_url" class="absolute inset-0 w-full h-full object-cover opacity-80">
                     </template>
                     <div class="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-center p-6">
@@ -127,6 +133,11 @@
                 <div>
                     <label class="text-xs text-zinc-400">Imagem de fundo</label>
                     <input type="file" accept="image/*" @change="uploadImage($event)" class="w-full mt-1 text-sm text-zinc-400">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">Vídeo curto (B-roll)</label>
+                    <input type="file" accept="video/*" @change="uploadVideo($event)" class="w-full mt-1 text-sm text-zinc-400">
+                    <button x-show="selectedSlide?.video_path" type="button" @click="clearSlideVideo()" class="mt-1 text-xs text-red-400 hover:text-red-300">Remover vídeo do slide</button>
                 </div>
                 <div class="flex flex-wrap gap-2 pt-1">
                     <button type="button" @click="copyTitleToNarration()" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">Título → narração</button>
@@ -278,7 +289,7 @@ Parágrafo do slide 3..."
 
             {{-- Biblioteca --}}
             <div x-show="activeTab === 'biblioteca'" class="space-y-3">
-                <p class="text-xs text-zinc-500">Imagens gratuitas (Creative Commons). Busca automática pelo título do slide ao abrir esta aba.</p>
+                <p class="text-xs text-zinc-500">Imagens e vídeos curtos (Pexels/Pixabay). Áudio para trilha. Clique para inserir no slide selecionado.</p>
                 <div class="flex flex-wrap gap-2">
                     <select x-model="mediaSource" class="rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
                         <option value="all">Todas (gratuitas + APIs)</option>
@@ -290,6 +301,7 @@ Parágrafo do slide 3..."
                     </select>
                     <select x-model="mediaType" class="rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
                         <option value="image">Imagens</option>
+                        <option value="video">Vídeos curtos</option>
                         <option value="audio">Áudio</option>
                     </select>
                     <input
@@ -305,14 +317,22 @@ Parágrafo do slide 3..."
                     </button>
                 </div>
                 <p x-show="mediaErrors.length && !mediaResults.length" class="text-xs text-yellow-400" x-text="mediaErrors.join(' ')"></p>
-                <p x-show="mediaResults.length" class="text-xs text-emerald-400">Clique na imagem para inserir no slide selecionado.</p>
+                <p x-show="mediaResults.length && mediaType === 'image'" class="text-xs text-emerald-400">Clique na imagem para inserir no slide selecionado.</p>
+                <p x-show="mediaResults.length && mediaType === 'video'" class="text-xs text-emerald-400">Clique no vídeo para inserir como B-roll no slide selecionado.</p>
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-56 overflow-y-auto">
                     <template x-for="item in mediaResults" :key="item.source + '-' + item.id">
                         <div class="relative group cursor-pointer rounded overflow-hidden border border-zinc-700 bg-zinc-800" @click="importMedia(item)">
                             <template x-if="item.type === 'audio'">
                                 <div class="h-24 flex items-center justify-center text-xs text-center p-2" x-text="item.title || item.author || 'Áudio'"></div>
                             </template>
-                            <template x-if="item.type !== 'audio'">
+                            <template x-if="item.type === 'video'">
+                                <div class="relative h-24">
+                                    <img :src="item.preview_url" :alt="item.author || 'Vídeo'" class="w-full h-24 object-cover" loading="lazy">
+                                    <span class="absolute inset-0 flex items-center justify-center text-2xl text-white/90">▶</span>
+                                    <span x-show="item.duration_seconds" class="absolute bottom-1 right-1 text-[10px] bg-black/80 px-1 rounded" x-text="item.duration_seconds + 's'"></span>
+                                </div>
+                            </template>
+                            <template x-if="item.type !== 'audio' && item.type !== 'video'">
                                 <img :src="item.preview_url" :alt="item.title || 'Imagem'" class="w-full h-24 object-cover" loading="lazy">
                             </template>
                             <span class="absolute bottom-0 left-0 right-0 bg-black/70 text-[10px] px-1 py-0.5 truncate" x-text="item.source"></span>
@@ -343,6 +363,55 @@ Parágrafo do slide 3..."
                     <button @click="exportPsd()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Exportar slides PSD</button>
                     <button @click="exportPackage()" class="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-sm">Pacote Premiere/Affinity</button>
                 </div>
+
+                <div class="rounded-lg border border-zinc-700 p-3 space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h3 class="text-sm font-medium text-zinc-300">Central de mídias — escolha o que baixar</h3>
+                        <div class="flex gap-2">
+                            <button @click="selectAllReadyDownloads()" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">Selecionar prontos</button>
+                            <button @click="downloadSelected()" class="text-xs px-2 py-1 rounded bg-violet-700 hover:bg-violet-600">Baixar selecionados</button>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-zinc-500">Todos os vídeos, pacotes, legendas, narração e thumbs gerados aparecem aqui. Marque e baixe só o que precisar.</p>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead>
+                                <tr class="text-zinc-500 border-b border-zinc-700">
+                                    <th class="py-1 pr-2 text-left w-8"></th>
+                                    <th class="py-1 pr-2 text-left">Tipo</th>
+                                    <th class="py-1 pr-2 text-left">Arquivo</th>
+                                    <th class="py-1 pr-2 text-left">Formato</th>
+                                    <th class="py-1 pr-2 text-left">Status</th>
+                                    <th class="py-1 pr-2 text-right">Tamanho</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="item in downloads" :key="item.id">
+                                    <tr class="border-b border-zinc-800/80">
+                                        <td class="py-1.5 pr-2">
+                                            <input type="checkbox" :disabled="item.status !== 'ready' || !item.url" :checked="selectedDownloadIds.includes(item.id)" @change="toggleDownload(item.id)">
+                                        </td>
+                                        <td class="py-1.5 pr-2 capitalize" x-text="item.category"></td>
+                                        <td class="py-1.5 pr-2">
+                                            <span x-text="item.label"></span>
+                                            <a x-show="item.url" :href="item.url" target="_blank" class="text-violet-400 ml-1 hover:text-violet-300">↗</a>
+                                        </td>
+                                        <td class="py-1.5 pr-2" x-text="item.format"></td>
+                                        <td class="py-1.5 pr-2">
+                                            <span x-text="item.status" :class="item.status === 'ready' ? 'text-emerald-400' : item.status === 'failed' ? 'text-red-400' : 'text-yellow-400'"></span>
+                                            <span x-show="item.progress && item.status !== 'ready'" x-text="' (' + item.progress + '%)'" class="text-zinc-500"></span>
+                                        </td>
+                                        <td class="py-1.5 text-right text-zinc-400" x-text="formatBytes(item.size)"></td>
+                                    </tr>
+                                </template>
+                                <tr x-show="!downloads.length">
+                                    <td colspan="6" class="py-3 text-zinc-500 text-center">Nenhuma mídia gerada ainda. Use os botões acima para renderizar ou exportar.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <div class="space-y-2">
                     <h3 class="text-sm font-medium text-zinc-300">Pacotes de export</h3>
                     <template x-for="pkg in exportPackages" :key="pkg.id">

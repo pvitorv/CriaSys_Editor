@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ExportPackageJob;
 use App\Models\ExportPackage;
 use App\Models\Project;
+use App\Services\Export\ProjectDownloadCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,6 +15,11 @@ class ExportController extends Controller
     public function index(Project $project): JsonResponse
     {
         return response()->json($project->exportPackages()->latest()->get());
+    }
+
+    public function downloads(Project $project, ProjectDownloadCatalog $catalog): JsonResponse
+    {
+        return response()->json($catalog->list($project));
     }
 
     public function store(Request $request, Project $project): JsonResponse

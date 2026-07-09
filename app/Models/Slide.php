@@ -14,6 +14,7 @@ class Slide extends Model
         'subtitle',
         'body_text',
         'image_path',
+        'video_path',
         'text_style',
         'duration_seconds',
         'transition_type',

@@ -29,7 +29,7 @@ class MediaLibraryController extends Controller
         $data = $request->validate([
             'query' => ['required', 'string', 'min:2'],
             'source' => ['nullable', 'in:openverse,pexels,pixabay,unsplash,mixkit,all'],
-            'type' => ['nullable', 'in:image,audio'],
+            'type' => ['nullable', 'in:image,audio,video'],
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
@@ -57,6 +57,39 @@ class MediaLibraryController extends Controller
             return response()->json([
                 'results' => $results,
                 'errors' => empty($results) ? ['Nenhum áudio encontrado para esta busca.'] : [],
+            ]);
+        }
+
+        if ($type === 'video') {
+            $videoSources = $this->resolveVideoSources($source);
+            $lastError = null;
+
+            foreach ($videoSources as $src) {
+                try {
+                    $chunk = match ($src) {
+                        'pexels' => $this->pexels->searchVideos($query, $page),
+                        'pixabay' => $this->pixabay->searchVideos($query, $page),
+                        default => [],
+                    };
+                    $results = array_merge($results, $chunk);
+                } catch (\Throwable $e) {
+                    $lastError = $e->getMessage();
+                }
+            }
+
+            $results = collect($results)->unique(fn ($item) => ($item['source'] ?? '').'-'.($item['id'] ?? ''))->values()->all();
+
+            $errors = [];
+            if (empty($results)) {
+                $errors[] = 'Nenhum vídeo curto encontrado para "'.$query.'". Configure PEXELS_API_KEY ou PIXABAY_API_KEY.';
+                if ($lastError && config('app.debug')) {
+                    $errors[] = $lastError;
+                }
+            }
+
+            return response()->json([
+                'results' => $results,
+                'errors' => $errors,
             ]);
         }
 
@@ -134,12 +167,36 @@ class MediaLibraryController extends Controller
         return $sources;
     }
 
+    /**
+     * @return list<string>
+     */
+    private function resolveVideoSources(string $source): array
+    {
+        if ($source === 'pexels') {
+            return config('criasys.media.pexels_api_key') ? ['pexels'] : [];
+        }
+
+        if ($source === 'pixabay') {
+            return config('criasys.media.pixabay_api_key') ? ['pixabay'] : [];
+        }
+
+        $sources = [];
+        if (config('criasys.media.pexels_api_key')) {
+            $sources[] = 'pexels';
+        }
+        if (config('criasys.media.pixabay_api_key')) {
+            $sources[] = 'pixabay';
+        }
+
+        return $sources;
+    }
+
     public function import(Request $request, Project $project): JsonResponse
     {
         $data = $request->validate([
             'item' => ['required', 'array'],
             'item.download_url' => ['required', 'url'],
-            'item.type' => ['nullable', 'in:image,audio'],
+            'item.type' => ['nullable', 'in:image,audio,video'],
             'target' => ['nullable', 'in:slide,audio_track'],
         ]);
 
@@ -147,9 +204,11 @@ class MediaLibraryController extends Controller
         $type = $item['type'] ?? 'image';
 
         try {
-            $asset = $type === 'audio'
-                ? $this->importer->importAudio($project, $item)
-                : $this->importer->importImage($project, $item);
+            $asset = match ($type) {
+                'audio' => $this->importer->importAudio($project, $item),
+                'video' => $this->importer->importVideo($project, $item),
+                default => $this->importer->importImage($project, $item),
+            };
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

@@ -20,13 +20,17 @@ class AssetController extends Controller
     {
         $request->validate([
             'file' => ['required', 'file', 'max:20480'],
-            'type' => ['nullable', 'in:image,audio'],
+            'type' => ['nullable', 'in:image,audio,video'],
         ]);
 
         $type = $request->input('type', 'image');
         $mime = $request->file('file')->getMimeType() ?? '';
         if ($type === 'image') {
             $request->validate(['file' => ['image']]);
+        } elseif ($type === 'video') {
+            if (! str_starts_with($mime, 'video/')) {
+                return response()->json(['message' => 'Arquivo deve ser de vídeo.'], 422);
+            }
         } elseif (! str_starts_with($mime, 'audio/')) {
             return response()->json(['message' => 'Arquivo deve ser de áudio.'], 422);
         }

@@ -50,6 +50,46 @@ class PexelsService
         })->all();
     }
 
+    public function searchVideos(string $query, int $page = 1, int $perPage = 15): array
+    {
+        $apiKey = config('criasys.media.pexels_api_key');
+        if (! $apiKey) {
+            throw new \RuntimeException('PEXELS_API_KEY não configurada no .env');
+        }
+
+        $response = ExternalHttp::client()->withHeaders(['Authorization' => $apiKey])
+            ->get('https://api.pexels.com/videos/search', [
+                'query' => $query,
+                'page' => $page,
+                'per_page' => $perPage,
+            ]);
+
+        if (! $response->successful()) {
+            throw new \RuntimeException('Pexels vídeos API erro: '.$response->body());
+        }
+
+        return collect($response->json('videos', []))->map(function (array $video) {
+            $files = collect($video['video_files'] ?? [])->sortByDesc('width');
+            $file = $files->first(fn (array $f) => ($f['width'] ?? 0) <= 1920) ?? $files->first();
+
+            return [
+                'id' => $video['id'],
+                'source' => 'pexels',
+                'type' => 'video',
+                'preview_url' => $video['image'] ?? null,
+                'download_url' => $file['link'] ?? null,
+                'duration_seconds' => $video['duration'] ?? null,
+                'author' => $video['user']['name'] ?? 'Pexels',
+                'original_url' => $video['url'] ?? null,
+                'license_type' => LicenseType::Pexels->value,
+                'requires_attribution' => false,
+                'attribution_text' => isset($video['user']['name'])
+                    ? "Vídeo por {$video['user']['name']} no Pexels"
+                    : 'Vídeo do Pexels',
+            ];
+        })->filter(fn (array $item) => ! empty($item['download_url']))->values()->all();
+    }
+
     public function downloadToProject(Project $project, array $photoData): Asset
     {
         $this->storage->ensureStructure($project);

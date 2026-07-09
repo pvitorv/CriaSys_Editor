@@ -55,6 +55,7 @@ class SlideController extends Controller
             'transition_type' => ['nullable', 'in:fade,cut,slide'],
             'text_style' => ['nullable', 'array'],
             'image_path' => ['nullable', 'string'],
+            'video_path' => ['nullable', 'string'],
         ]);
 
         $slide->update($this->sanitizeSlideInput($data));
@@ -130,7 +131,7 @@ class SlideController extends Controller
      */
     private function sanitizeSlideInput(array $data): array
     {
-        foreach (['title', 'subtitle', 'body_text', 'narration_text', 'image_path'] as $field) {
+        foreach (['title', 'subtitle', 'body_text', 'narration_text', 'image_path', 'video_path'] as $field) {
             if (array_key_exists($field, $data) && is_string($data[$field])) {
                 $data[$field] = Utf8::clean($data[$field]);
             }

@@ -42,6 +42,7 @@ Route::put('projects/{project}/audio-tracks/{audioTrack}', [AudioTrackController
 Route::delete('projects/{project}/audio-tracks/{audioTrack}', [AudioTrackController::class, 'destroy']);
 
 Route::get('projects/{project}/export-packages', [ExportController::class, 'index']);
+Route::get('projects/{project}/downloads', [ExportController::class, 'downloads']);
 Route::post('projects/{project}/export-packages', [ExportController::class, 'store']);
 Route::get('projects/{project}/export-packages/{exportPackage}', [ExportController::class, 'show']);
 Route::post('projects/{project}/subtitles', [ExportController::class, 'subtitles']);

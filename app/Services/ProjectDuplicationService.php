@@ -38,6 +38,9 @@ class ProjectDuplicationService
                     : 'slides';
                 $newSlide->image_path = $this->copyFile($slide->image_path, $copy, $subdir) ?? $slide->image_path;
             }
+            if ($slide->video_path) {
+                $newSlide->video_path = $this->copyFile($slide->video_path, $copy, 'assets') ?? $slide->video_path;
+            }
             $newSlide->save();
         }
 

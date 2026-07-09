@@ -44,6 +44,8 @@ window.editorApp = function (projectId) {
         mediaSearching: false,
         exportPresets: [],
         exportPackages: [],
+        downloads: [],
+        selectedDownloadIds: [],
         audioTrack: { volume: 0.35, ducking_enabled: true },
         renderJobs: [],
         saving: false,
@@ -59,6 +61,7 @@ window.editorApp = function (projectId) {
                 this.loadSlides(),
                 this.loadNarration(),
                 this.loadRenderJobs(),
+                this.loadDownloads(),
                 this.loadExportPresets(),
                 this.loadExportPackages(),
                 this.loadAudioTrack(),
@@ -68,6 +71,7 @@ window.editorApp = function (projectId) {
             this.pollInterval = setInterval(() => {
                 this.loadRenderJobs();
                 this.loadExportPackages();
+                this.loadDownloads();
             }, 3000);
 
             document.addEventListener('keydown', (e) => this.handleShortcut(e));
@@ -137,6 +141,7 @@ window.editorApp = function (projectId) {
                 transition_type: slide.transition_type ?? 'fade',
                 text_style: slide.text_style ?? null,
                 image_path: slide.image_path ?? null,
+                video_path: slide.video_path ?? null,
             };
         },
 
@@ -175,6 +180,52 @@ window.editorApp = function (projectId) {
             this.exportPresets = data;
         },
 
+        async loadDownloads() {
+            const { data } = await api.get(`/projects/${this.projectId}/downloads`);
+            this.downloads = data;
+        },
+
+        toggleDownload(id) {
+            if (this.selectedDownloadIds.includes(id)) {
+                this.selectedDownloadIds = this.selectedDownloadIds.filter(x => x !== id);
+            } else {
+                this.selectedDownloadIds.push(id);
+            }
+        },
+
+        selectAllReadyDownloads() {
+            this.selectedDownloadIds = this.downloads
+                .filter(d => d.status === 'ready' && d.url)
+                .map(d => d.id);
+        },
+
+        downloadSelected() {
+            const items = this.downloads.filter(
+                d => this.selectedDownloadIds.includes(d.id) && d.url
+            );
+            if (!items.length) {
+                this.error = 'Selecione ao menos um arquivo pronto para download.';
+                return;
+            }
+            items.forEach(item => {
+                const a = document.createElement('a');
+                a.href = item.url;
+                a.download = item.filename || '';
+                a.target = '_blank';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            });
+            this.message = `${items.length} arquivo(s) baixado(s)`;
+        },
+
+        formatBytes(bytes) {
+            if (!bytes) return '—';
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1048576).toFixed(1) + ' MB';
+        },
+
         async loadExportPackages() {
             const { data } = await api.get(`/projects/${this.projectId}/export-packages`);
             this.exportPackages = data.map(pkg => ({
@@ -209,6 +260,9 @@ window.editorApp = function (projectId) {
             }
             if (slide.image_path) {
                 slide.image_url = this.fileUrl('assets', slide.image_path.split(/[/\\]/).pop());
+            }
+            if (slide.video_path) {
+                slide.video_url = this.fileUrl('assets', slide.video_path.split(/[/\\]/).pop());
             }
             return slide;
         },
@@ -336,6 +390,27 @@ window.editorApp = function (projectId) {
             await this.uploadAsset(file, 'image');
         },
 
+        async uploadVideo(event) {
+            const file = event.target.files[0];
+            if (!file || !this.selectedSlide) return;
+            try {
+                const asset = await this.uploadAsset(file, 'video', false);
+                this.selectedSlide.video_path = asset.file_path;
+                this.selectedSlide.video_url = this.fileUrl('assets', asset.file_path.split(/[/\\]/).pop());
+                await this.saveSlide();
+                this.message = 'Vídeo inserido no slide';
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao enviar vídeo';
+            }
+        },
+
+        clearSlideVideo() {
+            if (!this.selectedSlide) return;
+            this.selectedSlide.video_path = null;
+            this.selectedSlide.video_url = null;
+            this.scheduleSave();
+        },
+
         async uploadAudio(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -366,7 +441,7 @@ window.editorApp = function (projectId) {
                 { headers: { 'Content-Type': 'multipart/form-data' } }
             );
 
-            if (attachToSlide && this.selectedSlide) {
+            if (attachToSlide && this.selectedSlide && type === 'image') {
                 this.selectedSlide.image_path = asset.file_path;
                 this.selectedSlide.image_url = `/api/projects/${this.projectId}/assets/${asset.id}`;
                 await this.saveSlide();
@@ -420,7 +495,7 @@ window.editorApp = function (projectId) {
 
         async importMedia(item) {
             if (!this.selectedSlide && item.type !== 'audio') {
-                this.error = 'Selecione um slide antes de inserir a imagem.';
+                this.error = 'Selecione um slide antes de inserir mídia.';
                 return;
             }
             const target = item.type === 'audio' ? 'audio_track' : 'slide';
@@ -428,10 +503,19 @@ window.editorApp = function (projectId) {
                 const { data } = await api.post(`/projects/${this.projectId}/media/import`, { item, target });
                 if (target === 'slide' && this.selectedSlide) {
                     const asset = data.asset || data;
-                    this.selectedSlide.image_path = asset.file_path;
-                    this.selectedSlide.image_url = `/api/projects/${this.projectId}/assets/${asset.id}`;
+                    if (item.type === 'video') {
+                        this.selectedSlide.video_path = asset.file_path;
+                        this.selectedSlide.video_url = this.fileUrl('assets', asset.file_path.split(/[/\\]/).pop());
+                        if (item.duration_seconds && item.duration_seconds > 0) {
+                            this.selectedSlide.duration_seconds = Math.min(Math.max(item.duration_seconds, 1), 60);
+                        }
+                        this.message = 'Vídeo curto inserido no slide';
+                    } else {
+                        this.selectedSlide.image_path = asset.file_path;
+                        this.selectedSlide.image_url = `/api/projects/${this.projectId}/assets/${asset.id}`;
+                        this.message = 'Imagem inserida no slide';
+                    }
                     await this.saveSlide();
-                    this.message = 'Imagem inserida no slide';
                 } else {
                     await this.loadAudioTrack();
                     this.message = 'Áudio inserido na trilha';
@@ -580,6 +664,7 @@ window.editorApp = function (projectId) {
                 await api.post(`/projects/${this.projectId}/export-packages`, { preset: 'youtube_landscape' });
                 this.message = 'Pacote enfileirado';
                 await this.loadExportPackages();
+                await this.loadDownloads();
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao exportar pacote';
             }
