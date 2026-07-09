@@ -16,6 +16,47 @@ class MediaImportService
         private UnsplashService $unsplash,
     ) {}
 
+    private function createAsset(Project $project, array $item, string $type, string $path, string $hash, array $extra = []): Asset
+    {
+        $attribution = MediaAttribution::fromSearchItem($item);
+        $source = $item['source'] ?? null;
+
+        if (! $source || $source === 'unknown') {
+            $source = ! empty($attribution['attribution_text']) ? 'library' : 'local';
+        }
+
+        if ($source === 'library' && ! empty($item['download_url'])) {
+            $source = $this->inferSourceFromUrl((string) $item['download_url']) ?? 'mixkit';
+        }
+
+        return Asset::create(array_merge([
+            'project_id' => $project->id,
+            'type' => $type,
+            'file_path' => $path,
+            'file_hash' => $hash,
+            'source' => $source,
+            'license_type' => $item['license_type'] ?? LicenseType::Local->value,
+            'requires_attribution' => $attribution['requires_attribution'],
+            'attribution_text' => $attribution['attribution_text'],
+            'original_url' => $item['original_url'] ?? null,
+            'downloaded_at' => now(),
+        ], $extra));
+    }
+
+    private function inferSourceFromUrl(string $url): ?string
+    {
+        $host = parse_url($url, PHP_URL_HOST) ?? '';
+
+        return match (true) {
+            str_contains($host, 'pexels') => 'pexels',
+            str_contains($host, 'pixabay') => 'pixabay',
+            str_contains($host, 'unsplash') => 'unsplash',
+            str_contains($host, 'mixkit') => 'mixkit',
+            str_contains($host, 'openverse') => 'openverse',
+            default => null,
+        };
+    }
+
     public function importImage(Project $project, array $item): Asset
     {
         $this->storage->ensureStructure($project);
@@ -37,18 +78,13 @@ class MediaImportService
 
         File::put($path, $contents);
 
-        return Asset::create([
-            'project_id' => $project->id,
-            'type' => 'image',
-            'file_path' => $path,
-            'file_hash' => $hash,
-            'source' => $item['source'] ?? 'unknown',
-            'license_type' => $item['license_type'] ?? LicenseType::Local->value,
-            'requires_attribution' => (bool) ($item['requires_attribution'] ?? false),
-            'attribution_text' => $item['attribution_text'] ?? null,
-            'original_url' => $item['original_url'] ?? null,
-            'metadata' => ['external_id' => $item['id'] ?? null],
-            'downloaded_at' => now(),
+        return $this->createAsset($project, $item, 'image', $path, $hash, [
+            'metadata' => [
+                'external_id' => $item['id'] ?? null,
+                'import_source' => $item['source'] ?? null,
+                'author' => $item['author'] ?? $item['photographer'] ?? null,
+                'title' => $item['title'] ?? null,
+            ],
         ]);
     }
 
@@ -68,18 +104,12 @@ class MediaImportService
 
         File::put($path, $contents);
 
-        return Asset::create([
-            'project_id' => $project->id,
-            'type' => 'audio',
-            'file_path' => $path,
-            'file_hash' => $hash,
-            'source' => $item['source'] ?? 'unknown',
-            'license_type' => $item['license_type'] ?? LicenseType::Local->value,
-            'requires_attribution' => (bool) ($item['requires_attribution'] ?? false),
-            'attribution_text' => $item['attribution_text'] ?? null,
-            'original_url' => $item['original_url'] ?? null,
-            'metadata' => ['title' => $item['title'] ?? null],
-            'downloaded_at' => now(),
+        return $this->createAsset($project, $item, 'audio', $path, $hash, [
+            'metadata' => [
+                'title' => $item['title'] ?? null,
+                'import_source' => $item['source'] ?? null,
+                'author' => $item['author'] ?? null,
+            ],
         ]);
     }
 
@@ -99,21 +129,14 @@ class MediaImportService
 
         File::put($path, $contents);
 
-        return Asset::create([
-            'project_id' => $project->id,
-            'type' => 'video',
-            'file_path' => $path,
-            'file_hash' => $hash,
-            'source' => $item['source'] ?? 'unknown',
-            'license_type' => $item['license_type'] ?? LicenseType::Local->value,
-            'requires_attribution' => (bool) ($item['requires_attribution'] ?? false),
-            'attribution_text' => $item['attribution_text'] ?? null,
-            'original_url' => $item['original_url'] ?? null,
+        return $this->createAsset($project, $item, 'video', $path, $hash, [
             'metadata' => [
                 'external_id' => $item['id'] ?? null,
                 'duration_seconds' => $item['duration_seconds'] ?? null,
+                'import_source' => $item['source'] ?? null,
+                'author' => $item['author'] ?? null,
+                'title' => $item['title'] ?? null,
             ],
-            'downloaded_at' => now(),
         ]);
     }
 }

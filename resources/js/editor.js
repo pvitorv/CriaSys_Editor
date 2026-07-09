@@ -20,9 +20,10 @@ window.api.interceptors.response.use(
     }
 );
 
-window.editorApp = function (projectId) {
+window.editorApp = function (projectId, projectMeta = {}) {
     return {
         projectId,
+        projectDescription: projectMeta.description || '',
         slides: [],
         selectedSlide: null,
         activeTab: 'roteiro',
@@ -36,6 +37,12 @@ window.editorApp = function (projectId) {
         narrationLoading: false,
         previewLoading: false,
         previewAudioUrl: null,
+        previewPlaying: false,
+        previewIndex: 0,
+        previewTimer: null,
+        previewTransitioning: false,
+        previewTransitionKind: 'fade',
+        previewPlayToken: 0,
         mediaQuery: '',
         mediaSource: 'all',
         mediaType: 'image',
@@ -49,7 +56,20 @@ window.editorApp = function (projectId) {
         platformDescriptions: {},
         platformDescKeys: ['youtube', 'youtube_shorts', 'tiktok', 'instagram_reels', 'instagram_feed'],
         selectedPlatformDesc: 'youtube',
-        platformDescLoading: false,
+        projectCreditsText: '',
+        projectCreditsCount: 0,
+        publishAuto: false,
+        publishFiles: {},
+        stockLicenses: [],
+        stockLicenseProviders: [],
+        stockLicenseForm: {
+            provider: 'envato',
+            project_title: '',
+            license_url: '',
+            license_note: '',
+            is_default: true,
+        },
+        attachPaidLicenseOnUpload: true,
         audioTrack: { volume: 0.35, ducking_enabled: true },
         renderJobs: [],
         saving: false,
@@ -57,8 +77,27 @@ window.editorApp = function (projectId) {
         error: '',
         pollInterval: null,
         saveTimeout: null,
+        descriptionSaveTimeout: null,
         dragFromIndex: null,
         burnSubtitles: false,
+
+        get previewSlide() {
+            if (this.previewPlaying && this.slides.length) {
+                return this.slides[this.previewIndex] ?? this.selectedSlide;
+            }
+            return this.selectedSlide;
+        },
+
+        get defaultStockLicense() {
+            return this.stockLicenses.find((r) => r.is_default) || this.stockLicenses[0] || null;
+        },
+
+        get stockLicenseProviderHint() {
+            const slug = this.stockLicenseForm.provider;
+            const meta = this.stockLicenseProviders.find((p) => p.slug === slug);
+
+            return meta?.project_hint || '';
+        },
 
         async init() {
             await Promise.all([
@@ -70,8 +109,12 @@ window.editorApp = function (projectId) {
                 this.loadExportPackages(),
                 this.loadAudioTrack(),
                 this.loadTtsEngines(),
+                this.loadProjectCredits(),
+                this.loadPlatformDescriptions(),
+                this.loadStockLicenses(),
             ]);
             await this.loadVoices();
+            await this.syncPublish();
             this.pollInterval = setInterval(() => {
                 this.loadRenderJobs();
                 this.loadExportPackages();
@@ -230,6 +273,116 @@ window.editorApp = function (projectId) {
             return (bytes / 1048576).toFixed(1) + ' MB';
         },
 
+        async loadStockLicenses() {
+            try {
+                const { data } = await api.get(`/projects/${this.projectId}/stock-licenses`);
+                this.stockLicenses = data.registrations || [];
+                this.stockLicenseProviders = data.providers || [];
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao carregar licenças';
+            }
+        },
+
+        providerLabel(slug) {
+            const meta = this.stockLicenseProviders.find((p) => p.slug === slug);
+
+            return meta?.name || slug;
+        },
+
+        async saveStockLicense() {
+            const title = this.stockLicenseForm.project_title.trim();
+            if (!title) {
+                this.error = 'Informe o nome do projeto na plataforma (ex.: nome do projeto Envato).';
+
+                return;
+            }
+
+            try {
+                await api.post(`/projects/${this.projectId}/stock-licenses`, this.stockLicenseForm);
+                this.stockLicenseForm = {
+                    provider: this.stockLicenseForm.provider,
+                    project_title: '',
+                    license_url: '',
+                    license_note: '',
+                    is_default: !this.stockLicenses.length,
+                };
+                await this.loadStockLicenses();
+                await this.syncPublish();
+                this.message = 'Licença cadastrada — uploads manuais usarão este registro.';
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao cadastrar licença';
+            }
+        },
+
+        async setDefaultStockLicense(reg) {
+            try {
+                await api.put(`/projects/${this.projectId}/stock-licenses/${reg.id}`, { is_default: true });
+                await this.loadStockLicenses();
+                this.message = `${this.providerLabel(reg.provider)} definido como licença padrão.`;
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao definir licença padrão';
+            }
+        },
+
+        async applyStockLicenseToLocal(reg) {
+            try {
+                const { data } = await api.post(
+                    `/projects/${this.projectId}/stock-licenses/${reg.id}/apply-local`
+                );
+                await this.syncPublish();
+                this.message = data.message || 'Licença aplicada aos uploads.';
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao vincular licença';
+            }
+        },
+
+        async removeStockLicense(reg) {
+            if (!confirm(`Remover licença «${reg.project_title}»?`)) return;
+
+            try {
+                await api.delete(`/projects/${this.projectId}/stock-licenses/${reg.id}`);
+                await this.loadStockLicenses();
+                await this.syncPublish();
+                this.message = 'Licença removida.';
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao remover licença';
+            }
+        },
+
+        async loadProjectCredits() {
+            try {
+                const { data } = await api.get(`/projects/${this.projectId}/credits`);
+                this.projectCreditsText = data.text || '';
+                this.projectCreditsCount = data.count || 0;
+                this.publishAuto = this.projectCreditsCount > 0;
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao carregar créditos';
+            }
+        },
+
+        applyPublish(publish) {
+            if (!publish) return;
+            this.publishAuto = publish.auto !== false && (publish.materials_count || 0) > 0;
+            this.projectCreditsText = publish.credits_text || '';
+            this.projectCreditsCount = publish.materials_count || 0;
+            if (publish.descriptions) {
+                this.platformDescriptions = publish.descriptions;
+            }
+            if (publish.files) {
+                this.publishFiles = publish.files;
+            }
+        },
+
+        async syncPublish() {
+            try {
+                const { data } = await api.post(`/projects/${this.projectId}/publish/sync`);
+                this.applyPublish(data);
+                await this.loadDownloads();
+            } catch (e) {
+                // silencioso — sync é complementar
+            }
+        },
+
         async loadPlatformDescriptions() {
             try {
                 const { data } = await api.get(`/projects/${this.projectId}/platform-descriptions`);
@@ -239,18 +392,79 @@ window.editorApp = function (projectId) {
             }
         },
 
-        async generatePlatformDescriptions() {
-            this.platformDescLoading = true;
+        copyAllCredits() {
+            if (!this.projectCreditsText) return;
+            navigator.clipboard.writeText(this.projectCreditsText).then(() => {
+                this.message = 'Créditos copiados — cole na descrição da plataforma';
+            }).catch(() => {
+                this.error = 'Não foi possível copiar — selecione e copie manualmente';
+            });
+        },
+
+        scheduleDescriptionSave() {
+            clearTimeout(this.descriptionSaveTimeout);
+            this.descriptionSaveTimeout = setTimeout(() => this.saveProjectDescription(), 800);
+        },
+
+        async saveProjectDescription() {
             try {
-                const { data } = await api.post(`/projects/${this.projectId}/platform-descriptions`);
-                this.platformDescriptions = data.descriptions || {};
-                await this.loadDownloads();
-                this.message = 'Descrições e créditos gerados (disponíveis para download)';
+                await api.put(`/projects/${this.projectId}`, { description: this.projectDescription });
+                await this.syncPublish();
             } catch (e) {
-                this.error = e.response?.data?.message || 'Erro ao gerar descrições';
-            } finally {
-                this.platformDescLoading = false;
+                this.error = e.response?.data?.message || 'Erro ao salvar descrição';
             }
+        },
+
+        playSlideshow() {
+            if (!this.slides.length) return;
+            this.stopSlideshow();
+            this.previewPlaying = true;
+            this.previewIndex = 0;
+            this.previewPlayToken++;
+            this.previewTransitioning = false;
+            this.schedulePreviewAdvance();
+        },
+
+        stopSlideshow() {
+            this.previewPlaying = false;
+            if (this.previewTimer) {
+                clearTimeout(this.previewTimer);
+                this.previewTimer = null;
+            }
+            this.previewTransitioning = false;
+        },
+
+        schedulePreviewAdvance() {
+            if (!this.previewPlaying) return;
+            const slide = this.slides[this.previewIndex];
+            if (!slide) {
+                this.stopSlideshow();
+                return;
+            }
+            const ms = Math.max(500, (slide.duration_seconds || 5) * 1000);
+            this.previewTimer = setTimeout(() => this.advancePreviewSlide(), ms);
+        },
+
+        advancePreviewSlide() {
+            if (!this.previewPlaying || !this.slides.length) return;
+            const slide = this.slides[this.previewIndex];
+            const trans = slide?.transition_type || 'fade';
+
+            if (trans === 'cut') {
+                this.previewIndex = (this.previewIndex + 1) % this.slides.length;
+                this.previewPlayToken++;
+                this.schedulePreviewAdvance();
+                return;
+            }
+
+            this.previewTransitionKind = trans === 'slide' ? 'slide' : 'fade';
+            this.previewTransitioning = true;
+            setTimeout(() => {
+                this.previewIndex = (this.previewIndex + 1) % this.slides.length;
+                this.previewPlayToken++;
+                this.previewTransitioning = false;
+                this.schedulePreviewAdvance();
+            }, 500);
         },
 
         copyPlatformDescription() {
@@ -309,6 +523,9 @@ window.editorApp = function (projectId) {
         },
 
         selectSlide(slide) {
+            if (this.previewPlaying) {
+                this.stopSlideshow();
+            }
             this.selectedSlide = this.slides.find(s => s.id === slide.id) ?? slide;
         },
 
@@ -318,6 +535,7 @@ window.editorApp = function (projectId) {
                 this.prepareMediaSearch();
             }
             if (tab === 'exportar') {
+                this.loadProjectCredits();
                 this.loadPlatformDescriptions();
             }
         },
@@ -382,6 +600,7 @@ window.editorApp = function (projectId) {
                 }
                 this.message = 'Salvo';
                 setTimeout(() => this.message = '', 2000);
+                this.syncPublish();
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao salvar';
             } finally {
@@ -475,6 +694,12 @@ window.editorApp = function (projectId) {
             form.append('file', file);
             form.append('type', type);
 
+            if (this.attachPaidLicenseOnUpload && this.defaultStockLicense) {
+                form.append('stock_license_id', this.defaultStockLicense.id);
+                const baseName = file.name.replace(/\.[^.]+$/, '');
+                form.append('item_title', baseName);
+            }
+
             const { data: asset } = await api.post(
                 `/projects/${this.projectId}/assets/upload`,
                 form,
@@ -485,6 +710,10 @@ window.editorApp = function (projectId) {
                 this.selectedSlide.image_path = asset.file_path;
                 this.selectedSlide.image_url = `/api/projects/${this.projectId}/assets/${asset.id}`;
                 await this.saveSlide();
+            }
+
+            if (asset.stock_license_id) {
+                await this.syncPublish();
             }
 
             return asset;
@@ -524,7 +753,12 @@ window.editorApp = function (projectId) {
                 this.mediaResults = data.results || [];
                 this.mediaErrors = data.errors || [];
                 if (this.mediaResults.length) {
-                    this.message = `${this.mediaResults.length} resultado(s) — clique para inserir`;
+                    const hint = data.search?.translated
+                        ? ` (${data.search.query} → ${data.search.primary})`
+                        : '';
+                    this.message = `${this.mediaResults.length} resultado(s)${hint} — clique para inserir`;
+                } else if (data.search?.translated) {
+                    this.message = `Buscamos também como "${data.search.primary}" — nenhum resultado ainda.`;
                 }
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro na busca';
@@ -540,26 +774,48 @@ window.editorApp = function (projectId) {
             }
             const target = item.type === 'audio' ? 'audio_track' : 'slide';
             try {
-                const { data } = await api.post(`/projects/${this.projectId}/media/import`, { item, target });
+                const { data } = await api.post(`/projects/${this.projectId}/media/import`, {
+                    item,
+                    target,
+                    slide_id: this.selectedSlide?.id,
+                });
+
+                this.applyPublish(data.publish);
+
                 if (target === 'slide' && this.selectedSlide) {
                     const asset = data.asset || data;
-                    if (item.type === 'video') {
-                        this.selectedSlide.video_path = asset.file_path;
-                        this.selectedSlide.video_url = this.fileUrl('assets', asset.file_path.split(/[/\\]/).pop());
-                        if (item.duration_seconds && item.duration_seconds > 0) {
-                            this.selectedSlide.duration_seconds = Math.min(Math.max(item.duration_seconds, 1), 60);
+                    const slideFromServer = data.slide;
+
+                    if (slideFromServer) {
+                        const idx = this.slides.findIndex(s => s.id === slideFromServer.id);
+                        const merged = this.enrichSlide({ ...(idx >= 0 ? this.slides[idx] : {}), ...slideFromServer });
+                        if (idx >= 0) {
+                            this.slides[idx] = merged;
                         }
-                        this.message = 'Vídeo curto inserido no slide';
+                        if (this.selectedSlide?.id === merged.id) {
+                            this.selectedSlide = merged;
+                        }
                     } else {
-                        this.selectedSlide.image_path = asset.file_path;
-                        this.selectedSlide.image_url = `/api/projects/${this.projectId}/assets/${asset.id}`;
-                        this.message = 'Imagem inserida no slide';
+                        if (item.type === 'video') {
+                            this.selectedSlide.video_path = asset.file_path;
+                            this.selectedSlide.video_url = this.fileUrl('assets', asset.file_path.split(/[/\\]/).pop());
+                            if (item.duration_seconds && item.duration_seconds > 0) {
+                                this.selectedSlide.duration_seconds = Math.min(Math.max(item.duration_seconds, 1), 60);
+                            }
+                        } else {
+                            this.selectedSlide.image_path = asset.file_path;
+                            this.selectedSlide.image_url = `/api/projects/${this.projectId}/assets/${asset.id}`;
+                        }
+                        await this.saveSlide();
                     }
-                    await this.saveSlide();
+
+                    this.message = data.publish?.message || 'Mídia inserida — publicação atualizada automaticamente';
                 } else {
                     await this.loadAudioTrack();
-                    this.message = 'Áudio inserido na trilha';
+                    this.message = data.publish?.message || 'Áudio inserido — créditos incluídos automaticamente';
                 }
+
+                await this.loadDownloads();
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao importar';
             }

@@ -8,7 +8,9 @@ use App\Models\ExportPackage;
 use App\Models\Project;
 use App\Services\Export\PlatformPostDescriptionService;
 use App\Services\Export\ProjectAttributionCatalog;
+use App\Services\Export\ProjectCreditsClipboard;
 use App\Services\Export\ProjectDownloadCatalog;
+use App\Services\Export\ProjectPublishAutoSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,6 +24,18 @@ class ExportController extends Controller
     public function downloads(Project $project, ProjectDownloadCatalog $catalog): JsonResponse
     {
         return response()->json($catalog->list($project));
+    }
+
+    public function credits(Project $project, ProjectCreditsClipboard $clipboard): JsonResponse
+    {
+        $lines = $clipboard->lines($project);
+        $text = $clipboard->asText($project);
+
+        return response()->json([
+            'lines' => $lines,
+            'text' => $text,
+            'count' => count($lines),
+        ]);
     }
 
     public function store(Request $request, Project $project): JsonResponse
@@ -122,5 +136,10 @@ class ExportController extends Controller
             'files' => $files,
             'descriptions' => $descriptions->generateAll($project),
         ]);
+    }
+
+    public function syncPublish(Project $project, ProjectPublishAutoSyncService $sync): JsonResponse
+    {
+        return response()->json($sync->sync($project));
     }
 }

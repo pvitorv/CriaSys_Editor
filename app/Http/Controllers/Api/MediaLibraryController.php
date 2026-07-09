@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Project;
+use App\Models\Slide;
+use App\Services\Export\ProjectPublishAutoSyncService;
 use App\Services\MediaLibrary\MediaImportService;
+use App\Services\MediaLibrary\MediaSearchQueryTranslator;
 use App\Services\MediaLibrary\MixkitService;
 use App\Services\MediaLibrary\MixkitVideoService;
 use App\Services\MediaLibrary\OpenverseService;
@@ -24,6 +27,8 @@ class MediaLibraryController extends Controller
         private MixkitService $mixkit,
         private MixkitVideoService $mixkitVideos,
         private MediaImportService $importer,
+        private ProjectPublishAutoSyncService $publishSync,
+        private MediaSearchQueryTranslator $queryTranslator,
     ) {}
 
     public function search(Request $request): JsonResponse
@@ -39,36 +44,82 @@ class MediaLibraryController extends Controller
         $type = $data['type'] ?? 'image';
         $query = $data['query'];
         $page = $data['page'] ?? 1;
-        $results = [];
+        $searchMeta = $this->queryTranslator->meta($query);
+        $terms = $searchMeta['terms'];
 
         if ($type === 'audio') {
-            try {
-                $results = array_merge($results, $this->mixkit->searchMusic($query));
-            } catch (\Throwable) {
-                // Mixkit catálogo local — ignora falhas
-            }
-
-            if (in_array($source, ['pixabay', 'all'], true) && config('criasys.media.pixabay_api_key')) {
-                try {
-                    $results = array_merge($results, $this->pixabay->searchAudio($query, $page));
-                } catch (\Throwable) {
-                    // opcional
-                }
-            }
-
-            return response()->json([
-                'results' => $results,
-                'errors' => empty($results) ? ['Nenhum áudio encontrado para esta busca.'] : [],
-            ]);
+            return response()->json(array_merge(
+                $this->searchAudio($query, $terms, $source, $page),
+                ['search' => $searchMeta]
+            ));
         }
 
         if ($type === 'video') {
-            $videoSources = $this->resolveVideoSources($source);
-            $lastError = null;
+            return response()->json(array_merge(
+                $this->searchVideo($query, $terms, $source, $page),
+                ['search' => $searchMeta]
+            ));
+        }
 
+        return response()->json(array_merge(
+            $this->searchImages($query, $terms, $source, $page),
+            ['search' => $searchMeta]
+        ));
+    }
+
+    /**
+     * @param  list<string>  $terms
+     * @return array{results: list<array<string, mixed>>, errors: list<string>}
+     */
+    private function searchImages(string $query, array $terms, string $source, int $page): array
+    {
+        $imageSources = $this->resolveImageSources($source);
+        $results = [];
+        $lastError = null;
+
+        foreach ($terms as $term) {
+            foreach ($imageSources as $src) {
+                try {
+                    $chunk = match ($src) {
+                        'openverse' => $this->openverse->searchImages($term, $page),
+                        'pexels' => $this->pexels->searchPhotos($term, $page),
+                        'pixabay' => $this->pixabay->searchImages($term, $page),
+                        'unsplash' => $this->unsplash->searchPhotos($term, $page),
+                        default => [],
+                    };
+                    $results = array_merge($results, $chunk);
+                } catch (\Throwable $e) {
+                    $lastError = $e->getMessage();
+                }
+            }
+
+            if (count($results) >= 24) {
+                break;
+            }
+        }
+
+        $results = $this->uniqueResults($results);
+
+        return [
+            'results' => $results,
+            'errors' => $this->buildSearchErrors($results, $query, $lastError, 'imagem', 'imagens'),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $terms
+     * @return array{results: list<array<string, mixed>>, errors: list<string>}
+     */
+    private function searchVideo(string $query, array $terms, string $source, int $page): array
+    {
+        $videoSources = $this->resolveVideoSources($source);
+        $results = [];
+        $lastError = null;
+
+        foreach ($terms as $term) {
             if (in_array('mixkit', $videoSources, true)) {
                 try {
-                    $results = array_merge($results, $this->mixkitVideos->searchVideos($query, $page));
+                    $results = array_merge($results, $this->mixkitVideos->searchVideos($term, $page));
                 } catch (\Throwable $e) {
                     $lastError = $e->getMessage();
                 }
@@ -80,8 +131,8 @@ class MediaLibraryController extends Controller
                 }
                 try {
                     $chunk = match ($src) {
-                        'pexels' => $this->pexels->searchVideos($query, $page),
-                        'pixabay' => $this->pixabay->searchVideos($query, $page),
+                        'pexels' => $this->pexels->searchVideos($term, $page),
+                        'pixabay' => $this->pixabay->searchVideos($term, $page),
                         default => [],
                     };
                     $results = array_merge($results, $chunk);
@@ -90,65 +141,87 @@ class MediaLibraryController extends Controller
                 }
             }
 
-            $results = collect($results)->unique(fn ($item) => ($item['source'] ?? '').'-'.($item['id'] ?? ''))->values()->all();
-
-            $errors = [];
-            if (empty($results)) {
-                $errors[] = 'Nenhum vídeo curto encontrado para "'.$query.'".';
-                if (! config('criasys.media.pexels_api_key') && ! config('criasys.media.pixabay_api_key')) {
-                    $errors[] = 'Mixkit (grátis) não retornou resultados — tente em inglês (ex.: "game") ou outra palavra.';
-                } else {
-                    $errors[] = 'Verifique PEXELS_API_KEY / PIXABAY_API_KEY no .env para mais fontes.';
-                }
-                if ($lastError && config('app.debug')) {
-                    $errors[] = $lastError;
-                }
-                if (config('app.env') !== 'production' && str_contains((string) $lastError, 'SSL')) {
-                    $errors[] = 'Adicione HTTP_VERIFY_SSL=false no .env e rode php artisan config:clear.';
-                }
+            if (count($results) >= 24) {
+                break;
             }
-
-            return response()->json([
-                'results' => $results,
-                'errors' => $errors,
-            ]);
         }
 
-        $imageSources = $this->resolveImageSources($source);
-        $lastError = null;
+        $results = $this->uniqueResults($results);
 
-        foreach ($imageSources as $src) {
+        $errors = $this->buildSearchErrors($results, $query, $lastError, 'vídeo', 'vídeos');
+        if (empty($results) && ! config('criasys.media.pexels_api_key') && ! config('criasys.media.pixabay_api_key')) {
+            $errors[] = 'Mixkit (grátis) não retornou resultados — tente outra palavra em português (ex.: futebol, praia, cidade).';
+        }
+
+        return ['results' => $results, 'errors' => $errors];
+    }
+
+    /**
+     * @param  list<string>  $terms
+     * @return array{results: list<array<string, mixed>>, errors: list<string>}
+     */
+    private function searchAudio(string $query, array $terms, string $source, int $page): array
+    {
+        $results = [];
+
+        foreach ($terms as $term) {
             try {
-                $chunk = match ($src) {
-                    'openverse' => $this->openverse->searchImages($query, $page),
-                    'pexels' => $this->pexels->searchPhotos($query, $page),
-                    'pixabay' => $this->pixabay->searchImages($query, $page),
-                    'unsplash' => $this->unsplash->searchPhotos($query, $page),
-                    default => [],
-                };
-                $results = array_merge($results, $chunk);
-            } catch (\Throwable $e) {
-                $lastError = $e->getMessage();
+                $results = array_merge($results, $this->mixkit->searchMusic($term));
+            } catch (\Throwable) {
+                // catálogo local
+            }
+
+            if (in_array($source, ['pixabay', 'all'], true) && config('criasys.media.pixabay_api_key')) {
+                try {
+                    $results = array_merge($results, $this->pixabay->searchAudio($term, $page));
+                } catch (\Throwable) {
+                    // opcional
+                }
+            }
+
+            if (count($results) >= 20) {
+                break;
             }
         }
 
-        $results = collect($results)->unique(fn ($item) => ($item['source'] ?? '').'-'.($item['id'] ?? ''))->values()->all();
+        $results = $this->uniqueResults($results);
 
-        $errors = [];
-        if (empty($results)) {
-            $errors[] = 'Nenhuma imagem encontrada para "'.$query.'". Tente outro termo.';
-            if ($lastError && config('app.debug')) {
-                $errors[] = $lastError;
-            }
-            if (config('app.env') !== 'production' && str_contains((string) $lastError, 'SSL')) {
-                $errors[] = 'Adicione HTTP_VERIFY_SSL=false no .env e rode php artisan config:clear.';
-            }
-        }
-
-        return response()->json([
+        return [
             'results' => $results,
-            'errors' => $errors,
-        ]);
+            'errors' => empty($results) ? ['Nenhum áudio encontrado para "'.$query.'".'] : [],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $results
+     * @return list<array<string, mixed>>
+     */
+    private function uniqueResults(array $results): array
+    {
+        return collect($results)
+            ->unique(fn ($item) => ($item['source'] ?? '').'-'.($item['id'] ?? ''))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function buildSearchErrors(array $results, string $query, ?string $lastError, string $label, string $labelPlural): array
+    {
+        if (! empty($results)) {
+            return [];
+        }
+
+        $errors = ['Nenhuma '.$label.' encontrada para "'.$query.'". Tente sinônimo ou termo mais genérico.'];
+        if ($lastError && config('app.debug')) {
+            $errors[] = $lastError;
+        }
+        if (config('app.env') !== 'production' && str_contains((string) $lastError, 'SSL')) {
+            $errors[] = 'Adicione HTTP_VERIFY_SSL=false no .env e rode php artisan config:clear.';
+        }
+
+        return $errors;
     }
 
     /**
@@ -172,7 +245,6 @@ class MediaLibraryController extends Controller
             return config('criasys.media.unsplash_access_key') ? ['unsplash'] : ['openverse'];
         }
 
-        // all: Openverse sempre (gratuito) + APIs configuradas
         $sources = ['openverse'];
 
         if (config('criasys.media.pexels_api_key')) {
@@ -211,7 +283,6 @@ class MediaLibraryController extends Controller
             ]);
         }
 
-        // all / openverse / unsplash: Mixkit sempre + APIs configuradas
         $sources = ['mixkit'];
         if (config('criasys.media.pexels_api_key')) {
             $sources[] = 'pexels';
@@ -230,6 +301,7 @@ class MediaLibraryController extends Controller
             'item.download_url' => ['required', 'url'],
             'item.type' => ['nullable', 'in:image,audio,video'],
             'target' => ['nullable', 'in:slide,audio_track'],
+            'slide_id' => ['nullable', 'integer'],
         ]);
 
         $item = $data['item'];
@@ -245,15 +317,44 @@ class MediaLibraryController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
+        $slidePayload = null;
+        if (($data['target'] ?? '') !== 'audio_track' && $type !== 'audio' && ! empty($data['slide_id'])) {
+            $slide = Slide::where('id', $data['slide_id'])
+                ->where('project_id', $project->id)
+                ->first();
+
+            if ($slide) {
+                $updates = [];
+                if ($type === 'video') {
+                    $updates['video_path'] = $asset->file_path;
+                    if (! empty($item['duration_seconds'])) {
+                        $updates['duration_seconds'] = min(max((float) $item['duration_seconds'], 1), 60);
+                    }
+                } else {
+                    $updates['image_path'] = $asset->file_path;
+                }
+                $slide->update($updates);
+                $slidePayload = $slide->fresh();
+            }
+        }
+
+        $publish = $this->publishSync->sync($project);
+
+        $payload = [
+            'asset' => $asset,
+            'slide' => $slidePayload,
+            'publish' => $publish,
+        ];
+
         if (($data['target'] ?? '') === 'audio_track' || $type === 'audio') {
             $track = $project->audioTracks()->updateOrCreate(
                 ['type' => 'music'],
                 ['asset_id' => $asset->id, 'file_path' => $asset->file_path, 'volume' => 0.35, 'ducking_enabled' => true]
             );
 
-            return response()->json(['asset' => $asset, 'audio_track' => $track], 201);
+            return response()->json(array_merge($payload, ['audio_track' => $track]), 201);
         }
 
-        return response()->json($asset, 201);
+        return response()->json($payload, 201);
     }
 }

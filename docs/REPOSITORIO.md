@@ -9,7 +9,7 @@ Este documento explica **como publicar o CriaSys Editor no GitHub** e **como cad
 ```
 CriaSys_Editor/          ← repositório Git
 ├── main                 ← branch padrão (releases) — equivale à 006
-├── 001 … 006            ← branches históricas por fase
+├── 001 … 012            ← branches históricas por fase (atual dev: 013)
 ├── docs/
 │   ├── INSTALACAO.md    ← guia do usuário final (LEIA ISTO)
 │   ├── DESENVOLVIMENTO.md

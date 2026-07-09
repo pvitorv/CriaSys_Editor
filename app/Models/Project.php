@@ -58,6 +58,17 @@ class Project extends Model
         return $this->hasMany(ExportPackage::class);
     }
 
+    public function stockLicenses(): HasMany
+    {
+        return $this->hasMany(ProjectStockLicense::class);
+    }
+
+    public function defaultStockLicense(): ?ProjectStockLicense
+    {
+        return $this->stockLicenses()->where('is_default', true)->first()
+            ?? $this->stockLicenses()->latest()->first();
+    }
+
     public function latestNarration(): ?Narration
     {
         return $this->narrations()->latest()->first();

@@ -9,10 +9,13 @@ class Asset extends Model
 {
     protected $fillable = [
         'project_id',
+        'stock_license_id',
         'type',
         'file_path',
         'file_hash',
         'source',
+        'item_title',
+        'item_external_id',
         'license_type',
         'requires_attribution',
         'attribution_text',
@@ -33,5 +36,10 @@ class Asset extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function stockLicense(): BelongsTo
+    {
+        return $this->belongsTo(ProjectStockLicense::class, 'stock_license_id');
     }
 }

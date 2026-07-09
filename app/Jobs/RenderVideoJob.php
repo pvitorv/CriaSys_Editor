@@ -44,6 +44,8 @@ class RenderVideoJob implements ShouldQueue
                 'output_path' => $outputPath,
                 'completed_at' => now(),
             ]);
+
+            app(\App\Services\Export\ProjectPublishAutoSyncService::class)->sync($job->project);
         } catch (\Throwable $e) {
             Log::error('RenderVideoJob failed', ['job' => $job->id, 'error' => $e->getMessage()]);
             $job->update([

@@ -4,6 +4,8 @@ namespace App\Services\MediaLibrary;
 
 class MixkitService
 {
+    public function __construct(private MediaSearchQueryTranslator $queryTranslator) {}
+
     /**
      * Mixkit não possui API pública — catálogo curado para busca local.
      *
@@ -12,22 +14,35 @@ class MixkitService
     public function searchMusic(string $query): array
     {
         $catalog = config('criasys.mixkit_catalog', []);
-        $query = mb_strtolower(trim($query));
+        $terms = $this->queryTranslator->termsFor($query);
 
-        return collect($catalog)->filter(function (array $track) use ($query) {
-            if ($query === '') {
+        return collect($catalog)->filter(function (array $track) use ($terms) {
+            if ($terms === []) {
                 return true;
             }
 
             $haystack = mb_strtolower($track['title'].' '.($track['tags'] ?? ''));
 
-            return str_contains($haystack, $query);
-        })->map(fn (array $track) => array_merge($track, [
-            'source' => 'mixkit',
-            'type' => 'audio',
-            'license_type' => 'Mixkit License',
-            'requires_attribution' => false,
-            'attribution_text' => 'Música gratuita do Mixkit.co',
-        ]))->values()->all();
+            foreach ($terms as $term) {
+                if ($term !== '' && str_contains($haystack, mb_strtolower($term))) {
+                    return true;
+                }
+            }
+
+            return false;
+        })->map(function (array $track) {
+            $attribution = MediaAttribution::forMixkitMusic(
+                $track['title'] ?? 'Mixkit Music',
+                $track['original_url'] ?? $track['page_url'] ?? 'https://mixkit.co/free-stock-music/'
+            );
+
+            return array_merge($track, [
+                'source' => 'mixkit',
+                'type' => 'audio',
+                'license_type' => 'Mixkit License',
+                'requires_attribution' => $attribution['requires_attribution'],
+                'attribution_text' => $attribution['attribution_text'],
+            ]);
+        })->values()->all();
     }
 }

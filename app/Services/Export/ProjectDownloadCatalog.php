@@ -109,7 +109,7 @@ class ProjectDownloadCatalog
                 }
 
                 $ext = strtolower($file->getExtension());
-                if (! in_array($ext, ['mp4', 'zip', 'srt', 'wav', 'mp3'], true)) {
+                if (! in_array($ext, ['mp4', 'zip', 'srt', 'wav', 'mp3', 'txt'], true)) {
                     continue;
                 }
 
@@ -118,6 +118,7 @@ class ProjectDownloadCatalog
                     'mp4' => 'video',
                     'zip' => 'pacote',
                     'srt' => 'legenda',
+                    'txt' => 'publicacao',
                     default => 'audio',
                 };
 
@@ -126,6 +127,8 @@ class ProjectDownloadCatalog
                     str_starts_with($filename, 'slides_psd_') => 'Slides PSD/PNG',
                     str_starts_with($filename, 'pacote_premiere_') => 'Pacote Premiere',
                     str_starts_with($filename, 'render_') => 'Vídeo render',
+                    str_starts_with($filename, 'descricao_') => 'Descrição '.str_replace(['descricao_', '.txt'], '', $filename),
+                    str_starts_with($filename, 'creditos_') => 'Créditos dos materiais',
                     default => $filename,
                 };
 

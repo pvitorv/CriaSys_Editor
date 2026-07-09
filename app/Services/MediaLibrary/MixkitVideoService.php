@@ -6,6 +6,8 @@ use App\Support\ExternalHttp;
 
 class MixkitVideoService
 {
+    public function __construct(private MediaSearchQueryTranslator $queryTranslator) {}
+
     /**
      * Busca vídeos gratuitos no Mixkit (sem API key) via página pública + schema.org.
      *
@@ -18,7 +20,7 @@ class MixkitVideoService
             return [];
         }
 
-        $terms = $this->searchTerms($query);
+        $terms = $this->queryTranslator->termsFor($query);
         $results = [];
         $seen = [];
 
@@ -43,32 +45,6 @@ class MixkitVideoService
         }
 
         return array_slice($results, 0, 24);
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function searchTerms(string $query): array
-    {
-        $lower = mb_strtolower(trim($query));
-
-        $aliases = [
-            'jogo' => 'gaming',
-            'jogos' => 'gaming',
-            'videogame' => 'gaming',
-            'video game' => 'gaming',
-            'futebol' => 'football',
-            'natureza' => 'nature',
-            'cidade' => 'city',
-            'mar' => 'ocean',
-            'floresta' => 'forest',
-        ];
-
-        if (isset($aliases[$lower])) {
-            return [$aliases[$lower], $lower];
-        }
-
-        return [$lower];
     }
 
     private function fetchPage(string $term, int $page): ?string
@@ -133,6 +109,11 @@ class MixkitVideoService
                 continue;
             }
 
+            $attribution = MediaAttribution::forMixkitVideo([
+                'title' => $node['name'] ?? 'Vídeo Mixkit',
+                'original_url' => $node['@id'] ?? 'https://mixkit.co/free-stock-video/',
+            ]);
+
             $items[] = [
                 'id' => $id,
                 'source' => 'mixkit',
@@ -144,8 +125,8 @@ class MixkitVideoService
                 'author' => 'Mixkit',
                 'original_url' => $node['@id'] ?? 'https://mixkit.co/free-stock-video/',
                 'license_type' => 'Mixkit License',
-                'requires_attribution' => false,
-                'attribution_text' => 'Vídeo gratuito do Mixkit.co',
+                'requires_attribution' => $attribution['requires_attribution'],
+                'attribution_text' => $attribution['attribution_text'],
             ];
         }
 
@@ -163,6 +144,12 @@ class MixkitVideoService
 
         $items = [];
         foreach (array_unique($matches[1]) as $id) {
+            $pageUrl = "https://mixkit.co/free-stock-video/{$id}/";
+            $attribution = MediaAttribution::forMixkitVideo([
+                'title' => 'Vídeo Mixkit #'.$id,
+                'original_url' => $pageUrl,
+            ]);
+
             $items[] = [
                 'id' => $id,
                 'source' => 'mixkit',
@@ -172,10 +159,10 @@ class MixkitVideoService
                 'download_url' => "https://assets.mixkit.co/videos/{$id}/{$id}-720.mp4",
                 'duration_seconds' => null,
                 'author' => 'Mixkit',
-                'original_url' => 'https://mixkit.co/free-stock-video/',
+                'original_url' => $pageUrl,
                 'license_type' => 'Mixkit License',
-                'requires_attribution' => false,
-                'attribution_text' => 'Vídeo gratuito do Mixkit.co',
+                'requires_attribution' => $attribution['requires_attribution'],
+                'attribution_text' => $attribution['attribution_text'],
             ];
         }
 

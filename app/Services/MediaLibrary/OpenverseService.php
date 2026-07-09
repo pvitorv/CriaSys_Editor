@@ -25,7 +25,7 @@ class OpenverseService
         return collect($response->json('results', []))->map(function (array $item) {
             $creator = $item['creator'] ?? 'Desconhecido';
             $license = strtoupper($item['license'] ?? 'CC0');
-            $requiresAttribution = ! in_array($license, ['CC0', 'PDM'], true);
+            $attribution = MediaAttribution::forOpenverseImage($item);
 
             return [
                 'id' => $item['id'] ?? md5($item['url'] ?? uniqid()),
@@ -37,10 +37,8 @@ class OpenverseService
                 'author' => $creator,
                 'original_url' => $item['foreign_landing_url'] ?? $item['detail_url'] ?? null,
                 'license_type' => $license === 'PDM' ? LicenseType::Cc0->value : $license,
-                'requires_attribution' => $requiresAttribution,
-                'attribution_text' => $requiresAttribution
-                    ? "Imagem por {$creator} — licença {$license} (Openverse)"
-                    : null,
+                'requires_attribution' => $attribution['requires_attribution'],
+                'attribution_text' => $attribution['attribution_text'],
             ];
         })->filter(fn ($item) => ! empty($item['download_url']))->values()->all();
     }

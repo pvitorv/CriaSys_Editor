@@ -8,7 +8,7 @@
 
 @section('content')
 <div
-    x-data="editorApp({{ $project->id }})"
+    x-data="editorApp({{ $project->id }}, @js(['description' => $project->description ?? '', 'name' => $project->name]))"
     x-init="init()"
     class="flex flex-col gap-4"
     style="height: calc(100vh - 8rem);"
@@ -19,6 +19,9 @@
             <p class="text-zinc-500 text-sm">Editor de slideshow</p>
         </div>
         <div class="flex gap-2 text-sm items-center">
+            <span x-show="publishAuto && projectCreditsCount" class="text-[11px] text-emerald-400 hidden sm:inline">
+                ✓ Publicação automática — <span x-text="projectCreditsCount"></span> crédito(s) já nas descrições
+            </span>
             <span x-show="saving" class="text-zinc-500">Salvando...</span>
             <span x-show="message" x-text="message" class="text-emerald-400"></span>
             <span x-show="error" x-text="error" class="text-red-400"></span>
@@ -63,25 +66,56 @@
 
         {{-- Preview --}}
         <div class="col-span-5 flex flex-col min-h-0 rounded-xl border border-zinc-800 bg-zinc-900">
-            <div class="p-3 border-b border-zinc-800">
+            <div class="p-3 border-b border-zinc-800 flex items-center justify-between gap-2">
                 <h2 class="font-medium text-sm">Preview</h2>
+                <div class="flex items-center gap-2">
+                    <span x-show="previewPlaying" class="text-[10px] text-violet-400">
+                        Slide <span x-text="previewIndex + 1"></span>/<span x-text="slides.length"></span>
+                        · <span x-text="(previewSlide?.duration_seconds || 0) + 's'"></span>
+                    </span>
+                    <button
+                        x-show="slides.length > 1"
+                        @click="previewPlaying ? stopSlideshow() : playSlideshow()"
+                        class="text-xs px-2 py-1 rounded"
+                        :class="previewPlaying ? 'bg-red-900/60 text-red-300' : 'bg-violet-700 text-white hover:bg-violet-600'"
+                        x-text="previewPlaying ? 'Parar' : '▶ Reproduzir slideshow'"
+                    ></button>
+                </div>
             </div>
             <div class="flex-1 flex items-center justify-center p-4 overflow-hidden">
                 <div class="w-full aspect-video bg-zinc-950 rounded-lg border border-zinc-800 relative overflow-hidden">
-                    <template x-if="selectedSlide?.video_url">
-                        <video :src="selectedSlide.video_url" class="absolute inset-0 w-full h-full object-cover opacity-90" autoplay muted loop playsinline></video>
-                    </template>
-                    <template x-if="!selectedSlide?.video_url && selectedSlide?.image_url">
-                        <img :src="selectedSlide.image_url" class="absolute inset-0 w-full h-full object-cover opacity-80">
-                    </template>
-                    <div class="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-center p-6">
-                        <h3
-                            class="font-bold mb-2"
-                            :style="'color:' + (selectedSlide?.text_style?.title_color || '#fff') + ';font-size:' + Math.min(selectedSlide?.text_style?.title_size || 32, 32) + 'px'"
-                            x-text="selectedSlide?.title || 'Selecione um slide'"
-                        ></h3>
-                        <p class="text-lg text-zinc-300 mb-2" x-text="selectedSlide?.subtitle || ''"></p>
-                        <p class="text-sm text-zinc-400" x-text="selectedSlide?.body_text || ''"></p>
+                    <div
+                        class="absolute inset-0 transition-all duration-500"
+                        :class="{
+                            'opacity-0': previewTransitioning,
+                            'opacity-100': !previewTransitioning,
+                            'translate-x-0': previewTransitioning && previewTransitionKind === 'slide',
+                            '-translate-x-4': previewTransitioning && previewTransitionKind === 'slide'
+                        }"
+                    >
+                        <template x-if="previewSlide?.video_url">
+                            <video
+                                :key="'pv-' + previewSlide?.id + '-' + previewPlayToken"
+                                :src="previewSlide.video_url"
+                                class="absolute inset-0 w-full h-full object-cover opacity-90"
+                                autoplay
+                                muted
+                                playsinline
+                                x-ref="previewVideo"
+                            ></video>
+                        </template>
+                        <template x-if="!previewSlide?.video_url && previewSlide?.image_url">
+                            <img :src="previewSlide.image_url" class="absolute inset-0 w-full h-full object-cover opacity-80">
+                        </template>
+                        <div class="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-center p-6">
+                            <h3
+                                class="font-bold mb-2"
+                                :style="'color:' + (previewSlide?.text_style?.title_color || '#fff') + ';font-size:' + Math.min(previewSlide?.text_style?.title_size || 32, 32) + 'px'"
+                                x-text="previewSlide?.title || 'Selecione um slide'"
+                            ></h3>
+                            <p class="text-lg text-zinc-300 mb-2" x-text="previewSlide?.subtitle || ''"></p>
+                            <p class="text-sm text-zinc-400" x-text="previewSlide?.body_text || ''"></p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -308,7 +342,7 @@ Parágrafo do slide 3..."
                         type="text"
                         x-model="mediaQuery"
                         @keydown.enter.prevent="searchMedia()"
-                        placeholder="Buscar pelo título ou palavra-chave..."
+                        placeholder="Buscar em português — ex.: praia, futebol, cachorro, cidade..."
                         class="flex-1 min-w-[200px] rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm"
                     >
                     <button @click="searchFromSlideTitle()" :disabled="!selectedSlide?.title" class="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-sm">Título</button>
@@ -317,8 +351,14 @@ Parágrafo do slide 3..."
                     </button>
                 </div>
                 <p x-show="mediaErrors.length && !mediaResults.length" class="text-xs text-yellow-400" x-text="mediaErrors.join(' ')"></p>
+                <p class="text-[11px] text-zinc-500">Digite em português — o app traduz automaticamente para as APIs (Openverse, Mixkit, Pexels…).</p>
                 <p x-show="mediaResults.length && mediaType === 'image'" class="text-xs text-emerald-400">Clique na imagem para inserir no slide selecionado.</p>
                 <p x-show="mediaResults.length && mediaType === 'video'" class="text-xs text-emerald-400">Clique no vídeo para inserir como B-roll no slide selecionado.</p>
+                <div x-show="publishAuto && projectCreditsCount" class="rounded border border-emerald-800/40 bg-emerald-950/30 p-2">
+                    <p class="text-xs text-emerald-300">
+                        ✓ <strong>Publicação automática</strong> — ao inserir mídia da biblioteca, créditos e descrições (YouTube, TikTok, Instagram) são gerados e salvos nos arquivos de exportação. Nada para copiar manualmente.
+                    </p>
+                </div>
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-56 overflow-y-auto">
                     <template x-for="item in mediaResults" :key="item.source + '-' + item.id">
                         <div class="relative group cursor-pointer rounded overflow-hidden border border-zinc-700 bg-zinc-800" @click="importMedia(item)">
@@ -336,6 +376,7 @@ Parágrafo do slide 3..."
                                 <img :src="item.preview_url" :alt="item.title || 'Imagem'" class="w-full h-24 object-cover" loading="lazy">
                             </template>
                             <span class="absolute bottom-0 left-0 right-0 bg-black/70 text-[10px] px-1 py-0.5 truncate" x-text="item.source"></span>
+                            <p x-show="item.attribution_text" class="absolute top-0 left-0 right-0 bg-black/80 text-[9px] px-1 py-0.5 line-clamp-2 leading-tight opacity-0 group-hover:opacity-100 transition-opacity" x-text="item.attribution_text" title="Crédito sugerido pela plataforma"></p>
                             <span x-show="item.requires_attribution || item.attribution_text" class="absolute top-1 right-1 text-[10px] bg-yellow-600/80 px-1 rounded" title="Crédito ao autor">©</span>
                             <div class="absolute inset-0 bg-violet-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs font-medium">Inserir</div>
                         </div>
@@ -362,17 +403,117 @@ Parágrafo do slide 3..."
                     <button @click="exportSubtitles()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Exportar legendas.srt</button>
                     <button @click="exportPsd()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Exportar slides PSD</button>
                     <button @click="exportPackage()" class="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-sm">Pacote Premiere/Affinity</button>
-                    <button @click="generatePlatformDescriptions()" :disabled="platformDescLoading" class="px-4 py-2 rounded-lg bg-violet-700 hover:bg-violet-600 disabled:opacity-50 text-sm">
-                        <span x-text="platformDescLoading ? 'Gerando...' : 'Gerar descrições + créditos'"></span>
-                    </button>
+                </div>
+
+                <div class="rounded-lg border border-emerald-800/50 bg-emerald-950/20 p-3 space-y-3">
+                    <h3 class="text-sm font-medium text-zinc-200">Créditos e licenças (automático)</h3>
+                    <p class="text-[11px] text-zinc-500">
+                        <strong class="text-zinc-400">Biblioteca grátis</strong> (Openverse, Mixkit, Pexels, Pixabay…) → créditos oficiais entram sozinhos nas descrições.
+                        <strong class="text-zinc-400">Mídia paga</strong> (Envato, Storyblocks…) → cadastre a licença do projeto abaixo; uploads manuais herdam o registro.
+                    </p>
+                    <p x-show="!projectCreditsCount" class="text-xs text-zinc-500">Importe da aba Biblioteca ou vincule licença paga para gerar o bloco CRÉDITOS E LICENÇAS.</p>
+                    <p x-show="projectCreditsCount" class="text-xs text-emerald-400" x-text="projectCreditsCount + ' material(is) com crédito ou licença nas descrições por plataforma'"></p>
+                    <div x-show="Object.keys(publishFiles).length" class="flex flex-wrap gap-1">
+                        <template x-for="(file, key) in publishFiles" :key="key">
+                            <a :href="file.url" target="_blank" download class="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-violet-300" x-text="file.filename || key"></a>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="rounded-lg border border-amber-800/50 bg-amber-950/20 p-3 space-y-3">
+                    <h3 class="text-sm font-medium text-zinc-200">Licença de assinatura (Envato, Storyblocks…)</h3>
+                    <p class="text-[11px] text-zinc-500">
+                        Cadastre <strong class="text-zinc-400">uma vez</strong> o nome do projeto na plataforma (ex.: «Meu vídeo piloto» na Envato).
+                        Depois é só baixar os arquivos e fazer upload aqui — não precisa abrir a Envato a cada mídia.
+                    </p>
+
+                    <div x-show="stockLicenses.length" class="space-y-2">
+                        <template x-for="reg in stockLicenses" :key="reg.id">
+                            <div class="flex flex-wrap items-center gap-2 rounded bg-zinc-900/80 border border-zinc-700 px-2 py-2 text-xs">
+                                <span class="font-medium text-amber-200" x-text="providerLabel(reg.provider)"></span>
+                                <span class="text-zinc-300" x-text="'«' + reg.project_title + '»'"></span>
+                                <span x-show="reg.is_default" class="px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-200 text-[10px]">padrão</span>
+                                <button
+                                    x-show="!reg.is_default"
+                                    @click="setDefaultStockLicense(reg)"
+                                    type="button"
+                                    class="text-[10px] px-2 py-0.5 rounded bg-zinc-700 hover:bg-zinc-600"
+                                >Usar como padrão</button>
+                                <button
+                                    @click="applyStockLicenseToLocal(reg)"
+                                    type="button"
+                                    class="text-[10px] px-2 py-0.5 rounded bg-amber-800 hover:bg-amber-700 text-white"
+                                >Vincular uploads já usados</button>
+                                <button
+                                    @click="removeStockLicense(reg)"
+                                    type="button"
+                                    class="text-[10px] px-2 py-0.5 rounded bg-zinc-800 hover:bg-red-900 text-zinc-400"
+                                >Remover</button>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="grid gap-2 sm:grid-cols-2">
+                        <label class="text-xs text-zinc-400 sm:col-span-2">
+                            Plataforma
+                            <select x-model="stockLicenseForm.provider" class="w-full mt-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm">
+                                <template x-for="p in stockLicenseProviders" :key="p.slug">
+                                    <option :value="p.slug" x-text="p.name"></option>
+                                </template>
+                            </select>
+                        </label>
+                        <label class="text-xs text-zinc-400 sm:col-span-2">
+                            Nome do projeto na plataforma
+                            <input
+                                x-model="stockLicenseForm.project_title"
+                                type="text"
+                                placeholder="Ex.: Meu documentário 2026"
+                                class="w-full mt-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm"
+                            >
+                        </label>
+                        <p x-show="stockLicenseProviderHint" class="text-[10px] text-zinc-500 sm:col-span-2" x-text="stockLicenseProviderHint"></p>
+                        <label class="text-xs text-zinc-400">
+                            URL da licença (opcional)
+                            <input x-model="stockLicenseForm.license_url" type="url" placeholder="https://..." class="w-full mt-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm">
+                        </label>
+                        <label class="text-xs text-zinc-400">
+                            Nota (opcional)
+                            <input x-model="stockLicenseForm.license_note" type="text" placeholder="Cliente X, campanha Y" class="w-full mt-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm">
+                        </label>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <button @click="saveStockLicense()" type="button" class="px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-600 text-sm text-white">Cadastrar licença</button>
+                        <label class="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+                            <input type="checkbox" x-model="attachPaidLicenseOnUpload" class="rounded border-zinc-600">
+                            Aplicar licença padrão em uploads manuais
+                        </label>
+                    </div>
+                </div>
+
+                <div class="rounded-lg border border-zinc-700 p-3 space-y-2">
+                    <label class="text-sm font-medium text-zinc-200">Descrição do vídeo (aparece no texto de publicação)</label>
+                    <textarea
+                        x-model="projectDescription"
+                        @input="scheduleDescriptionSave()"
+                        rows="3"
+                        placeholder="Descreva o conteúdo do vídeo — esta descrição entra automaticamente nos textos do YouTube, TikTok e Instagram."
+                        class="w-full rounded bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm text-zinc-300"
+                    ></textarea>
+                    <p class="text-[10px] text-zinc-500">Salva automaticamente e regenera os textos de publicação com créditos incluídos.</p>
                 </div>
 
                 <div class="rounded-lg border border-violet-800/50 bg-violet-950/20 p-3 space-y-3">
                     <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h3 class="text-sm font-medium text-zinc-200">Descrições para publicar (com créditos dos autores)</h3>
-                        <button @click="copyPlatformDescription()" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">Copiar descrição</button>
+                        <h3 class="text-sm font-medium text-zinc-200">Descrições prontas por plataforma</h3>
+                        <a
+                            x-show="publishFiles[selectedPlatformDesc]?.url"
+                            :href="publishFiles[selectedPlatformDesc]?.url"
+                            target="_blank"
+                            download
+                            class="text-xs px-2 py-1 rounded bg-violet-700 hover:bg-violet-600 text-white"
+                        >Baixar .txt</a>
                     </div>
-                    <p class="text-[11px] text-zinc-500">Ao importar imagens/vídeos da biblioteca, o sistema registra os créditos. A seção <strong class="text-zinc-400">CRÉDITOS E LICENÇAS</strong> fica no final de cada texto — cole na descrição do YouTube, TikTok ou Instagram.</p>
+                    <p class="text-[11px] text-zinc-500">Texto completo com créditos no final — gerado automaticamente ao importar mídia da biblioteca.</p>
                     <div class="flex flex-wrap gap-1">
                         <template x-for="key in platformDescKeys" :key="key">
                             <button
@@ -392,11 +533,11 @@ Parágrafo do slide 3..."
                                 readonly
                                 rows="12"
                                 class="w-full rounded bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs font-mono text-zinc-300"
-                                :value="platformDescriptions[selectedPlatformDesc]?.description || ''"
+                                x-text="platformDescriptions[selectedPlatformDesc]?.description || ''"
                             ></textarea>
                         </div>
                     </template>
-                    <p x-show="!platformDescriptions[selectedPlatformDesc]" class="text-xs text-zinc-500">Clique em &quot;Gerar descrições + créditos&quot; ou importe mídia da biblioteca primeiro.</p>
+                    <p x-show="!platformDescriptions[selectedPlatformDesc]" class="text-xs text-zinc-500">Importe mídia da biblioteca para montar as descrições com créditos.</p>
                 </div>
 
                 <div class="rounded-lg border border-zinc-700 p-3 space-y-3">

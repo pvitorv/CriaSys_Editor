@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\MediaLibraryController;
 use App\Http\Controllers\Api\NarrationController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\ProjectStockLicenseController;
 use App\Http\Controllers\Api\ProjectTemplateController;
 use App\Http\Controllers\Api\RenderController;
 use App\Http\Controllers\Api\SlideController;
@@ -43,6 +44,14 @@ Route::delete('projects/{project}/audio-tracks/{audioTrack}', [AudioTrackControl
 
 Route::get('projects/{project}/platform-descriptions', [ExportController::class, 'platformDescriptions']);
 Route::post('projects/{project}/platform-descriptions', [ExportController::class, 'savePlatformDescriptions']);
+Route::get('projects/{project}/credits', [ExportController::class, 'credits']);
+Route::post('projects/{project}/publish/sync', [ExportController::class, 'syncPublish']);
+
+Route::get('projects/{project}/stock-licenses', [ProjectStockLicenseController::class, 'index']);
+Route::post('projects/{project}/stock-licenses', [ProjectStockLicenseController::class, 'store']);
+Route::put('projects/{project}/stock-licenses/{stockLicense}', [ProjectStockLicenseController::class, 'update']);
+Route::delete('projects/{project}/stock-licenses/{stockLicense}', [ProjectStockLicenseController::class, 'destroy']);
+Route::post('projects/{project}/stock-licenses/{stockLicense}/apply-local', [ProjectStockLicenseController::class, 'applyToLocalAssets']);
 Route::get('projects/{project}/export-packages', [ExportController::class, 'index']);
 Route::get('projects/{project}/downloads', [ExportController::class, 'downloads']);
 Route::post('projects/{project}/export-packages', [ExportController::class, 'store']);

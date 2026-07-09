@@ -28,6 +28,7 @@ class PixabayService
 
         return collect($response->json('hits', []))->map(function (array $hit) {
             $user = $hit['user'] ?? 'Desconhecido';
+            $attribution = MediaAttribution::forPixabay($hit, 'image');
 
             return [
                 'id' => $hit['id'],
@@ -38,8 +39,8 @@ class PixabayService
                 'author' => $user,
                 'original_url' => $hit['pageURL'] ?? null,
                 'license_type' => LicenseType::Pixabay->value,
-                'requires_attribution' => false,
-                'attribution_text' => "Imagem por {$user} no Pixabay (pixabay.com) — Pixabay License",
+                'requires_attribution' => $attribution['requires_attribution'],
+                'attribution_text' => $attribution['attribution_text'],
             ];
         })->all();
     }
@@ -66,6 +67,7 @@ class PixabayService
             $videos = $hit['videos'] ?? [];
             $medium = $videos['medium'] ?? $videos['small'] ?? $videos['large'] ?? [];
             $user = $hit['user'] ?? 'Desconhecido';
+            $attribution = MediaAttribution::forPixabay($hit, 'video');
 
             return [
                 'id' => $hit['id'],
@@ -79,8 +81,8 @@ class PixabayService
                 'author' => $user,
                 'original_url' => $hit['pageURL'] ?? null,
                 'license_type' => LicenseType::Pixabay->value,
-                'requires_attribution' => false,
-                'attribution_text' => "Vídeo por {$user} no Pixabay (pixabay.com) — Pixabay License",
+                'requires_attribution' => $attribution['requires_attribution'],
+                'attribution_text' => $attribution['attribution_text'],
             ];
         })->filter(fn (array $item) => ! empty($item['download_url']))->values()->all();
     }
@@ -107,6 +109,7 @@ class PixabayService
             $videos = $hit['videos'] ?? [];
             $medium = $videos['medium'] ?? $videos['small'] ?? [];
             $user = $hit['user'] ?? 'Desconhecido';
+            $attribution = MediaAttribution::forPixabay($hit, 'audio');
 
             return [
                 'id' => $hit['id'],
@@ -117,8 +120,8 @@ class PixabayService
                 'author' => $user,
                 'original_url' => $hit['pageURL'] ?? null,
                 'license_type' => LicenseType::Pixabay->value,
-                'requires_attribution' => false,
-                'attribution_text' => "Áudio/vídeo por {$user} no Pixabay",
+                'requires_attribution' => $attribution['requires_attribution'],
+                'attribution_text' => $attribution['attribution_text'],
                 'note' => 'Extraia áudio do vídeo ou use como B-roll',
             ];
         })->filter(fn ($item) => $item['download_url'])->values()->all();

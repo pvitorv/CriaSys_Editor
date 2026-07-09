@@ -91,17 +91,7 @@ class PlatformPostDescriptionService
             default => "{$title}\n\n{$summary}",
         };
 
-        $creditsSection = "\n\n"
-            ."────────────────────────────\n"
-            ."CRÉDITOS E LICENÇAS (materiais utilizados)\n"
-            ."────────────────────────────\n\n"
-            .$creditsBlock;
-
-        if (! empty($credits)) {
-            $creditsSection .= "\n\n"
-                .'Inclua esta seção na descrição/caption da plataforma, '
-                .'conforme exigido por cada licença (CC, Unsplash, Pexels, etc.).';
-        }
+        $creditsSection = $creditsBlock !== '' ? "\n\n".$creditsBlock : '';
 
         $description = $intro.$creditsSection;
 
@@ -159,21 +149,21 @@ class PlatformPostDescriptionService
     {
         $items = $this->attributions->collect($project);
         $lines = [
-            'CRÉDITOS DE MATERIAIS — '.$project->name,
+            'CRÉDITOS — '.$project->name,
             str_repeat('=', 50),
             '',
-            'Use ao publicar em qualquer plataforma.',
+            'Texto oficial das plataformas (incluído automaticamente nas descrições):',
             '',
         ];
 
         if (empty($items)) {
-            $lines[] = 'Nenhum material de biblioteca externa registrado.';
+            $lines[] = '(Conteúdo próprio ou upload local — sem créditos de biblioteca.)';
 
             return implode("\n", $lines);
         }
 
         foreach ($items as $i => $item) {
-            $lines[] = ($i + 1).'. ['.strtoupper($item['type']).'] '.$item['credit_line'];
+            $lines[] = ($i + 1).'. '.$item['credit_line'];
             if (! empty($item['used_in'])) {
                 $lines[] = '   Usado em: '.implode(', ', $item['used_in']);
             }

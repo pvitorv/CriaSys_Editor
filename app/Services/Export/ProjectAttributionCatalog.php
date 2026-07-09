@@ -4,38 +4,47 @@ namespace App\Services\Export;
 
 use App\Models\Asset;
 use App\Models\Project;
+use App\Services\MediaLibrary\MediaAttribution;
 
 class ProjectAttributionCatalog
 {
+    public function __construct(private AssetAttributionRepairService $repair) {}
+
     /**
+     * Materiais de biblioteca usados no projeto (slides + trilha).
+     *
      * @return list<array{type: string, source: string, license: string, credit_line: string, original_url: ?string, used_in: list<string>}>
      */
     public function collect(Project $project): array
     {
-        $project->load(['slides', 'assets', 'audioTracks']);
+        $this->repair->repairProject($project);
+        $project->load(['slides', 'assets.stockLicense', 'audioTracks']);
 
         $usage = $this->buildUsageMap($project);
+        $usedPaths = array_keys($usage);
+        $assetsByPath = $this->indexAssetsByPath($project);
+
         $items = [];
 
-        foreach ($project->assets as $asset) {
-            if ($this->isLocalOnly($asset)) {
+        foreach ($usedPaths as $usedPath) {
+            $asset = $assetsByPath[$usedPath] ?? $this->findAssetForPath($project, $usedPath);
+            if (! $asset || $this->isLocalOnly($asset)) {
                 continue;
             }
 
-            $key = $asset->file_hash ?: (string) $asset->id;
             $creditLine = $this->creditLine($asset);
-
             if (! $creditLine) {
                 continue;
             }
 
+            $key = $asset->file_hash ?: (string) $asset->id;
             $items[$key] = [
                 'type' => $asset->type,
                 'source' => $asset->source,
                 'license' => (string) $asset->license_type,
                 'credit_line' => $creditLine,
                 'original_url' => $asset->original_url,
-                'used_in' => $usage[$asset->file_path] ?? [],
+                'used_in' => $usage[$usedPath] ?? [],
             ];
         }
 
@@ -59,12 +68,10 @@ class ProjectAttributionCatalog
         $lines = $this->creditLines($project);
 
         if (empty($lines)) {
-            return 'Nenhum material de terceiros registrado neste projeto (apenas conteúdo próprio/upload local).';
+            return '';
         }
 
-        return collect($lines)
-            ->map(fn (string $line) => '• '.$line)
-            ->implode($separator);
+        return "CRÉDITOS E LICENÇAS\n".implode($separator, $lines);
     }
 
     /**
@@ -80,16 +87,18 @@ class ProjectAttributionCatalog
             foreach (['image_path', 'video_path'] as $field) {
                 $path = $slide->{$field};
                 if ($path) {
-                    $map[$path] ??= [];
-                    $map[$path][] = $label;
+                    $key = $this->normalizePath($path);
+                    $map[$key] ??= [];
+                    $map[$key][] = $label;
                 }
             }
         }
 
         foreach ($project->audioTracks as $track) {
             if ($track->file_path) {
-                $map[$track->file_path] ??= [];
-                $map[$track->file_path][] = $track->type === 'music' ? 'Trilha sonora' : 'Áudio';
+                $key = $this->normalizePath($track->file_path);
+                $map[$key] ??= [];
+                $map[$key][] = $track->type === 'music' ? 'Trilha sonora' : 'Áudio';
             }
         }
 
@@ -100,40 +109,89 @@ class ProjectAttributionCatalog
         return $map;
     }
 
+    /**
+     * @return array<string, Asset>
+     */
+    private function indexAssetsByPath(Project $project): array
+    {
+        $index = [];
+
+        foreach ($project->assets as $asset) {
+            if (! $asset->file_path) {
+                continue;
+            }
+            $index[$this->normalizePath($asset->file_path)] = $asset;
+        }
+
+        return $index;
+    }
+
+    private function findAssetForPath(Project $project, string $usedPath): ?Asset
+    {
+        $baseUsed = strtolower(basename($usedPath));
+
+        foreach ($project->assets as $asset) {
+            if (! $asset->file_path) {
+                continue;
+            }
+            $baseAsset = strtolower(basename(str_replace('\\', '/', $asset->file_path)));
+            if ($baseUsed === $baseAsset) {
+                return $asset;
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizePath(string $path): string
+    {
+        $path = str_replace('\\', '/', $path);
+        $resolved = @realpath($path);
+
+        return strtolower($resolved ?: $path);
+    }
+
     private function isLocalOnly(Asset $asset): bool
     {
-        return in_array($asset->source, ['local', '', null], true);
+        if ($asset->stock_license_id || $asset->stockLicense) {
+            return false;
+        }
+
+        if ($asset->attribution_text) {
+            return false;
+        }
+
+        if (in_array($asset->license_type, [
+            \App\Enums\LicenseType::UserPurchased->value,
+            \App\Enums\LicenseType::Envato->value,
+            \App\Enums\LicenseType::Storyblocks->value,
+            \App\Enums\LicenseType::Artgrid->value,
+            \App\Enums\LicenseType::CustomLicensed->value,
+        ], true)) {
+            return false;
+        }
+
+        return in_array($asset->source, ['local', 'unknown', '', null], true);
     }
 
     private function creditLine(Asset $asset): ?string
     {
+        if ($asset->stockLicense) {
+            return MediaAttribution::forPaidSubscription($asset->stockLicense, $asset)['attribution_text'];
+        }
+
         if ($asset->attribution_text) {
-            $line = $asset->attribution_text;
-        } else {
-            $line = match ($asset->source) {
-                'pexels' => 'Mídia via Pexels (pexels.com)',
-                'pixabay' => 'Mídia via Pixabay (pixabay.com)',
-                'unsplash' => 'Mídia via Unsplash (unsplash.com)',
-                'openverse' => 'Mídia via Openverse (Creative Commons)',
-                'mixkit' => 'Mídia via Mixkit (mixkit.co)',
-                default => $asset->source !== 'local' && $asset->source
-                    ? 'Mídia via '.$asset->source
-                    : null,
-            };
+            return trim($asset->attribution_text);
         }
 
-        if (! $line) {
-            return null;
+        if ($asset->license_type === \App\Enums\LicenseType::UserPurchased->value) {
+            return MediaAttribution::forUserPurchased(
+                $asset->item_title,
+                $asset->source !== 'local' ? $asset->source : 'Biblioteca licenciada',
+                $asset->original_url
+            )['attribution_text'];
         }
 
-        if ($asset->original_url) {
-            $line .= ' — '.$asset->original_url;
-        }
-
-        if ($asset->license_type && ! in_array($asset->license_type, ['local', 'Mixkit License'], true)) {
-            $line .= ' ['.$asset->license_type.']';
-        }
-
-        return $line;
+        return null;
     }
 }

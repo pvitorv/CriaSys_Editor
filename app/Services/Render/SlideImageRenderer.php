@@ -8,6 +8,46 @@ use Illuminate\Support\Facades\File;
 
 class SlideImageRenderer
 {
+    public function renderTextOverlay(Slide $slide, ExportPreset $preset, string $outputPath): void
+    {
+        File::ensureDirectoryExists(dirname($outputPath));
+
+        $width = $preset->width;
+        $height = $preset->height;
+
+        $image = imagecreatetruecolor($width, $height);
+        imagesavealpha($image, true);
+        $transparent = imagecolorallocatealpha($image, 0, 0, 0, 127);
+        imagefill($image, 0, 0, $transparent);
+
+        $overlay = imagecolorallocatealpha($image, 0, 0, 0, 80);
+        imagefilledrectangle($image, 0, 0, $width, $height, $overlay);
+
+        $style = $slide->resolvedTextStyle();
+        $align = $style['align'] ?? 'center';
+        $y = (int) ($height * 0.35);
+
+        if ($slide->title) {
+            $color = $this->hexToRgb($image, $style['title_color'] ?? '#ffffff');
+            $this->drawWrappedText($image, $slide->title, (int) ($style['title_size'] ?? 48), $color, $width, $y, $align);
+            $y += (int) (($style['title_size'] ?? 48) * 1.8);
+        }
+
+        if ($slide->subtitle) {
+            $color = $this->hexToRgb($image, $style['subtitle_color'] ?? '#e5e7eb');
+            $this->drawWrappedText($image, $slide->subtitle, (int) ($style['subtitle_size'] ?? 28), $color, $width, $y, $align);
+            $y += (int) (($style['subtitle_size'] ?? 28) * 1.6);
+        }
+
+        if ($slide->body_text) {
+            $color = $this->hexToRgb($image, $style['body_color'] ?? '#f3f4f6');
+            $this->drawWrappedText($image, $slide->body_text, (int) ($style['body_size'] ?? 20), $color, $width, $y, $align);
+        }
+
+        imagepng($image, $outputPath);
+        imagedestroy($image);
+    }
+
     public function render(Slide $slide, ExportPreset $preset, string $outputPath): void
     {
         File::ensureDirectoryExists(dirname($outputPath));

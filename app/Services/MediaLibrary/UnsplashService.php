@@ -27,7 +27,7 @@ class UnsplashService
 
         return collect($response->json('results', []))->map(function (array $photo) {
             $user = $photo['user']['name'] ?? 'Desconhecido';
-            $username = $photo['user']['username'] ?? '';
+            $attribution = MediaAttribution::forUnsplashPhoto($photo);
 
             return [
                 'id' => $photo['id'],
@@ -39,8 +39,8 @@ class UnsplashService
                 'author' => $user,
                 'original_url' => $photo['links']['html'] ?? null,
                 'license_type' => LicenseType::Cc0->value,
-                'requires_attribution' => true,
-                'attribution_text' => "Foto por {$user} (@{$username}) no Unsplash",
+                'requires_attribution' => $attribution['requires_attribution'],
+                'attribution_text' => $attribution['attribution_text'],
             ];
         })->all();
     }

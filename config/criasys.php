@@ -51,6 +51,30 @@ return [
         'pexels_api_key' => env('PEXELS_API_KEY'),
         'pixabay_api_key' => env('PIXABAY_API_KEY'),
         'unsplash_access_key' => env('UNSPLASH_ACCESS_KEY'),
+        'envato_api_token' => env('ENVATO_API_TOKEN'),
+    ],
+
+    'stock_providers' => [
+        'envato' => [
+            'name' => 'Envato Elements',
+            'license_url' => 'https://elements.envato.com/license-terms',
+            'project_hint' => 'Use o mesmo nome de projeto que você registra na Envato para este vídeo.',
+        ],
+        'storyblocks' => [
+            'name' => 'Storyblocks',
+            'license_url' => 'https://www.storyblocks.com/license',
+            'project_hint' => 'Nome do projeto/cliente na Storyblocks.',
+        ],
+        'artgrid' => [
+            'name' => 'Artgrid',
+            'license_url' => 'https://artgrid.io/license',
+            'project_hint' => 'Nome do projeto na Artgrid.',
+        ],
+        'custom' => [
+            'name' => 'Outra licença paga',
+            'license_url' => null,
+            'project_hint' => 'Descreva a origem e o projeto licenciado.',
+        ],
     ],
 
     'mixkit_catalog' => [

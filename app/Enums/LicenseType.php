@@ -10,5 +10,9 @@ enum LicenseType: string
     case Pexels = 'Pexels License';
     case Pixabay = 'Pixabay License';
     case UserPurchased = 'user_purchased';
+    case Envato = 'Envato Elements';
+    case Storyblocks = 'Storyblocks';
+    case Artgrid = 'Artgrid';
+    case CustomLicensed = 'Licensed';
     case Local = 'local';
 }

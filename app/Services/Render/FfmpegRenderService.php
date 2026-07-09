@@ -27,33 +27,10 @@ class FfmpegRenderService
         File::ensureDirectoryExists($tempDir);
 
         $segmentPaths = $this->slideshowBuilder->buildSlideSegments($project, $preset, $tempDir);
-        $listPath = $exportDir.DIRECTORY_SEPARATOR.'concat_'.$job->id.'.txt';
         $outputPath = $this->storage->exportPath($project, "render_{$job->id}_{$preset->slug}.mp4");
         $tempVideo = $exportDir.DIRECTORY_SEPARATOR."temp_video_{$job->id}.mp4";
 
-        $this->slideshowBuilder->buildVideoConcatList($segmentPaths, $listPath);
-        $job->update(['progress' => 30]);
-
-        $ffmpeg = config('criasys.ffmpeg_path');
-        $result = Process::timeout(600)->run([
-            $ffmpeg, '-y', '-f', 'concat', '-safe', '0', '-i', $listPath,
-            '-c', 'copy',
-            $tempVideo,
-        ]);
-
-        if (! $result->successful()) {
-            $result = Process::timeout(600)->run([
-                $ffmpeg, '-y', '-f', 'concat', '-safe', '0', '-i', $listPath,
-                '-vsync', 'vfr', '-pix_fmt', 'yuv420p',
-                '-s', "{$preset->width}x{$preset->height}",
-                $tempVideo,
-            ]);
-        }
-
-        if (! $result->successful()) {
-            throw new \RuntimeException('FFmpeg concat falhou: '.$result->errorOutput());
-        }
-
+        $this->slideshowBuilder->mergeSegmentsWithTransitions($project, $segmentPaths, $tempVideo);
         $job->update(['progress' => 60]);
 
         $this->mixAudioTracks($tempVideo, $project, $outputPath);
@@ -66,7 +43,6 @@ class FfmpegRenderService
 
         $job->update(['progress' => 90]);
 
-        File::delete($listPath);
         foreach ($segmentPaths as $path) {
             if (file_exists($path)) {
                 @File::delete($path);
@@ -98,12 +74,22 @@ class FfmpegRenderService
 
     public function getAudioDuration(string $audioPath): float
     {
+        return $this->getMediaDuration($audioPath);
+    }
+
+    public function getVideoDuration(string $videoPath): float
+    {
+        return $this->getMediaDuration($videoPath);
+    }
+
+    public function getMediaDuration(string $mediaPath): float
+    {
         $ffprobe = config('criasys.ffprobe_path');
 
         try {
             $result = Process::timeout(30)->run([
                 $ffprobe, '-v', 'error', '-show_entries', 'format=duration',
-                '-of', 'default=noprint_wrappers=1:nokey=1', $audioPath,
+                '-of', 'default=noprint_wrappers=1:nokey=1', $mediaPath,
             ]);
 
             if ($result->successful()) {
@@ -119,7 +105,7 @@ class FfmpegRenderService
         // Sem ffprobe (ex.: não instalado neste PC). O áudio já existe; estimamos
         // a duração pelo tamanho do arquivo (~128 kbps) para não bloquear o TTS.
         // Instale o ffmpeg e defina FFPROBE_PATH no .env para duração exata.
-        $bytes = @filesize($audioPath) ?: 0;
+        $bytes = @filesize($mediaPath) ?: 0;
 
         return max(1.0, round($bytes / 16000, 2));
     }
@@ -127,6 +113,8 @@ class FfmpegRenderService
     private function mixAudioTracks(string $videoPath, Project $project, string $outputPath): void
     {
         $ffmpeg = config('criasys.ffmpeg_path');
+        $videoDuration = $this->getVideoDuration($videoPath);
+        $durationArg = (string) max(0.5, $videoDuration);
         $narration = $project->latestNarration();
         $musicTrack = $project->audioTracks()->where('type', 'music')->first();
 
@@ -144,7 +132,10 @@ class FfmpegRenderService
         if ($narrationPath && ! $musicPath) {
             $result = Process::timeout(600)->run([
                 $ffmpeg, '-y', '-i', $videoPath, '-i', $narrationPath,
-                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', $outputPath,
+                '-filter_complex', "[1:a]atrim=0:{$durationArg},asetpts=PTS-STARTPTS[a]",
+                '-map', '0:v', '-map', '[a]',
+                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
+                '-t', $durationArg, $outputPath,
             ]);
             $this->assertFfmpegSuccess($result, 'mix narração');
 
@@ -155,8 +146,9 @@ class FfmpegRenderService
             $volume = $musicTrack->volume ?? 0.5;
             $result = Process::timeout(600)->run([
                 $ffmpeg, '-y', '-i', $videoPath, '-i', $musicPath,
-                '-filter_complex', "[1:a]volume={$volume},afade=t=in:st=0:d=2,afade=t=out:st=0:d=2[a]",
-                '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-shortest', $outputPath,
+                '-filter_complex', "[1:a]atrim=0:{$durationArg},volume={$volume},afade=t=in:st=0:d=2,afade=t=out:st=".max(0, $videoDuration - 2).":d=2[a]",
+                '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac',
+                '-t', $durationArg, $outputPath,
             ]);
             $this->assertFfmpegSuccess($result, 'mix trilha');
 
@@ -167,9 +159,9 @@ class FfmpegRenderService
         $ducking = $musicTrack->ducking_enabled ?? true;
 
         if ($ducking) {
-            $filter = "[2:a]volume={$musicVolume},afade=t=in:st=0:d=2[music];[1:a][music]sidechaincompress=threshold=0.03:ratio=8:attack=200:release=800[ducked];[1:a][ducked]amix=inputs=2:duration=first:dropout_transition=2[aout]";
+            $filter = "[2:a]atrim=0:{$durationArg},volume={$musicVolume},afade=t=in:st=0:d=2[music];[1:a]atrim=0:{$durationArg}[nar];[nar][music]sidechaincompress=threshold=0.03:ratio=8:attack=200:release=800[ducked];[nar][ducked]amix=inputs=2:duration=longest:dropout_transition=2[aout]";
         } else {
-            $filter = "[2:a]volume={$musicVolume}[music];[1:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]";
+            $filter = "[2:a]atrim=0:{$durationArg},volume={$musicVolume}[music];[1:a]atrim=0:{$durationArg}[nar];[nar][music]amix=inputs=2:duration=longest:dropout_transition=2[aout]";
         }
 
         $result = Process::timeout(600)->run([
@@ -180,7 +172,7 @@ class FfmpegRenderService
             '-filter_complex', $filter,
             '-map', '0:v', '-map', '[aout]',
             '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
-            '-shortest', $outputPath,
+            '-t', $durationArg, $outputPath,
         ]);
 
         $this->assertFfmpegSuccess($result, 'mix narração + trilha com ducking');

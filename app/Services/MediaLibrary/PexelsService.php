@@ -33,6 +33,8 @@ class PexelsService
         }
 
         return collect($response->json('photos', []))->map(function (array $photo) {
+            $attribution = MediaAttribution::forPexelsPhoto($photo);
+
             return [
                 'id' => $photo['id'],
                 'source' => 'pexels',
@@ -42,10 +44,8 @@ class PexelsService
                 'photographer' => $photo['photographer'] ?? 'Desconhecido',
                 'original_url' => $photo['url'] ?? null,
                 'license_type' => LicenseType::Pexels->value,
-                'requires_attribution' => true,
-                'attribution_text' => isset($photo['photographer'])
-                    ? "Foto por {$photo['photographer']} no Pexels (pexels.com)"
-                    : 'Foto do Pexels (pexels.com)',
+                'requires_attribution' => $attribution['requires_attribution'],
+                'attribution_text' => $attribution['attribution_text'],
             ];
         })->all();
     }
@@ -71,6 +71,7 @@ class PexelsService
         return collect($response->json('videos', []))->map(function (array $video) {
             $files = collect($video['video_files'] ?? [])->sortByDesc('width');
             $file = $files->first(fn (array $f) => ($f['width'] ?? 0) <= 1920) ?? $files->first();
+            $attribution = MediaAttribution::forPexelsVideo($video);
 
             return [
                 'id' => $video['id'],
@@ -82,10 +83,8 @@ class PexelsService
                 'author' => $video['user']['name'] ?? 'Pexels',
                 'original_url' => $video['url'] ?? null,
                 'license_type' => LicenseType::Pexels->value,
-                'requires_attribution' => true,
-                'attribution_text' => isset($video['user']['name'])
-                    ? "Vídeo por {$video['user']['name']} no Pexels (pexels.com)"
-                    : 'Vídeo do Pexels (pexels.com)',
+                'requires_attribution' => $attribution['requires_attribution'],
+                'attribution_text' => $attribution['attribution_text'],
             ];
         })->filter(fn (array $item) => ! empty($item['download_url']))->values()->all();
     }

@@ -177,7 +177,7 @@ php artisan queue:work --tries=1 --timeout=0
 
 Login: http://127.0.0.1:8000
 
-Para retomar contexto da branch `008-fix-editor` / `009`, leia `HANDOFF_008-fix-editor.md` na raiz.
+Para retomar contexto das branches recentes, leia na raiz: `HANDOFF_012.md` (012), `HANDOFF_010.md` (010), `HANDOFF_008-fix-editor.md` (008/009).
 
 ---
 
