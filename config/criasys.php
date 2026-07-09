@@ -24,6 +24,9 @@ return [
 
     'ffprobe_path' => env('FFPROBE_PATH') ?: 'ffprobe',
 
+    // Windows/Laragon: php artisan serve nem sempre herda o PATH com Node.js
+    'node_path' => env('NODE_PATH'),
+
     'tts' => [
         'default_engine' => env('TTS_DEFAULT_ENGINE', 'edge'),
         'default_voice' => env('TTS_DEFAULT_VOICE', 'pt-BR-FranciscaNeural'),

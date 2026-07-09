@@ -2,6 +2,7 @@
 
 namespace App\Services\Tts;
 
+use App\Support\NodeBinary;
 use App\Support\Utf8;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -12,41 +13,34 @@ class EdgeTtsEngine implements TtsEngineInterface
     {
         File::ensureDirectoryExists(dirname($outputPath));
 
+        $node = NodeBinary::path();
         $script = base_path('scripts/generate-tts.mjs');
         $textFile = dirname($outputPath).DIRECTORY_SEPARATOR.'tts_input_'.uniqid().'.txt';
         File::put($textFile, Utf8::clean($text) ?? '');
 
-        $commands = [
-            ['node', $script, '--voice', $voice, '--input', $textFile, '--output', $outputPath],
-        ];
+        $command = [$node, $script, '--voice', $voice, '--input', $textFile, '--output', $outputPath];
+        $result = Process::timeout(120)
+            ->path(base_path())
+            ->run($command);
 
-        if (PHP_OS_FAMILY !== 'Windows') {
-            $commands[] = ['python', '-m', 'edge_tts', '--voice', $voice, '--file', $textFile, '--write-media', $outputPath];
-            $commands[] = ['edge-tts', '--voice', $voice, '--file', $textFile, '--write-media', $outputPath];
-        }
+        if (file_exists($outputPath) && filesize($outputPath) > 0) {
+            File::delete($textFile);
 
-        $lastError = null;
-
-        foreach ($commands as $command) {
-            $result = Process::timeout(120)->run($command);
-
-            if (file_exists($outputPath) && filesize($outputPath) > 0) {
-                File::delete($textFile);
-
-                return [
-                    'audio_path' => $outputPath,
-                    'duration_seconds' => $this->probeDuration($outputPath),
-                ];
-            }
-
-            $lastError = Utf8::clean(trim($result->errorOutput() ?: $result->output()));
+            return [
+                'audio_path' => $outputPath,
+                'duration_seconds' => $this->probeDuration($outputPath),
+            ];
         }
 
         File::delete($textFile);
 
+        $detail = Utf8::clean(trim($result->errorOutput() ?: $result->output()));
+        if ($detail === '') {
+            $detail = 'exit='.$result->exitCode().', node='.$node;
+        }
+
         throw new \RuntimeException(
-            'Edge TTS indisponível. Verifique se Node.js está instalado (node --version).'
-            .($lastError ? ' Detalhe: '.$lastError : '')
+            'Edge TTS indisponível. Defina NODE_PATH no .env (ex.: C:\\Program Files\\nodejs\\node.exe). Detalhe: '.$detail
         );
     }
 
