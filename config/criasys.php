@@ -28,9 +28,40 @@ return [
     'node_path' => env('NODE_PATH'),
 
     'tts' => [
-        'default_engine' => env('TTS_DEFAULT_ENGINE', 'elevenlabs'),
+        'default_engine' => env('TTS_DEFAULT_ENGINE', 'openai'),
         'default_voice' => env('TTS_DEFAULT_VOICE', 'pt-BR-FranciscaNeural'),
-        'coqui_python' => env('COQUI_PYTHON'),
+        'edge_python' => env('EDGE_TTS_PYTHON'),
+        'piper_path' => env('PIPER_PATH', 'bin/piper/piper/piper.exe'),
+        'piper_model' => env('PIPER_MODEL', 'bin/piper/pt_BR-faber-medium.onnx'),
+        // Compat: id => caminho do modelo (usado como fallback)
+        'piper_models' => [
+            'pt-br-faber' => env('PIPER_MODEL', 'bin/piper/pt_BR-faber-medium.onnx'),
+            'pt-br-edresson' => env('PIPER_MODEL_EDRESSON', 'bin/piper/pt_BR-edresson-low.onnx'),
+        ],
+        // Vozes com prosódia. length_scale > 1 = mais lento; sentence_silence = pausa entre frases.
+        'piper_voices' => [
+            'pt-br-narrador' => [
+                'label' => 'Narrador grave pausado (estilo documentário)',
+                'model' => env('PIPER_MODEL_EDRESSON', 'bin/piper/pt_BR-edresson-low.onnx'),
+                'length_scale' => 1.32,
+                'sentence_silence' => 0.85,
+                'noise_scale' => 0.5,
+            ],
+            'pt-br-faber-calmo' => [
+                'label' => 'Faber calma (narração pausada, feminina)',
+                'model' => env('PIPER_MODEL', 'bin/piper/pt_BR-faber-medium.onnx'),
+                'length_scale' => 1.22,
+                'sentence_silence' => 0.7,
+            ],
+            'pt-br-faber' => [
+                'label' => 'Faber (feminina, ritmo natural)',
+                'model' => env('PIPER_MODEL', 'bin/piper/pt_BR-faber-medium.onnx'),
+            ],
+            'pt-br-edresson' => [
+                'label' => 'Edresson (masculina, ritmo natural)',
+                'model' => env('PIPER_MODEL_EDRESSON', 'bin/piper/pt_BR-edresson-low.onnx'),
+            ],
+        ],
         'elevenlabs_api_key' => env('ELEVENLABS_API_KEY'),
         'elevenlabs_voice_id' => env('ELEVENLABS_VOICE_ID', '21m00Tcm4TlvDq8ikWAM'),
         'openai_api_key' => env('OPENAI_API_KEY'),
@@ -38,12 +69,14 @@ return [
         'voices' => [
             'pt-BR-FranciscaNeural' => 'Francisca (feminina)',
             'pt-BR-AntonioNeural' => 'Antonio (masculino)',
+            'pt-BR-ThalitaNeural' => 'Thalita (feminina)',
+            'pt-BR-DonatoNeural' => 'Donato (masculino)',
         ],
         'engines' => [
-            ['slug' => 'elevenlabs', 'name' => 'ElevenLabs (voz própria)', 'unavailable_note' => 'Conecte sua chave em Integrações'],
-            ['slug' => 'edge', 'name' => 'Edge TTS (gratuito)', 'unavailable_note' => null],
-            ['slug' => 'openai', 'name' => 'OpenAI TTS', 'unavailable_note' => 'Conecte sua chave em Integrações'],
-            ['slug' => 'coqui', 'name' => 'Coqui XTTS (local)', 'unavailable_note' => 'Instale pip install TTS e defina COQUI_PYTHON no .env'],
+            ['slug' => 'openai', 'name' => 'OpenAI TTS (barato, instantâneo)', 'price_hint' => '~US$ 0,015 / 1.000 caracteres', 'unavailable_note' => 'Conecte sua chave em Integrações'],
+            ['slug' => 'piper', 'name' => 'Piper (grátis, rápido, robótico)', 'price_hint' => 'Grátis — roda no seu PC', 'unavailable_note' => 'Rode scripts/setup-piper.ps1'],
+            ['slug' => 'edge', 'name' => 'Edge TTS (grátis, instável)', 'price_hint' => 'Grátis — Microsoft pode bloquear', 'unavailable_note' => null],
+            ['slug' => 'elevenlabs', 'name' => 'ElevenLabs (premium / voz clonada)', 'price_hint' => 'Plano pago', 'unavailable_note' => 'Conecte sua chave em Integrações'],
         ],
     ],
 

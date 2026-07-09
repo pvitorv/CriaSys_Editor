@@ -28,9 +28,9 @@ class IntegrationController extends Controller
         'openai' => [
             'name' => 'OpenAI TTS',
             'docs' => 'https://platform.openai.com/api-keys',
-            'billing' => 'https://platform.openai.com/account/billing',
+            'billing' => 'https://platform.openai.com/settings/organization/billing/overview',
             'voice_label' => 'Voz padrão',
-            'voice_hint' => 'Vozes disponíveis: alloy, echo, fable, onyx, nova, shimmer.',
+            'voice_hint' => 'Vozes: alloy, echo, fable, onyx (grave, boa para narração), nova, shimmer. Licença permite uso comercial (YouTube monetizado).',
         ],
     ];
 
@@ -48,8 +48,8 @@ class IntegrationController extends Controller
                 'configured' => $configured,
                 'enabled' => $integration?->enabled ?? true,
                 'default_voice' => $integration?->default_voice,
-                'credits' => ($configured && $slug === 'elevenlabs')
-                    ? $this->elevenLabsCredits($integration->apiKey())
+                'credits' => $configured
+                    ? $this->creditsFor($slug, $integration->apiKey())
                     : null,
             ];
         }
@@ -58,7 +58,64 @@ class IntegrationController extends Controller
     }
 
     /**
-     * @return array{tier: string, used: int, limit: int, remaining: int}|null
+     * @return array<string, mixed>|null
+     */
+    private function creditsFor(string $provider, ?string $apiKey): ?array
+    {
+        return match ($provider) {
+            'elevenlabs' => $this->elevenLabsCredits($apiKey),
+            'openai' => $this->openAiCredits($apiKey),
+            default => null,
+        };
+    }
+
+    /**
+     * A OpenAI não expõe saldo para chaves secret (sk-...): o endpoint de saldo
+     * só aceita session key do navegador. Fazemos a melhor tentativa e, quando
+     * indisponível, retornamos unit=unavailable para o painel orientar o usuário.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function openAiCredits(?string $apiKey): ?array
+    {
+        if (! $apiKey) {
+            return null;
+        }
+
+        return \Illuminate\Support\Facades\Cache::remember(
+            'tts:credits:openai:'.md5($apiKey),
+            now()->addMinutes(5),
+            function () use ($apiKey) {
+                try {
+                    $response = ExternalHttp::client(15)
+                        ->withToken($apiKey)
+                        ->get('https://api.openai.com/dashboard/billing/credit_grants');
+
+                    if ($response->successful() && $response->json('total_granted') !== null) {
+                        $granted = (float) $response->json('total_granted', 0);
+                        $used = (float) $response->json('total_used', 0);
+                        $remaining = $response->json('total_available') !== null
+                            ? (float) $response->json('total_available')
+                            : max(0, $granted - $used);
+
+                        return [
+                            'unit' => 'usd',
+                            'granted' => $granted,
+                            'used' => $used,
+                            'remaining' => $remaining,
+                        ];
+                    }
+                } catch (\Throwable $e) {
+                    // Ignora: cai no aviso de indisponível abaixo.
+                }
+
+                return ['unit' => 'unavailable'];
+            }
+        );
+    }
+
+    /**
+     * @return array{unit: string, tier: string, used: int, limit: int, remaining: int}|null
      */
     private function elevenLabsCredits(?string $apiKey): ?array
     {
@@ -83,6 +140,7 @@ class IntegrationController extends Controller
                     $limit = (int) $response->json('character_limit', 0);
 
                     return [
+                        'unit' => 'chars',
                         'tier' => (string) $response->json('tier', 'desconhecido'),
                         'used' => $used,
                         'limit' => $limit,

@@ -181,22 +181,58 @@ Para retomar contexto das branches recentes, leia na raiz: `HANDOFF_012.md` (012
 
 ---
 
-## 7. Integrações TTS (ElevenLabs / OpenAI)
+## 7. Narração / TTS — qual motor usar?
 
-Cada usuário conecta a **própria** chave em **Integrações** (`/integrations`). As credenciais ficam criptografadas em `user_integrations`.
+| Motor | Custo | Qualidade | Recomendação |
+|-------|-------|-----------|--------------|
+| **OpenAI TTS** | ~US$ 0,015 / 1.000 caracteres | Muito boa | **Melhor custo-benefício** se você já tem chave OpenAI |
+| **Piper** | Grátis (local) | Boa | **Melhor opção 100% grátis** — roda no seu PC, sem bloqueio |
+| **Edge TTS** | Grátis (Microsoft) | Boa | Instável — erro comum: `Output has been disabled` |
+| **ElevenLabs** | Caro / plano pago | Excelente | Só se precisar de voz clonada premium |
+
+Chaves pagas: conecte em **Integrações** (`/integrations`).
 
 ```env
-TTS_DEFAULT_ENGINE=elevenlabs
-HTTP_VERIFY_SSL=false          # dev local (Laragon) — evita erro cURL 60 em buscas/APIs
-NODE_PATH=                     # opcional; o app resolve node.exe sozinho no Windows
-FFMPEG_PATH=                   # caminho completo do ffmpeg.exe (opcional)
-FFPROBE_PATH=                  # caminho completo do ffprobe.exe (opcional)
+TTS_DEFAULT_ENGINE=openai          # openai | piper | edge | elevenlabs
+TTS_DEFAULT_VOICE=nova             # OpenAI: nova, alloy, onyx… | Edge: pt-BR-FranciscaNeural
+HTTP_VERIFY_SSL=false
+NODE_PATH=
+FFMPEG_PATH=
+FFPROBE_PATH=
+
+# Piper (grátis local) — após rodar scripts/setup-piper.ps1
+PIPER_PATH=bin/piper/piper.exe
+PIPER_MODEL=bin/piper/pt_BR-faber-medium.onnx
+
+# Fallback Edge via Python (opcional): pip install edge-tts
+EDGE_TTS_PYTHON=C:/laragon/bin/python/python-3.10/python.exe
 ```
 
-- **ElevenLabs:** chave em https://elevenlabs.io/app/developers (permissões: Voices Read + Text to Speech).
-- Vozes clonadas aparecem automaticamente no seletor do editor.
-- Saldo de créditos e botão de compra ficam na página Integrações (compra é feita no site da ElevenLabs — não há API de top-up).
-- Plano free: use vozes marcadas `(grátis)`; vozes `(biblioteca — plano pago)` exigem assinatura paga.
+### Instalar Piper (Windows, grátis, ~2 min)
+
+No PowerShell, na pasta do projeto:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/setup-piper.ps1
+```
+
+Depois reinicie o editor e escolha **Piper** no motor TTS.
+
+### OpenAI TTS
+
+1. Chave em https://platform.openai.com/api-keys
+2. **Integrações** → OpenAI → colar chave
+3. Motor **OpenAI TTS** → voz `nova` ou `onyx`
+
+Um roteiro de ~5 min de narração (~750 palavras) custa centavos na OpenAI — muito menos que ElevenLabs.
+
+### Edge TTS (legado)
+
+Requer `npm install` (já no projeto). Se falhar:
+
+- Confira data/hora do Windows (automático)
+- Tente `pip install edge-tts` e defina `EDGE_TTS_PYTHON`
+- Prefira OpenAI ou Piper
 
 Migration necessária (se ambiente novo):
 

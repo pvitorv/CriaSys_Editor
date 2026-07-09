@@ -17,8 +17,10 @@
         </div>
     @endif
 
-    <div class="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4 text-sm text-zinc-400">
-        <p><strong class="text-zinc-200">Edge TTS</strong> (grátis) já vem ativo, sem chave. Para usar <strong class="text-zinc-200">sua própria voz</strong>, conecte a ElevenLabs abaixo, clone a voz no painel deles e ela aparecerá no seletor do editor.</p>
+    <div class="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4 text-sm text-zinc-400 space-y-1.5">
+        <p><strong class="text-zinc-200">OpenAI TTS</strong> abaixo: barato (centavos), instantâneo e com <strong class="text-emerald-300">licença para uso comercial</strong> (YouTube monetizado). Cadastre a chave e recarregue créditos aqui.</p>
+        <p><strong class="text-zinc-200">ElevenLabs</strong>: premium / clonagem de voz. Conecte a chave, clone a voz no painel deles e ela aparece no seletor do editor.</p>
+        <p><strong class="text-zinc-200">Piper</strong> e <strong class="text-zinc-200">Edge TTS</strong> funcionam sem chave (grátis no seu PC).</p>
     </div>
 
     @foreach ($providers as $slug => $p)
@@ -37,21 +39,40 @@
 
             @if (! empty($p['credits']))
                 @php($c = $p['credits'])
-                @php($pct = $c['limit'] > 0 ? min(100, round($c['used'] / $c['limit'] * 100)) : 0)
-                @php($low = $c['limit'] > 0 && $c['remaining'] <= $c['limit'] * 0.15)
-                <div class="rounded-lg bg-zinc-800/60 border border-zinc-700 p-3">
-                    <div class="flex justify-between text-xs text-zinc-400 mb-1">
-                        <span>Plano: <strong class="text-zinc-200">{{ $c['tier'] }}</strong></span>
-                        <span><strong class="{{ $low ? 'text-red-400' : 'text-emerald-400' }}">{{ number_format($c['remaining'], 0, ',', '.') }}</strong> caracteres restantes</span>
+                @if (($c['unit'] ?? null) === 'chars')
+                    @php($pct = $c['limit'] > 0 ? min(100, round($c['used'] / $c['limit'] * 100)) : 0)
+                    @php($low = $c['limit'] > 0 && $c['remaining'] <= $c['limit'] * 0.15)
+                    <div class="rounded-lg bg-zinc-800/60 border border-zinc-700 p-3">
+                        <div class="flex justify-between text-xs text-zinc-400 mb-1">
+                            <span>Plano: <strong class="text-zinc-200">{{ $c['tier'] }}</strong></span>
+                            <span><strong class="{{ $low ? 'text-red-400' : 'text-emerald-400' }}">{{ number_format($c['remaining'], 0, ',', '.') }}</strong> caracteres restantes</span>
+                        </div>
+                        <div class="h-2 rounded-full bg-zinc-700 overflow-hidden">
+                            <div class="h-full {{ $low ? 'bg-red-500' : 'bg-violet-500' }}" style="width: {{ $pct }}%"></div>
+                        </div>
+                        <p class="text-[11px] text-zinc-500 mt-1">{{ number_format($c['used'], 0, ',', '.') }} de {{ number_format($c['limit'], 0, ',', '.') }} usados ({{ $pct }}%)</p>
+                        @if ($low)
+                            <p class="text-[11px] text-red-400 mt-1">Saldo baixo! Compre créditos ou ligue o <strong>Auto Top Up</strong> no painel da ElevenLabs.</p>
+                        @endif
                     </div>
-                    <div class="h-2 rounded-full bg-zinc-700 overflow-hidden">
-                        <div class="h-full {{ $low ? 'bg-red-500' : 'bg-violet-500' }}" style="width: {{ $pct }}%"></div>
+                @elseif (($c['unit'] ?? null) === 'usd')
+                    @php($low = $c['remaining'] <= 2)
+                    <div class="rounded-lg bg-zinc-800/60 border border-zinc-700 p-3">
+                        <div class="flex justify-between text-xs text-zinc-400">
+                            <span>Saldo OpenAI</span>
+                            <span><strong class="{{ $low ? 'text-red-400' : 'text-emerald-400' }}">US$ {{ number_format($c['remaining'], 2, ',', '.') }}</strong> disponível</span>
+                        </div>
+                        <p class="text-[11px] text-zinc-500 mt-1">US$ {{ number_format($c['used'], 2, ',', '.') }} usados de US$ {{ number_format($c['granted'], 2, ',', '.') }} concedidos.</p>
+                        @if ($low)
+                            <p class="text-[11px] text-red-400 mt-1">Saldo baixo! Recarregue abaixo para não interromper a narração.</p>
+                        @endif
                     </div>
-                    <p class="text-[11px] text-zinc-500 mt-1">{{ number_format($c['used'], 0, ',', '.') }} de {{ number_format($c['limit'], 0, ',', '.') }} usados ({{ $pct }}%)</p>
-                    @if ($low)
-                        <p class="text-[11px] text-red-400 mt-1">Saldo baixo! Compre créditos ou ligue o <strong>Auto Top Up</strong> no painel da ElevenLabs.</p>
-                    @endif
-                </div>
+                @elseif (($c['unit'] ?? null) === 'unavailable')
+                    <div class="rounded-lg bg-zinc-800/60 border border-zinc-700 p-3 text-xs text-zinc-400">
+                        <p><strong class="text-zinc-200">Chave conectada.</strong> A OpenAI não libera consulta de saldo via API (só pelo painel do navegador). Veja o valor exato e recarregue no botão abaixo.</p>
+                        <p class="text-[11px] text-zinc-500 mt-1">Custo do TTS: ~US$ 0,015 por 1.000 caracteres (≈ centavos por vídeo).</p>
+                    </div>
+                @endif
             @endif
 
             @if (! empty($p['meta']['billing']))

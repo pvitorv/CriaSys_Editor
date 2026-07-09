@@ -6,6 +6,7 @@ use App\Models\Narration;
 use App\Models\Project;
 use App\Models\Slide;
 use App\Services\Render\FfmpegRenderService;
+use App\Services\Script\ScriptParser;
 use App\Services\Tts\TtsEngineFactory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -17,6 +18,7 @@ class NarrationService
         private ProjectStorageService $storage,
         private FfmpegRenderService $ffmpeg,
         private TtsEngineFactory $ttsFactory,
+        private ScriptParser $scriptParser,
     ) {}
 
     /**
@@ -26,25 +28,20 @@ class NarrationService
      */
     public function previewText(Project $project, string $text, string $voice, ?string $engine = null): array
     {
-        $engineSlug = $engine ?? config('criasys.tts.default_engine');
-
-        if (! $this->ttsFactory->isAvailable($engineSlug)) {
-            throw new \RuntimeException("Motor TTS '{$engineSlug}' indisponível. Use Edge TTS (Node.js + npm install).");
-        }
-
         $this->storage->ensureStructure($project);
         $path = $this->storage->audioPath($project, 'preview_'.uniqid().'.mp3');
 
-        return $this->ttsFactory->resolve($engineSlug)->synthesize(trim($text), $voice, $path);
+        return $this->ttsFactory->synthesizeWithFallback(
+            $this->scriptParser->formatNarrationText(trim($text)),
+            $voice,
+            $path,
+            $engine
+        );
     }
 
     public function generate(Project $project, string $voice, ?string $engine = null): Narration
     {
         $engineSlug = $engine ?? config('criasys.tts.default_engine');
-
-        if (! $this->ttsFactory->isAvailable($engineSlug)) {
-            throw new \RuntimeException("Motor TTS '{$engineSlug}' indisponível neste ambiente.");
-        }
 
         $this->storage->ensureStructure($project);
         $project->load('slides');
@@ -56,7 +53,7 @@ class NarrationService
             'status' => 'processing',
         ]);
 
-        $tts = $this->ttsFactory->resolve($engineSlug);
+        $engineUsed = $engineSlug;
 
         try {
             $segments = [];
@@ -73,9 +70,12 @@ class NarrationService
                     continue;
                 }
 
+                $text = $this->scriptParser->formatNarrationText($text);
+
                 $fullScript .= ($fullScript ? "\n\n" : '').$text;
                 $segmentPath = $this->storage->audioPath($project, "segment_{$narration->id}_{$index}.mp3");
-                $result = $tts->synthesize($text, $voice, $segmentPath);
+                $result = $this->ttsFactory->synthesizeWithFallback($text, $voice, $segmentPath, $engineSlug);
+                $engineUsed = $result['engine'] ?? $engineUsed;
 
                 $segments[] = [
                     'slide_id' => $slide->id,
@@ -101,6 +101,7 @@ class NarrationService
                 'duration_seconds' => $duration,
                 'segments' => $segments,
                 'status' => 'completed',
+                'engine' => $engineUsed,
             ]);
         } catch (\Throwable $e) {
             $narration->update(['status' => 'failed']);

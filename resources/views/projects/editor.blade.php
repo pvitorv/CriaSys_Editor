@@ -8,7 +8,12 @@
 
 @section('content')
 <div
-    x-data="editorApp({{ $project->id }}, @js(['description' => $project->description ?? '', 'name' => $project->name]))"
+    x-data="editorApp({{ $project->id }}, @js([
+        'description' => $project->description ?? '',
+        'name' => $project->name,
+        'defaultTtsEngine' => app(\App\Services\Tts\TtsEngineFactory::class)->recommendedEngine(),
+        'defaultVoice' => config('criasys.tts.default_voice'),
+    ]))"
     x-init="init()"
     class="flex flex-col gap-4"
     style="height: calc(100vh - 8rem);"
@@ -216,17 +221,33 @@
             {{-- Roteiro --}}
             <div x-show="activeTab === 'roteiro'" class="space-y-4">
                 <div>
-                    <label class="text-xs text-zinc-400">Roteiro completo (cole ou escreva — parágrafos separados por linha em branco)</label>
+                    <label class="text-xs text-zinc-400">Roteiro completo — cole o texto; o sistema detecta parágrafos, falas, versos e cenas</label>
                     <textarea
                         x-model="fullScript"
-                        rows="5"
-                        placeholder="Parágrafo do slide 1...
+                        @input="onFullScriptInput()"
+                        @paste="onFullScriptPaste($event)"
+                        rows="8"
+                        placeholder="Cole aqui o roteiro inteiro...
 
-Parágrafo do slide 2...
+JOÃO: Olá, como vai?
+MARIA: Tudo bem, e você?
 
-Parágrafo do slide 3..."
+Na floresta escura e fria,
+O vento sopra todo dia.
+
+[CENA 2 - A revelação]
+O narrador continua a história com calma."
                         class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm font-mono"
                     ></textarea>
+                    <p x-show="scriptStats" x-cloak class="text-[11px] text-zinc-500 mt-1">
+                        Detectado:
+                        <strong class="text-zinc-300" x-text="scriptStats?.slides"></strong> slide(s) —
+                        <span x-text="scriptStats?.prose"></span> parágrafo(s),
+                        <span x-text="scriptStats?.dialogues"></span> fala(s),
+                        <span x-text="scriptStats?.verses"></span> verso(s),
+                        <span x-text="scriptStats?.refrains || 0"></span> refrão(ões).
+                        Ao colar aqui (ou na narração do slide, se for texto grande), divide nos slides automaticamente.
+                    </p>
                     <div class="flex flex-wrap gap-2 mt-2">
                         <button type="button" @click="applyFullScript()" class="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm">Aplicar roteiro nos slides</button>
                         <button type="button" @click="buildFullScriptFromSlides()" class="px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Carregar dos slides</button>
@@ -238,6 +259,7 @@ Parágrafo do slide 3..."
                     <textarea
                         x-model="selectedSlide.narration_text"
                         @input="scheduleSave()"
+                        @paste="onNarrationPaste($event)"
                         rows="4"
                         placeholder="Texto que será lido na narração deste slide..."
                         class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm"
@@ -248,11 +270,12 @@ Parágrafo do slide 3..."
                 <div class="flex flex-wrap gap-3 items-end border-t border-zinc-800 pt-4">
                     <div>
                         <label class="text-xs text-zinc-400">Motor TTS</label>
-                        <select x-model="ttsEngine" @change="onEngineChange()" class="block mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
+                        <select x-model="ttsEngine" @change="onEngineChange()" class="block mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm min-w-[220px]">
                             <template x-for="eng in ttsEngines" :key="eng.slug">
                                 <option :value="eng.slug" :disabled="!eng.available" x-text="eng.name + (eng.available ? '' : ' (indisponível)')"></option>
                             </template>
                         </select>
+                        <p x-show="selectedTtsEngineMeta?.price_hint" class="text-[10px] text-zinc-500 mt-1" x-text="selectedTtsEngineMeta?.price_hint"></p>
                     </div>
                     <div>
                         <label class="text-xs text-zinc-400">Voz</label>
@@ -278,9 +301,11 @@ Parágrafo do slide 3..."
                         Sincronizar duração
                     </button>
                     <p class="w-full text-xs text-zinc-500">
-                        Quer usar sua própria voz? Conecte a ElevenLabs em
-                        <a href="{{ route('integrations.edit') }}" class="text-violet-400 hover:text-violet-300">Integrações</a>
-                        e sua voz clonada aparece aqui.
+                        <strong class="text-zinc-400">Recomendado:</strong>
+                        OpenAI TTS (~US$ 0,015 / 1.000 caracteres — muito mais barato que ElevenLabs) ou
+                        <strong class="text-zinc-400">Piper</strong> (100% grátis no seu PC).
+                        Edge TTS é gratuito mas a Microsoft bloqueia com frequência (“Output has been disabled”).
+                        Configure em <a href="{{ route('integrations.edit') }}" class="text-violet-400 hover:text-violet-300">Integrações</a>.
                     </p>
                 </div>
 

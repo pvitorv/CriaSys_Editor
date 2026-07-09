@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { formatNarrationText, parseScript } from './scriptParser';
 
 const token = document.head.querySelector('meta[name="csrf-token"]');
 if (token) {
@@ -28,8 +29,10 @@ window.editorApp = function (projectId, projectMeta = {}) {
         selectedSlide: null,
         activeTab: 'roteiro',
         fullScript: '',
-        voice: '',
-        ttsEngine: 'elevenlabs',
+        scriptStats: null,
+        scriptParseTimeout: null,
+        voice: projectMeta.defaultVoice || 'onyx',
+        ttsEngine: projectMeta.defaultTtsEngine || 'openai',
         ttsEngines: [],
         voices: [],
         voicesLoading: false,
@@ -97,6 +100,10 @@ window.editorApp = function (projectId, projectMeta = {}) {
             const meta = this.stockLicenseProviders.find((p) => p.slug === slug);
 
             return meta?.project_hint || '';
+        },
+
+        get selectedTtsEngineMeta() {
+            return this.ttsEngines.find((e) => e.slug === this.ttsEngine) || null;
         },
 
         async init() {
@@ -195,10 +202,18 @@ window.editorApp = function (projectId, projectMeta = {}) {
         async loadTtsEngines() {
             const { data } = await api.get('/tts/engines');
             this.ttsEngines = data;
-            const available = data.find(e => e.slug === this.ttsEngine && e.available);
-            if (!available && data.length) {
-                const first = data.find(e => e.available);
-                if (first) this.ttsEngine = first.slug;
+
+            const recommended = data.find((e) => e.recommended && e.available);
+            const preferred = ['openai', 'piper', 'edge', 'elevenlabs'];
+            const current = data.find((e) => e.slug === this.ttsEngine && e.available);
+
+            if (!current) {
+                const pick = recommended
+                    || preferred.map((slug) => data.find((e) => e.slug === slug && e.available)).find(Boolean);
+                if (pick) this.ttsEngine = pick.slug;
+            } else if (this.ttsEngine === 'edge') {
+                const better = data.find((e) => e.slug === 'piper' && e.available);
+                if (better) this.ttsEngine = better.slug;
             }
         },
 
@@ -612,9 +627,93 @@ window.editorApp = function (projectId, projectMeta = {}) {
             const slide = this.selectedSlide;
             if (!slide) return;
             const parts = [slide.title, slide.subtitle, slide.body_text].filter(v => v?.trim());
-            slide.narration_text = parts.join('. ');
+            slide.narration_text = formatNarrationText(parts.join('. '));
             this.scheduleSave();
             this.message = 'Texto copiado para narração';
+        },
+
+        onFullScriptInput() {
+            clearTimeout(this.scriptParseTimeout);
+            this.scriptParseTimeout = setTimeout(() => this.refreshScriptPreview(), 400);
+        },
+
+        refreshScriptPreview() {
+            const text = this.fullScript.trim();
+            if (!text) {
+                this.scriptStats = null;
+                return;
+            }
+            this.scriptStats = parseScript(text).stats;
+        },
+
+        onFullScriptPaste(event) {
+            const pasted = event.clipboardData?.getData('text') ?? '';
+            if (!pasted.trim()) return;
+
+            event.preventDefault();
+            const textarea = event.target;
+            const start = textarea.selectionStart ?? 0;
+            const end = textarea.selectionEnd ?? 0;
+            const merged = (this.fullScript.slice(0, start) + pasted + this.fullScript.slice(end)).trim();
+            const parsed = parseScript(merged);
+
+            this.fullScript = parsed.formattedScript || merged;
+            this.scriptStats = parsed.stats;
+            this.applyParsedScript(parsed, { silent: false, fromPaste: true });
+        },
+
+        onNarrationPaste(event) {
+            const pasted = event.clipboardData?.getData('text') ?? '';
+            if (!pasted.trim() || !this.selectedSlide) return;
+
+            const looksLikeFullScript = pasted.length > 200
+                || (pasted.includes('\n') && (parseScript(pasted).stats.slides > 1));
+
+            if (looksLikeFullScript) {
+                event.preventDefault();
+                const parsed = parseScript(pasted);
+                this.fullScript = parsed.formattedScript || pasted;
+                this.scriptStats = parsed.stats;
+                this.activeTab = 'roteiro';
+                this.applyParsedScript(parsed, { fromPaste: true });
+                this.message = `Roteiro inteiro detectado — ${parsed.stats.slides} slide(s) criado(s)`;
+                return;
+            }
+
+            event.preventDefault();
+            const textarea = event.target;
+            const start = textarea.selectionStart ?? 0;
+            const end = textarea.selectionEnd ?? 0;
+            const merged = (this.selectedSlide.narration_text || '').slice(0, start)
+                + pasted
+                + (this.selectedSlide.narration_text || '').slice(end);
+
+            this.selectedSlide.narration_text = formatNarrationText(merged);
+            this.scheduleSave();
+            this.message = 'Texto formatado para narração';
+            setTimeout(() => { if (this.message === 'Texto formatado para narração') this.message = ''; }, 2500);
+        },
+
+        async applyParsedScript(parsed, { silent = false, fromPaste = false, trimExtra = false } = {}) {
+            if (!parsed?.blocks?.length) {
+                if (!silent) this.error = 'Nenhum bloco de narração detectado.';
+                return;
+            }
+
+            try {
+                const { data } = await api.post(`/projects/${this.projectId}/slides/apply-script`, {
+                    blocks: parsed.blocks.map(({ narration_text, title }) => ({ narration_text, title })),
+                    trim_extra_slides: fromPaste || trimExtra,
+                });
+                this.slides = data.map(s => this.enrichSlide(s));
+                this.syncSelection();
+                if (!silent) {
+                    const s = parsed.stats;
+                    this.message = `Roteiro aplicado: ${s.slides} slide(s) — ${s.prose} parágrafo(s), ${s.dialogues} fala(s), ${s.verses} verso(s), ${s.refrains || 0} refrão(ões)`;
+                }
+            } catch (e) {
+                if (!silent) this.error = e.response?.data?.message || 'Erro ao aplicar roteiro';
+            }
         },
 
         async applyFullScript() {
@@ -623,24 +722,14 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 this.error = 'Cole ou escreva o roteiro completo primeiro.';
                 return;
             }
-            const blocks = text.split(/\n\s*\n+/).map(b => b.trim()).filter(Boolean);
-            if (!blocks.length) {
-                this.error = 'Separe os parágrafos com uma linha em branco.';
+            const parsed = parseScript(text);
+            if (!parsed.blocks.length) {
+                this.error = 'Não foi possível detectar blocos de narração no texto.';
                 return;
             }
-            try {
-                const { data } = await api.post(`/projects/${this.projectId}/slides/apply-script`, {
-                    blocks: blocks.map((narration_text, i) => ({
-                        narration_text,
-                        title: `Slide ${i + 1}`,
-                    })),
-                });
-                this.slides = data.map(s => this.enrichSlide(s));
-                this.syncSelection();
-                this.message = `Roteiro aplicado em ${blocks.length} slide(s)`;
-            } catch (e) {
-                this.error = e.response?.data?.message || 'Erro ao aplicar roteiro';
-            }
+            this.fullScript = parsed.formattedScript;
+            this.scriptStats = parsed.stats;
+            await this.applyParsedScript(parsed, { trimExtra: true });
         },
 
         async uploadImage(event) {
@@ -833,8 +922,8 @@ window.editorApp = function (projectId, projectMeta = {}) {
             const slide = this.selectedSlide;
             if (!slide) return '';
             const text = (slide.narration_text || '').trim();
-            if (text) return text;
-            return [slide.title, slide.subtitle, slide.body_text].filter(v => v?.trim()).join('. ');
+            if (text) return formatNarrationText(text);
+            return formatNarrationText([slide.title, slide.subtitle, slide.body_text].filter(v => v?.trim()).join('. '));
         },
 
         async testNarration() {
@@ -852,7 +941,13 @@ window.editorApp = function (projectId, projectMeta = {}) {
                     engine: this.ttsEngine,
                 });
                 this.previewAudioUrl = data.audio_url;
-                this.message = `Teste gerado (${Math.round(data.duration_seconds || 0)}s) — ouça abaixo`;
+                if (data.engine_used && data.engine_used !== this.ttsEngine) {
+                    this.ttsEngine = data.engine_used;
+                    await this.loadVoices();
+                    this.message = `Teste gerado com ${data.engine_used} (Edge falhou — troca automática)`;
+                } else {
+                    this.message = `Teste gerado (${Math.round(data.duration_seconds || 0)}s) — ouça abaixo`;
+                }
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao testar narração';
             } finally {
@@ -864,6 +959,9 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.narrationLoading = true;
             this.error = '';
             try {
+                if (this.fullScript.trim()) {
+                    await this.applyFullScript();
+                }
                 await this.saveSlide();
                 const { data } = await api.post(`/projects/${this.projectId}/narration/generate`, {
                     voice: this.voice,
@@ -937,6 +1035,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
         async exportSubtitles() {
             try {
+                this.error = '';
                 const { data } = await api.post(`/projects/${this.projectId}/subtitles`);
                 this.message = 'legendas.srt gerado';
                 if (data.url) window.open(data.url, '_blank');

@@ -25,7 +25,7 @@ class NarrationController extends Controller
         $data = $request->validate([
             'text' => ['required', 'string', 'min:1', 'max:5000'],
             'voice' => ['nullable', 'string'],
-            'engine' => ['nullable', 'string', 'in:edge,coqui,elevenlabs,openai'],
+            'engine' => ['nullable', 'string', 'in:edge,elevenlabs,openai,piper'],
         ]);
 
         $voice = $data['voice'] ?? config('criasys.tts.default_voice');
@@ -42,6 +42,7 @@ class NarrationController extends Controller
         return SafeJson::response([
             'audio_url' => '/api/projects/'.$project->id.'/files/audio/'.$filename,
             'duration_seconds' => $result['duration_seconds'],
+            'engine_used' => $result['engine'] ?? $engine,
         ]);
     }
 
@@ -49,7 +50,7 @@ class NarrationController extends Controller
     {
         $data = $request->validate([
             'voice' => ['nullable', 'string'],
-            'engine' => ['nullable', 'string', 'in:edge,coqui,elevenlabs,openai'],
+            'engine' => ['nullable', 'string', 'in:edge,elevenlabs,openai,piper'],
             'async' => ['nullable', 'boolean'],
         ]);
 

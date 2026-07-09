@@ -16,7 +16,7 @@ class TtsVoiceCatalog
     {
         return match ($provider) {
             'edge' => $this->edgeVoices(),
-            'coqui' => [['id' => 'default', 'name' => 'Voz padrão (XTTS pt-BR)']],
+            'piper' => $this->piperVoices(),
             'openai' => $this->openAiVoices(),
             'elevenlabs' => $this->elevenLabsVoices(),
             default => [],
@@ -32,6 +32,29 @@ class TtsVoiceCatalog
         $out = [];
         foreach ($voices as $id => $name) {
             $out[] = ['id' => $id, 'name' => $name];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<int, array{id: string, name: string}>
+     */
+    private function piperVoices(): array
+    {
+        $factory = app(TtsEngineFactory::class);
+        $voices = config('criasys.tts.piper_voices', []);
+        $out = [];
+
+        foreach ($voices as $id => $meta) {
+            $model = $meta['model'] ?? null;
+            if ($model && is_file($factory->absPath((string) $model))) {
+                $out[] = ['id' => $id, 'name' => $meta['label'] ?? $id];
+            }
+        }
+
+        if ($out === [] && is_file($factory->absPath((string) config('criasys.tts.piper_model')))) {
+            $out[] = ['id' => 'default', 'name' => 'Voz padrão Piper (pt-BR)'];
         }
 
         return $out;

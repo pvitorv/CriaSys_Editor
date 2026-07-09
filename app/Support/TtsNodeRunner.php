@@ -50,12 +50,13 @@ class TtsNodeRunner
             }
         }
 
+        $env['FFMPEG_PATH'] = config('criasys.ffmpeg_path', 'ffmpeg');
         if ($dbg = getenv('TTS_DEBUG_LOG')) {
             $env['TTS_DEBUG_LOG'] = $dbg;
         }
 
         try {
-            $result = Process::timeout(90)
+            $result = Process::timeout(180)
                 ->path(base_path())
                 ->env($env)
                 ->run([
@@ -84,7 +85,17 @@ class TtsNodeRunner
             if (! $exists || $size === 0) {
                 $detail = $stderr !== '' ? $stderr : ($stdout !== '' ? $stdout : 'exit='.$result->exitCode());
 
-                throw new \RuntimeException('Node TTS falhou. '.$detail);
+                if (app(TtsPythonRunner::class)->isAvailable()) {
+                    try {
+                        app(TtsPythonRunner::class)->synthesize($text, $voice, $outputPath);
+
+                        return;
+                    } catch (\Throwable $pyError) {
+                        $detail .= ' | Fallback Python: '.$pyError->getMessage();
+                    }
+                }
+
+                throw new \RuntimeException($this->friendlyEdgeError($detail));
             }
 
             File::copy($tempOutput, $outputPath);
@@ -92,5 +103,14 @@ class TtsNodeRunner
             @File::delete($textFile);
             @File::delete($tempOutput);
         }
+    }
+
+    private function friendlyEdgeError(string $detail): string
+    {
+        if (stripos($detail, 'Output has been disabled') !== false || stripos($detail, 'No audio was received') !== false) {
+            return 'Microsoft bloqueou o Edge TTS. O sistema tentará Piper automaticamente — selecione Piper no motor TTS.';
+        }
+
+        return 'Edge TTS falhou. '.$detail;
     }
 }

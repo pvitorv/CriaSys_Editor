@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\Slide;
+use App\Services\Script\ScriptParser;
 use App\Support\SafeJson;
 use App\Support\Utf8;
 use Illuminate\Http\JsonResponse;
@@ -63,17 +64,37 @@ class SlideController extends Controller
         return SafeJson::response($this->slideResponse($slide->fresh()));
     }
 
-    public function applyScript(Request $request, Project $project): JsonResponse
+    public function applyScript(Request $request, Project $project, ScriptParser $parser): JsonResponse
     {
         $data = $request->validate([
-            'blocks' => ['required', 'array', 'min:1'],
-            'blocks.*.narration_text' => ['required', 'string'],
+            'text' => ['nullable', 'string'],
+            'blocks' => ['nullable', 'array', 'min:1'],
+            'blocks.*.narration_text' => ['required_with:blocks', 'string'],
             'blocks.*.title' => ['nullable', 'string', 'max:255'],
+            'trim_extra_slides' => ['nullable', 'boolean'],
         ]);
+
+        if (! empty($data['text'])) {
+            $parsed = $parser->parse($data['text']);
+            $blocks = $parsed['blocks'];
+        } elseif (! empty($data['blocks'])) {
+            $blocks = array_map(function (array $block) use ($parser) {
+                return [
+                    'narration_text' => $parser->formatNarrationText($block['narration_text']),
+                    'title' => $block['title'] ?? null,
+                ];
+            }, $data['blocks']);
+        } else {
+            return response()->json(['message' => 'Envie o roteiro em text ou blocks.'], 422);
+        }
+
+        if ($blocks === []) {
+            return response()->json(['message' => 'Nenhum bloco de narração detectado no roteiro.'], 422);
+        }
 
         $slides = $project->slides()->orderBy('order')->get();
 
-        foreach ($data['blocks'] as $index => $block) {
+        foreach ($blocks as $index => $block) {
             $block = $this->sanitizeSlideInput($block);
             if ($slides->has($index)) {
                 $slides[$index]->update([
@@ -91,9 +112,30 @@ class SlideController extends Controller
             }
         }
 
+        if ($request->boolean('trim_extra_slides')) {
+            $project->slides()->orderBy('order')->get()->slice(count($blocks))->each(function (Slide $slide) {
+                if (! $slide->image_path && ! $slide->video_path) {
+                    $slide->delete();
+                }
+            });
+
+            $project->slides()->orderBy('order')->get()->each(function (Slide $s, int $index) {
+                $s->update(['order' => $index]);
+            });
+        }
+
         return SafeJson::response(
             $project->fresh('slides')->slides->map(fn (Slide $slide) => $this->slideResponse($slide))->values()
         );
+    }
+
+    public function parseScript(Request $request, Project $project, ScriptParser $parser): JsonResponse
+    {
+        $data = $request->validate([
+            'text' => ['required', 'string'],
+        ]);
+
+        return SafeJson::response($parser->parse($data['text']));
     }
 
     public function destroy(Project $project, Slide $slide): JsonResponse

@@ -23,5 +23,9 @@
 /portable-data
 /CriaSysData
 /dist-electron
+/bin/piper/piper/
+/bin/piper/*.onnx
+/bin/piper/*.onnx.json
+/bin/piper/piper.exe
 Homestead.yaml
 Thumbs.db
