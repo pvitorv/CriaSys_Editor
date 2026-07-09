@@ -289,7 +289,7 @@ Parágrafo do slide 3..."
 
             {{-- Biblioteca --}}
             <div x-show="activeTab === 'biblioteca'" class="space-y-3">
-                <p class="text-xs text-zinc-500">Imagens e vídeos curtos (Pexels/Pixabay). Áudio para trilha. Clique para inserir no slide selecionado.</p>
+                <p class="text-xs text-zinc-500">Imagens (Openverse grátis) e vídeos curtos (Mixkit grátis + Pexels/Pixabay com chave). Áudio para trilha.</p>
                 <div class="flex flex-wrap gap-2">
                     <select x-model="mediaSource" class="rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
                         <option value="all">Todas (gratuitas + APIs)</option>

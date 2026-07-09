@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Services\MediaLibrary\MediaImportService;
 use App\Services\MediaLibrary\MixkitService;
+use App\Services\MediaLibrary\MixkitVideoService;
 use App\Services\MediaLibrary\OpenverseService;
 use App\Services\MediaLibrary\PexelsService;
 use App\Services\MediaLibrary\PixabayService;
@@ -21,6 +22,7 @@ class MediaLibraryController extends Controller
         private PixabayService $pixabay,
         private UnsplashService $unsplash,
         private MixkitService $mixkit,
+        private MixkitVideoService $mixkitVideos,
         private MediaImportService $importer,
     ) {}
 
@@ -64,7 +66,18 @@ class MediaLibraryController extends Controller
             $videoSources = $this->resolveVideoSources($source);
             $lastError = null;
 
+            if (in_array('mixkit', $videoSources, true)) {
+                try {
+                    $results = array_merge($results, $this->mixkitVideos->searchVideos($query, $page));
+                } catch (\Throwable $e) {
+                    $lastError = $e->getMessage();
+                }
+            }
+
             foreach ($videoSources as $src) {
+                if ($src === 'mixkit') {
+                    continue;
+                }
                 try {
                     $chunk = match ($src) {
                         'pexels' => $this->pexels->searchVideos($query, $page),
@@ -81,9 +94,17 @@ class MediaLibraryController extends Controller
 
             $errors = [];
             if (empty($results)) {
-                $errors[] = 'Nenhum vídeo curto encontrado para "'.$query.'". Configure PEXELS_API_KEY ou PIXABAY_API_KEY.';
+                $errors[] = 'Nenhum vídeo curto encontrado para "'.$query.'".';
+                if (! config('criasys.media.pexels_api_key') && ! config('criasys.media.pixabay_api_key')) {
+                    $errors[] = 'Mixkit (grátis) não retornou resultados — tente em inglês (ex.: "game") ou outra palavra.';
+                } else {
+                    $errors[] = 'Verifique PEXELS_API_KEY / PIXABAY_API_KEY no .env para mais fontes.';
+                }
                 if ($lastError && config('app.debug')) {
                     $errors[] = $lastError;
+                }
+                if (config('app.env') !== 'production' && str_contains((string) $lastError, 'SSL')) {
+                    $errors[] = 'Adicione HTTP_VERIFY_SSL=false no .env e rode php artisan config:clear.';
                 }
             }
 
@@ -172,15 +193,26 @@ class MediaLibraryController extends Controller
      */
     private function resolveVideoSources(string $source): array
     {
+        if ($source === 'mixkit') {
+            return ['mixkit'];
+        }
+
         if ($source === 'pexels') {
-            return config('criasys.media.pexels_api_key') ? ['pexels'] : [];
+            return array_filter([
+                'mixkit',
+                config('criasys.media.pexels_api_key') ? 'pexels' : null,
+            ]);
         }
 
         if ($source === 'pixabay') {
-            return config('criasys.media.pixabay_api_key') ? ['pixabay'] : [];
+            return array_filter([
+                'mixkit',
+                config('criasys.media.pixabay_api_key') ? 'pixabay' : null,
+            ]);
         }
 
-        $sources = [];
+        // all / openverse / unsplash: Mixkit sempre + APIs configuradas
+        $sources = ['mixkit'];
         if (config('criasys.media.pexels_api_key')) {
             $sources[] = 'pexels';
         }
