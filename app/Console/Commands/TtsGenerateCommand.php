@@ -19,7 +19,8 @@ class TtsGenerateCommand extends Command
         $voice = $this->option('voice') ?: config('criasys.tts.default_voice');
 
         if (! $input || ! $output || ! file_exists($input)) {
-            $this->error('Parâmetros --input e --output são obrigatórios.');
+            $this->error('Uso interno (chamado pelo editor). Para testar no terminal: php artisan tts:test');
+            $this->line('Exemplo: php artisan tts:generate --input=storage/app/tts/texto.txt --output=storage/app/tts/saida.mp3');
 
             return self::FAILURE;
         }

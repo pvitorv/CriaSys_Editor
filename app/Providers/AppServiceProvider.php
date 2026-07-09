@@ -20,6 +20,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->configureWritableProcessTemp();
+
         Gate::policy(Project::class, ProjectPolicy::class);
 
         Route::bind('project', function (string $value) {
@@ -31,6 +33,21 @@ class AppServiceProvider extends ServiceProvider
 
         foreach ([config('criasys.projects_path'), config('criasys.exports_path')] as $path) {
             File::ensureDirectoryExists($path);
+        }
+    }
+
+    /**
+     * php artisan serve no Windows usa C:\WINDOWS como temp — Symfony Process não consegue gravar lá.
+     */
+    private function configureWritableProcessTemp(): void
+    {
+        $tmp = storage_path('framework/process-tmp');
+        File::ensureDirectoryExists($tmp);
+
+        foreach (['TMP', 'TEMP', 'TMPDIR'] as $key) {
+            putenv("{$key}={$tmp}");
+            $_ENV[$key] = $tmp;
+            $_SERVER[$key] = $tmp;
         }
     }
 }
