@@ -29,7 +29,8 @@ class EdgeTtsEngine implements TtsEngineInterface
 
         foreach ($commands as $command) {
             $result = Process::timeout(120)->run($command);
-            if ($result->successful() && file_exists($outputPath) && filesize($outputPath) > 0) {
+
+            if (file_exists($outputPath) && filesize($outputPath) > 0) {
                 File::delete($textFile);
 
                 return [
@@ -37,6 +38,7 @@ class EdgeTtsEngine implements TtsEngineInterface
                     'duration_seconds' => $this->probeDuration($outputPath),
                 ];
             }
+
             $lastError = Utf8::clean(trim($result->errorOutput() ?: $result->output()));
         }
 

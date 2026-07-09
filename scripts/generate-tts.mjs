@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import { UniversalEdgeTTS } from 'edge-tts-universal';
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -6,23 +7,22 @@ const getArg = (name) => {
     return i >= 0 ? args[i + 1] : null;
 };
 
-const voice = getArg('--voice') || 'pt-BR-FranciscaNeural';
-const input = getArg('--input');
-const output = getArg('--output');
+async function main() {
+    const voice = getArg('--voice') || 'pt-BR-FranciscaNeural';
+    const input = getArg('--input');
+    const output = getArg('--output');
 
-if (!input || !output) {
-    console.error('Uso: node generate-tts.mjs --voice VOICE --input FILE --output FILE');
-    process.exit(1);
-}
+    if (!input || !output) {
+        console.error('Uso: node generate-tts.mjs --voice VOICE --input FILE --output FILE');
+        process.exit(1);
+    }
 
-const text = readFileSync(input, 'utf8').trim();
-if (!text) {
-    console.error('Texto vazio');
-    process.exit(1);
-}
+    const text = readFileSync(input, 'utf8').trim();
+    if (!text) {
+        console.error('Texto vazio');
+        process.exit(1);
+    }
 
-try {
-    const { UniversalEdgeTTS } = await import('edge-tts-universal');
     const tts = new UniversalEdgeTTS(text, voice);
     const result = await tts.synthesize();
     const audio = result?.audio;
@@ -39,9 +39,9 @@ try {
     } else {
         writeFileSync(output, Buffer.from(audio));
     }
-
-    process.exit(0);
-} catch (err) {
-    console.error(err.message || err);
-    process.exit(1);
 }
+
+main().catch((err) => {
+    console.error(err?.message || String(err));
+    process.exit(1);
+});
