@@ -39,7 +39,7 @@ class PixabayService
                 'original_url' => $hit['pageURL'] ?? null,
                 'license_type' => LicenseType::Pixabay->value,
                 'requires_attribution' => false,
-                'attribution_text' => "Imagem por {$user} no Pixabay",
+                'attribution_text' => "Imagem por {$user} no Pixabay (pixabay.com) — Pixabay License",
             ];
         })->all();
     }
@@ -80,7 +80,7 @@ class PixabayService
                 'original_url' => $hit['pageURL'] ?? null,
                 'license_type' => LicenseType::Pixabay->value,
                 'requires_attribution' => false,
-                'attribution_text' => "Vídeo por {$user} no Pixabay",
+                'attribution_text' => "Vídeo por {$user} no Pixabay (pixabay.com) — Pixabay License",
             ];
         })->filter(fn (array $item) => ! empty($item['download_url']))->values()->all();
     }

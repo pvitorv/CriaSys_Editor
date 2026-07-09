@@ -42,10 +42,10 @@ class PexelsService
                 'photographer' => $photo['photographer'] ?? 'Desconhecido',
                 'original_url' => $photo['url'] ?? null,
                 'license_type' => LicenseType::Pexels->value,
-                'requires_attribution' => false,
+                'requires_attribution' => true,
                 'attribution_text' => isset($photo['photographer'])
-                    ? "Foto por {$photo['photographer']} no Pexels"
-                    : null,
+                    ? "Foto por {$photo['photographer']} no Pexels (pexels.com)"
+                    : 'Foto do Pexels (pexels.com)',
             ];
         })->all();
     }
@@ -82,10 +82,10 @@ class PexelsService
                 'author' => $video['user']['name'] ?? 'Pexels',
                 'original_url' => $video['url'] ?? null,
                 'license_type' => LicenseType::Pexels->value,
-                'requires_attribution' => false,
+                'requires_attribution' => true,
                 'attribution_text' => isset($video['user']['name'])
-                    ? "Vídeo por {$video['user']['name']} no Pexels"
-                    : 'Vídeo do Pexels',
+                    ? "Vídeo por {$video['user']['name']} no Pexels (pexels.com)"
+                    : 'Vídeo do Pexels (pexels.com)',
             ];
         })->filter(fn (array $item) => ! empty($item['download_url']))->values()->all();
     }

@@ -46,6 +46,10 @@ window.editorApp = function (projectId) {
         exportPackages: [],
         downloads: [],
         selectedDownloadIds: [],
+        platformDescriptions: {},
+        platformDescKeys: ['youtube', 'youtube_shorts', 'tiktok', 'instagram_reels', 'instagram_feed'],
+        selectedPlatformDesc: 'youtube',
+        platformDescLoading: false,
         audioTrack: { volume: 0.35, ducking_enabled: true },
         renderJobs: [],
         saving: false,
@@ -226,6 +230,39 @@ window.editorApp = function (projectId) {
             return (bytes / 1048576).toFixed(1) + ' MB';
         },
 
+        async loadPlatformDescriptions() {
+            try {
+                const { data } = await api.get(`/projects/${this.projectId}/platform-descriptions`);
+                this.platformDescriptions = data;
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao carregar descrições';
+            }
+        },
+
+        async generatePlatformDescriptions() {
+            this.platformDescLoading = true;
+            try {
+                const { data } = await api.post(`/projects/${this.projectId}/platform-descriptions`);
+                this.platformDescriptions = data.descriptions || {};
+                await this.loadDownloads();
+                this.message = 'Descrições e créditos gerados (disponíveis para download)';
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao gerar descrições';
+            } finally {
+                this.platformDescLoading = false;
+            }
+        },
+
+        copyPlatformDescription() {
+            const d = this.platformDescriptions[this.selectedPlatformDesc];
+            if (!d?.description) return;
+            navigator.clipboard.writeText(d.description).then(() => {
+                this.message = 'Descrição copiada para a área de transferência';
+            }).catch(() => {
+                this.error = 'Não foi possível copiar — selecione e copie manualmente';
+            });
+        },
+
         async loadExportPackages() {
             const { data } = await api.get(`/projects/${this.projectId}/export-packages`);
             this.exportPackages = data.map(pkg => ({
@@ -279,6 +316,9 @@ window.editorApp = function (projectId) {
             this.activeTab = tab;
             if (tab === 'biblioteca') {
                 this.prepareMediaSearch();
+            }
+            if (tab === 'exportar') {
+                this.loadPlatformDescriptions();
             }
         },
 

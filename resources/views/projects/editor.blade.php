@@ -336,7 +336,7 @@ Parágrafo do slide 3..."
                                 <img :src="item.preview_url" :alt="item.title || 'Imagem'" class="w-full h-24 object-cover" loading="lazy">
                             </template>
                             <span class="absolute bottom-0 left-0 right-0 bg-black/70 text-[10px] px-1 py-0.5 truncate" x-text="item.source"></span>
-                            <span x-show="item.requires_attribution" class="absolute top-1 right-1 text-[10px] bg-yellow-600/80 px-1 rounded">Crédito</span>
+                            <span x-show="item.requires_attribution || item.attribution_text" class="absolute top-1 right-1 text-[10px] bg-yellow-600/80 px-1 rounded" title="Crédito ao autor">©</span>
                             <div class="absolute inset-0 bg-violet-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs font-medium">Inserir</div>
                         </div>
                     </template>
@@ -362,6 +362,41 @@ Parágrafo do slide 3..."
                     <button @click="exportSubtitles()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Exportar legendas.srt</button>
                     <button @click="exportPsd()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Exportar slides PSD</button>
                     <button @click="exportPackage()" class="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-sm">Pacote Premiere/Affinity</button>
+                    <button @click="generatePlatformDescriptions()" :disabled="platformDescLoading" class="px-4 py-2 rounded-lg bg-violet-700 hover:bg-violet-600 disabled:opacity-50 text-sm">
+                        <span x-text="platformDescLoading ? 'Gerando...' : 'Gerar descrições + créditos'"></span>
+                    </button>
+                </div>
+
+                <div class="rounded-lg border border-violet-800/50 bg-violet-950/20 p-3 space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h3 class="text-sm font-medium text-zinc-200">Descrições para publicar (com créditos dos autores)</h3>
+                        <button @click="copyPlatformDescription()" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">Copiar descrição</button>
+                    </div>
+                    <p class="text-[11px] text-zinc-500">Ao importar imagens/vídeos da biblioteca, o sistema registra os créditos. A seção <strong class="text-zinc-400">CRÉDITOS E LICENÇAS</strong> fica no final de cada texto — cole na descrição do YouTube, TikTok ou Instagram.</p>
+                    <div class="flex flex-wrap gap-1">
+                        <template x-for="key in platformDescKeys" :key="key">
+                            <button
+                                @click="selectedPlatformDesc = key"
+                                :class="selectedPlatformDesc === key ? 'bg-violet-600 text-white' : 'bg-zinc-800 text-zinc-400'"
+                                class="px-2 py-1 rounded text-xs capitalize"
+                                x-text="platformDescriptions[key]?.platform || key.replace('_', ' ')"
+                            ></button>
+                        </template>
+                    </div>
+                    <template x-if="platformDescriptions[selectedPlatformDesc]">
+                        <div>
+                            <p class="text-[10px] text-zinc-500 mb-1">
+                                <span x-text="platformDescriptions[selectedPlatformDesc].materials_count + ' material(is) com crédito · ' + platformDescriptions[selectedPlatformDesc].char_count + ' caracteres'"></span>
+                            </p>
+                            <textarea
+                                readonly
+                                rows="12"
+                                class="w-full rounded bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs font-mono text-zinc-300"
+                                :value="platformDescriptions[selectedPlatformDesc]?.description || ''"
+                            ></textarea>
+                        </div>
+                    </template>
+                    <p x-show="!platformDescriptions[selectedPlatformDesc]" class="text-xs text-zinc-500">Clique em &quot;Gerar descrições + créditos&quot; ou importe mídia da biblioteca primeiro.</p>
                 </div>
 
                 <div class="rounded-lg border border-zinc-700 p-3 space-y-3">

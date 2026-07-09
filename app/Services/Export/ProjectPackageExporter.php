@@ -2,7 +2,6 @@
 
 namespace App\Services\Export;
 
-use App\Models\Asset;
 use App\Models\ExportPreset;
 use App\Models\Project;
 use App\Services\ProjectStorageService;
@@ -110,6 +109,18 @@ class ProjectPackageExporter
         );
 
         File::put($basePath.DIRECTORY_SEPARATOR.'credits.txt', $this->buildCredits($project));
+
+        $descDir = $basePath.DIRECTORY_SEPARATOR.'descricoes';
+        File::ensureDirectoryExists($descDir);
+        $descService = app(PlatformPostDescriptionService::class);
+        foreach ($descService->generateAll($project) as $key => $data) {
+            File::put($descDir.DIRECTORY_SEPARATOR.$key.'.txt', $data['description']);
+        }
+        File::put(
+            $descDir.DIRECTORY_SEPARATOR.'creditos_materiais.txt',
+            app(ProjectAttributionCatalog::class)->creditsBlock($project, "\n")
+        );
+
         File::put($basePath.DIRECTORY_SEPARATOR.'README.txt', $this->buildReadme($project->name));
 
         $zipPath = $exportDir.DIRECTORY_SEPARATOR."pacote_premiere_{$timestamp}.zip";
@@ -148,24 +159,24 @@ class ProjectPackageExporter
 
     private function buildCredits(Project $project): string
     {
-        $assets = Asset::query()
-            ->where('project_id', $project->id)
-            ->where('requires_attribution', true)
-            ->get();
+        $catalog = app(ProjectAttributionCatalog::class);
+        $items = $catalog->collect($project);
 
-        if ($assets->isEmpty()) {
+        if (empty($items)) {
             return "Nenhuma atribuição obrigatória para este projeto.\n";
         }
 
         $lines = ["CRÉDITOS — {$project->name}", str_repeat('=', 40), ''];
 
-        foreach ($assets as $asset) {
-            $lines[] = '- '.($asset->attribution_text ?: $asset->source);
-            if ($asset->original_url) {
-                $lines[] = '  URL: '.$asset->original_url;
+        foreach ($items as $item) {
+            $lines[] = '- '.$item['credit_line'];
+            if (! empty($item['used_in'])) {
+                $lines[] = '  Onde: '.implode(', ', $item['used_in']);
             }
             $lines[] = '';
         }
+
+        $lines[] = 'Descrições prontas por plataforma: pasta descricoes/';
 
         return implode("\n", $lines);
     }
@@ -183,6 +194,7 @@ Conteúdo:
 - timeline.json Metadados de duração e transições
 - premiere.xml  Importação no Premiere Pro (FCP7 XML)
 - credits.txt   Atribuições de assets
+- descricoes/   Textos prontos para YouTube, TikTok, Instagram (com créditos)
 - thumbnail.jpg Miniatura do projeto
 
 Premiere Pro:

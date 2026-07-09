@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ExportPackageJob;
 use App\Models\ExportPackage;
 use App\Models\Project;
+use App\Services\Export\PlatformPostDescriptionService;
+use App\Services\Export\ProjectAttributionCatalog;
 use App\Services\Export\ProjectDownloadCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -35,7 +37,7 @@ class ExportController extends Controller
             'status' => 'pending',
             'includes' => [
                 'slides', 'audio', 'legendas.srt', 'timeline.json',
-                'premiere.xml', 'credits.txt', 'thumbnail.jpg', 'README.txt',
+                'premiere.xml', 'credits.txt', 'creditos_materiais.txt', 'descricoes', 'thumbnail.jpg', 'README.txt',
             ],
         ]);
 
@@ -91,6 +93,34 @@ class ExportController extends Controller
                 'type' => 'exports',
                 'filename' => basename($path),
             ]),
+        ]);
+    }
+
+    public function platformDescriptions(Project $project, PlatformPostDescriptionService $descriptions): JsonResponse
+    {
+        return response()->json($descriptions->generateAll($project));
+    }
+
+    public function savePlatformDescriptions(Project $project, PlatformPostDescriptionService $descriptions): JsonResponse
+    {
+        $paths = $descriptions->saveToProject($project);
+
+        $files = [];
+        foreach ($paths as $key => $path) {
+            $files[$key] = [
+                'path' => $path,
+                'url' => route('api.projects.files', [
+                    'project' => $project->id,
+                    'type' => 'exports',
+                    'filename' => basename($path),
+                ]),
+            ];
+        }
+
+        return response()->json([
+            'message' => 'Descrições e créditos gerados.',
+            'files' => $files,
+            'descriptions' => $descriptions->generateAll($project),
         ]);
     }
 }
