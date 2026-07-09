@@ -8,22 +8,22 @@ const getArg = (name) => {
     return i >= 0 ? args[i + 1] : null;
 };
 
-const voice = getArg('--voice') || 'pt-BR-FranciscaNeural';
-const input = getArg('--input');
-const output = getArg('--output');
+async function main() {
+    const voice = getArg('--voice') || 'pt-BR-FranciscaNeural';
+    const input = getArg('--input');
+    const output = getArg('--output');
 
-if (!input || !output) {
-    console.error('Uso: node generate-tts.mjs --voice VOICE --input FILE --output FILE');
-    process.exit(1);
-}
+    if (!input || !output) {
+        console.error('Uso: node generate-tts.mjs --voice VOICE --input FILE --output FILE');
+        process.exit(1);
+    }
 
-const text = readFileSync(input, 'utf8').trim();
-if (!text) {
-    console.error('Texto vazio');
-    process.exit(1);
-}
+    const text = readFileSync(input, 'utf8').trim();
+    if (!text) {
+        console.error('Texto vazio');
+        process.exit(1);
+    }
 
-try {
     const tts = new UniversalEdgeTTS(text, voice);
     const result = await tts.synthesize();
     const audio = result?.audio;
@@ -32,9 +32,7 @@ try {
         throw new Error('Nenhum áudio retornado pelo Edge TTS');
     }
 
-    const target = resolve(output);
     let buffer;
-
     if (typeof audio.arrayBuffer === 'function') {
         buffer = Buffer.from(await audio.arrayBuffer());
     } else if (audio instanceof Uint8Array) {
@@ -43,12 +41,16 @@ try {
         buffer = Buffer.from(audio);
     }
 
-    writeFileSync(target, buffer);
-
     if (buffer.length === 0) {
         throw new Error('Arquivo de áudio vazio');
     }
-} catch (err) {
-    console.error(err?.message || String(err));
-    process.exit(1);
+
+    writeFileSync(resolve(output), buffer);
 }
+
+main()
+    .then(() => process.exit(0))
+    .catch((err) => {
+        console.error(err?.message || String(err));
+        process.exit(1);
+    });

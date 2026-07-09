@@ -22,6 +22,9 @@ class EdgeTtsEngine implements TtsEngineInterface
         $command = [$node, $script, '--voice', $voice, '--input', $textFile, '--output', $outputPath];
         $result = Process::timeout(120)
             ->path(base_path())
+            ->env(array_merge($_ENV, [
+                'NODE_NO_WARNINGS' => '1',
+            ]))
             ->run($command);
 
         if (! file_exists($outputPath) || filesize($outputPath) === 0) {
