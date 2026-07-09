@@ -160,14 +160,48 @@ O `--seed` cria o UserDev com os valores `ADMIN_*` do **seu** `.env`.
 
 ## 6. Rodar o projeto
 
+> **Importante (Windows/Laragon):** evite `composer dev` — o Vite HMR pode entrar em loop de reload (F5 infinito). Use assets buildados + servidores separados:
+
+**Terminal 1 — servidor web:**
+
 ```bash
-composer dev
+npm run build          # só quando mudar JS/CSS
+php artisan serve
 ```
 
-Em outro terminal (se a fila de render não subir sozinha):
+**Terminal 2 — fila (narração e render rodam em job):**
 
 ```bash
-php artisan queue:listen
+php artisan queue:work --tries=1 --timeout=0
+```
+
+Login: http://127.0.0.1:8000
+
+Para retomar contexto da branch `008-fix-editor` / `009`, leia `HANDOFF_008-fix-editor.md` na raiz.
+
+---
+
+## 7. Integrações TTS (ElevenLabs / OpenAI)
+
+Cada usuário conecta a **própria** chave em **Integrações** (`/integrations`). As credenciais ficam criptografadas em `user_integrations`.
+
+```env
+TTS_DEFAULT_ENGINE=elevenlabs
+HTTP_VERIFY_SSL=false          # dev local (Laragon) — evita erro cURL 60 em buscas/APIs
+NODE_PATH=                     # opcional; o app resolve node.exe sozinho no Windows
+FFMPEG_PATH=                   # caminho completo do ffmpeg.exe (opcional)
+FFPROBE_PATH=                  # caminho completo do ffprobe.exe (opcional)
+```
+
+- **ElevenLabs:** chave em https://elevenlabs.io/app/developers (permissões: Voices Read + Text to Speech).
+- Vozes clonadas aparecem automaticamente no seletor do editor.
+- Saldo de créditos e botão de compra ficam na página Integrações (compra é feita no site da ElevenLabs — não há API de top-up).
+- Plano free: use vozes marcadas `(grátis)`; vozes `(biblioteca — plano pago)` exigem assinatura paga.
+
+Migration necessária (se ambiente novo):
+
+```bash
+php artisan migrate
 ```
 
 ---
@@ -235,7 +269,7 @@ Quem **baixar o .exe** não precisa de `.env` — credenciais ficam em `CriaSysD
 - [ ] `php artisan key:generate`
 - [ ] `composer install && php artisan migrate --seed`
 - [ ] `npm install && npm run build`
-- [ ] `composer dev` → login com UserDev
+- [ ] `php artisan serve` + `php artisan queue:work` (em terminais separados) → login com UserDev
 
 ---
 
@@ -244,7 +278,11 @@ Quem **baixar o .exe** não precisa de `.env` — credenciais ficam em `CriaSysD
 | Branch | Conteúdo |
 |--------|----------|
 | `main` | Release estável |
-| `001`–`005` | Histórico por fase |
+| `001`–`007` | Histórico por fase |
+| `008-fix-editor` | Correções editor: UTF-8, TTS Windows, busca imagens, integrações CMS |
+| `009` | Continuidade pós-008 (handoff + próximas features) |
+
+Documento de passagem: `HANDOFF_008-fix-editor.md`
 
 ---
 
@@ -256,5 +294,10 @@ Quem **baixar o .exe** não precisa de `.env` — credenciais ficam em `CriaSysD
 | `ADMIN_EMAIL não definida` | `.env` sem e-mail | Preencha `ADMIN_EMAIL` com **seu** e-mail |
 | `SQLSTATE[1049] Unknown database` | Banco não existe | Crie `criasys_editor` no MySQL |
 | `Access denied for user` | Usuário/senha errados | Confira `DB_USERNAME` / `DB_PASSWORD` |
-| Fila de render parada | Worker não rodando | `php artisan queue:listen` |
-| Narração falha | Edge TTS ausente | `pip install edge-tts` |
+| Fila de render parada | Worker não rodando | `php artisan queue:work` |
+| Narração Edge falha | Node.js ausente ou env Windows incompleto | `node --version`; ver `HANDOFF_008-fix-editor.md` §3.1 |
+| Página recarrega em loop | Vite HMR / múltiplos `composer dev` | Pare todos os `composer dev`; use `npm run build` + `php artisan serve` |
+| Busca de imagens falha (SSL) | Certificado local | `HTTP_VERIFY_SSL=false` no `.env` (dev) |
+| ElevenLabs 401 / sem vozes | Chave inválida ou sem permissão | Regenerar chave com Voices Read + TTS em Integrações |
+| ElevenLabs paid_plan_required | Voz de biblioteca no plano free | Escolher voz `(grátis)` no editor |
+| FFprobe não encontrado | FFmpeg não no PATH | Definir `FFPROBE_PATH` ou usar fallback (estima duração) |

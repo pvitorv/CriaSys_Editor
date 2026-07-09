@@ -4,13 +4,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Project;
+use App\Services\ProjectDuplicationService;
 use App\Services\ProjectStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ProjectController extends Controller
 {
-    public function __construct(private ProjectStorageService $storage) {}
+    public function __construct(
+        private ProjectStorageService $storage,
+        private ProjectDuplicationService $duplication,
+    ) {}
 
     public function index(): JsonResponse
     {
@@ -66,20 +70,9 @@ class ProjectController extends Controller
     public function duplicate(Project $project): JsonResponse
     {
         $this->authorize('view', $project);
-        $copy = $project->replicate(['status']);
-        $copy->name = $project->name.' (cópia)';
-        $copy->user_id = auth()->id();
-        $copy->save();
+        $copy = $this->duplication->duplicate($project, auth()->id());
 
-        foreach ($project->slides as $slide) {
-            $newSlide = $slide->replicate();
-            $newSlide->project_id = $copy->id;
-            $newSlide->save();
-        }
-
-        $this->storage->ensureStructure($copy);
-
-        return response()->json($copy->load('slides'), 201);
+        return response()->json($copy, 201);
     }
 
     public function archive(Project $project): JsonResponse

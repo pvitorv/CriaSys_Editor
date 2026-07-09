@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Services\ProjectStorageService;
 use App\Services\Render\SlideImageRenderer;
 use Illuminate\Support\Facades\File;
+use ZipArchive;
 
 class ProjectPackageExporter
 {
@@ -25,8 +26,10 @@ class ProjectPackageExporter
 
         $preset = ExportPreset::where('slug', $presetSlug)->firstOrFail();
         $timestamp = now()->format('Ymd_His');
-        $packageName = "export_{$project->id}_{$timestamp}";
-        $basePath = config('criasys.exports_path').DIRECTORY_SEPARATOR.$packageName;
+        $exportDir = $this->storage->projectPath($project).DIRECTORY_SEPARATOR.'exports';
+        File::ensureDirectoryExists($exportDir);
+        $packageName = "pacote_{$timestamp}";
+        $basePath = $exportDir.DIRECTORY_SEPARATOR.$packageName;
 
         $dirs = ['slides', 'audio'];
         foreach ($dirs as $dir) {
@@ -109,7 +112,26 @@ class ProjectPackageExporter
         File::put($basePath.DIRECTORY_SEPARATOR.'credits.txt', $this->buildCredits($project));
         File::put($basePath.DIRECTORY_SEPARATOR.'README.txt', $this->buildReadme($project->name));
 
-        return $basePath;
+        $zipPath = $exportDir.DIRECTORY_SEPARATOR."pacote_premiere_{$timestamp}.zip";
+        $this->createZip($basePath, $zipPath);
+        File::deleteDirectory($basePath);
+
+        return $zipPath;
+    }
+
+    private function createZip(string $sourceDir, string $zipPath): void
+    {
+        $zip = new ZipArchive;
+        if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            throw new \RuntimeException('Não foi possível criar o arquivo ZIP do pacote.');
+        }
+
+        foreach (File::allFiles($sourceDir) as $file) {
+            $relative = str_replace($sourceDir.DIRECTORY_SEPARATOR, '', $file->getPathname());
+            $zip->addFile($file->getPathname(), str_replace('\\', '/', $relative));
+        }
+
+        $zip->close();
     }
 
     private function convertToWav(string $source, string $dest): void

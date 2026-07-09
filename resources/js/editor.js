@@ -177,7 +177,12 @@ window.editorApp = function (projectId) {
 
         async loadExportPackages() {
             const { data } = await api.get(`/projects/${this.projectId}/export-packages`);
-            this.exportPackages = data;
+            this.exportPackages = data.map(pkg => ({
+                ...pkg,
+                download_url: pkg.status === 'completed' && pkg.package_path
+                    ? this.fileUrl('exports', pkg.package_path.split(/[/\\]/).pop())
+                    : null,
+            }));
         },
 
         async loadAudioTrack() {

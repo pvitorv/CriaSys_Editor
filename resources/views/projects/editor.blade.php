@@ -346,9 +346,12 @@ Parágrafo do slide 3..."
                 <div class="space-y-2">
                     <h3 class="text-sm font-medium text-zinc-300">Pacotes de export</h3>
                     <template x-for="pkg in exportPackages" :key="pkg.id">
-                        <div class="rounded-lg bg-zinc-800 p-2 text-xs flex justify-between">
+                        <div class="rounded-lg bg-zinc-800 p-2 text-xs flex justify-between items-center gap-2">
                             <span x-text="'Pacote #' + pkg.id"></span>
-                            <span x-text="pkg.status" :class="pkg.status === 'completed' ? 'text-emerald-400' : 'text-yellow-400'"></span>
+                            <div class="flex items-center gap-2">
+                                <span x-text="pkg.status" :class="pkg.status === 'completed' ? 'text-emerald-400' : pkg.status === 'failed' ? 'text-red-400' : 'text-yellow-400'"></span>
+                                <a x-show="pkg.download_url" :href="pkg.download_url" download class="text-violet-400 hover:text-violet-300">Baixar ZIP</a>
+                            </div>
                         </div>
                     </template>
                 </div>
