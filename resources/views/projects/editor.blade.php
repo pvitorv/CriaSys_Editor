@@ -216,16 +216,31 @@ Parágrafo do slide 3..."
                             <option value="pt-BR-AntonioNeural">Antonio (masculino)</option>
                         </select>
                     </div>
-                    <button @click="generateNarration()" :disabled="narrationLoading" class="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-sm">
-                        <span x-text="narrationLoading ? 'Gerando...' : 'Gerar narração'"></span>
+                    <button @click="testNarration()" :disabled="previewLoading || narrationLoading" class="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-sm">
+                        <span x-text="previewLoading ? 'Gerando teste...' : '▶ Testar voz (slide atual)'"></span>
+                    </button>
+                    <button @click="generateNarration()" :disabled="narrationLoading || previewLoading" class="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-sm">
+                        <span x-text="narrationLoading ? 'Gerando...' : 'Gerar narração completa'"></span>
                     </button>
                     <button @click="syncNarration()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">
                         Sincronizar duração
                     </button>
                 </div>
-                <template x-if="narration?.audio_url">
-                    <audio :src="narration.audio_url" controls class="w-full"></audio>
-                </template>
+
+                <div class="rounded-lg border border-zinc-700 bg-zinc-800/50 p-4 space-y-3">
+                    <h3 class="text-sm font-medium text-zinc-300">Ouvir áudio</h3>
+                    <p x-show="!previewAudioUrl && !narration?.audio_url" class="text-xs text-zinc-500">
+                        Use <strong>Testar voz</strong> para ouvir o slide atual, ou <strong>Gerar narração completa</strong> para todos os slides.
+                    </p>
+                    <div x-show="previewAudioUrl">
+                        <p class="text-xs text-emerald-400 mb-1">Teste do slide</p>
+                        <audio :src="previewAudioUrl" controls class="w-full" preload="auto"></audio>
+                    </div>
+                    <div x-show="narration?.audio_url">
+                        <p class="text-xs text-violet-400 mb-1">Narração completa do projeto</p>
+                        <audio :src="narration.audio_url" controls class="w-full" preload="auto"></audio>
+                    </div>
+                </div>
             </div>
 
             {{-- Áudio --}}

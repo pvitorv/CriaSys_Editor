@@ -19,5 +19,27 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectGuestsTo('/login');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (\Throwable $e, $request) {
+            if (! $request->is('api/*') && ! $request->is('api')) {
+                return null;
+            }
+
+            if ($e instanceof \Illuminate\Validation\ValidationException) {
+                return null;
+            }
+
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
+                return \App\Support\SafeJson::message(
+                    $e->getMessage() ?: 'Erro na requisição.',
+                    $e->getStatusCode()
+                );
+            }
+
+            $message = $e->getMessage() ?: 'Erro interno.';
+            if (! config('app.debug')) {
+                $message = 'Erro interno do servidor.';
+            }
+
+            return \App\Support\SafeJson::message($message, 500);
+        });
     })->create();

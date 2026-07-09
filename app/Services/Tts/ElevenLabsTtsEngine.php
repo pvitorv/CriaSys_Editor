@@ -3,7 +3,7 @@
 namespace App\Services\Tts;
 
 use App\Services\Render\FfmpegRenderService;
-use Illuminate\Support\Facades\Http;
+use App\Support\ExternalHttp;
 
 class ElevenLabsTtsEngine implements TtsEngineInterface
 {
@@ -18,8 +18,7 @@ class ElevenLabsTtsEngine implements TtsEngineInterface
 
         $voiceId = $voice ?: config('criasys.tts.elevenlabs_voice_id', '21m00Tcm4TlvDq8ikWAM');
 
-        $response = Http::timeout(120)
-            ->withHeaders(['xi-api-key' => $apiKey])
+        $response = ExternalHttp::client(120)->withHeaders(['xi-api-key' => $apiKey])
             ->post("https://api.elevenlabs.io/v1/text-to-speech/{$voiceId}", [
                 'text' => $text,
                 'model_id' => 'eleven_multilingual_v2',

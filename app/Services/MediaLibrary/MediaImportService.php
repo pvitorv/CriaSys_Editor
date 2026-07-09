@@ -6,8 +6,8 @@ use App\Enums\LicenseType;
 use App\Models\Asset;
 use App\Models\Project;
 use App\Services\ProjectStorageService;
+use App\Support\ExternalHttp;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Http;
 
 class MediaImportService
 {
@@ -29,7 +29,7 @@ class MediaImportService
             throw new \RuntimeException('URL de download indisponível.');
         }
 
-        $contents = Http::timeout(60)->get($url)->body();
+        $contents = ExternalHttp::client(60)->get($url)->body();
         $hash = hash('sha256', $contents);
         $ext = pathinfo(parse_url($url, PHP_URL_PATH) ?? '', PATHINFO_EXTENSION) ?: 'jpg';
         $filename = ($item['source'] ?? 'media').'_'.($item['id'] ?? uniqid()).'_'.substr($hash, 0, 8).'.'.$ext;

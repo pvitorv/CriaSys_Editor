@@ -47,6 +47,7 @@ Route::post('projects/{project}/subtitles', [ExportController::class, 'subtitles
 Route::post('projects/{project}/export-psd', [ExportController::class, 'exportPsd']);
 
 Route::get('projects/{project}/narration', [NarrationController::class, 'show']);
+Route::post('projects/{project}/narration/preview', [NarrationController::class, 'preview']);
 Route::post('projects/{project}/narration/generate', [NarrationController::class, 'generate']);
 Route::post('projects/{project}/narration/sync', [NarrationController::class, 'sync']);
 

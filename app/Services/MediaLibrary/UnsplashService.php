@@ -3,7 +3,7 @@
 namespace App\Services\MediaLibrary;
 
 use App\Enums\LicenseType;
-use Illuminate\Support\Facades\Http;
+use App\Support\ExternalHttp;
 
 class UnsplashService
 {
@@ -14,7 +14,7 @@ class UnsplashService
             throw new \RuntimeException('UNSPLASH_ACCESS_KEY não configurada no .env');
         }
 
-        $response = Http::withHeaders(['Authorization' => "Client-ID {$accessKey}"])
+        $response = ExternalHttp::client()->withHeaders(['Authorization' => "Client-ID {$accessKey}"])
             ->get('https://api.unsplash.com/search/photos', [
                 'query' => $query,
                 'page' => $page,
@@ -49,7 +49,7 @@ class UnsplashService
     {
         $accessKey = config('criasys.media.unsplash_access_key');
         if ($downloadLocation && $accessKey) {
-            Http::withHeaders(['Authorization' => "Client-ID {$accessKey}"])
+            ExternalHttp::client()->withHeaders(['Authorization' => "Client-ID {$accessKey}"])
                 ->get($downloadLocation);
         }
     }

@@ -6,8 +6,9 @@ use App\Enums\LicenseType;
 use App\Models\Asset;
 use App\Models\Project;
 use App\Services\ProjectStorageService;
-use Illuminate\Support\Facades\Http;
+use App\Support\ExternalHttp;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 
 class PexelsService
 {
@@ -20,7 +21,7 @@ class PexelsService
             throw new \RuntimeException('PEXELS_API_KEY não configurada no .env');
         }
 
-        $response = Http::withHeaders(['Authorization' => $apiKey])
+        $response = ExternalHttp::client()->withHeaders(['Authorization' => $apiKey])
             ->get('https://api.pexels.com/v1/search', [
                 'query' => $query,
                 'page' => $page,
@@ -53,7 +54,7 @@ class PexelsService
     {
         $this->storage->ensureStructure($project);
         $url = $photoData['download_url'];
-        $contents = Http::timeout(60)->get($url)->body();
+        $contents = ExternalHttp::client(60)->get($url)->body();
         $hash = hash('sha256', $contents);
         $filename = 'pexels_'.$photoData['id'].'_'.substr($hash, 0, 8).'.jpg';
         $path = $this->storage->projectPath($project).DIRECTORY_SEPARATOR.'assets'.DIRECTORY_SEPARATOR.$filename;

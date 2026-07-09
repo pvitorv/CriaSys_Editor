@@ -69,6 +69,17 @@ class AssetController extends Controller
         $path = $this->storage->projectPath($project).DIRECTORY_SEPARATOR.$type.DIRECTORY_SEPARATOR.$filename;
         abort_unless(file_exists($path), 404);
 
-        return response()->file($path);
+        return response()->file($path, [
+            'Content-Type' => match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
+                'mp3' => 'audio/mpeg',
+                'wav' => 'audio/wav',
+                'jpg', 'jpeg' => 'image/jpeg',
+                'png' => 'image/png',
+                'mp4' => 'video/mp4',
+                'srt' => 'text/plain',
+                'zip' => 'application/zip',
+                default => null,
+            },
+        ]);
     }
 }

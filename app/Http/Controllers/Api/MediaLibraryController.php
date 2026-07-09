@@ -61,6 +61,7 @@ class MediaLibraryController extends Controller
         }
 
         $imageSources = $this->resolveImageSources($source);
+        $lastError = null;
 
         foreach ($imageSources as $src) {
             try {
@@ -72,18 +73,27 @@ class MediaLibraryController extends Controller
                     default => [],
                 };
                 $results = array_merge($results, $chunk);
-            } catch (\Throwable) {
-                // Não expor erros de API key — tenta outras fontes
+            } catch (\Throwable $e) {
+                $lastError = $e->getMessage();
             }
         }
 
         $results = collect($results)->unique(fn ($item) => ($item['source'] ?? '').'-'.($item['id'] ?? ''))->values()->all();
 
+        $errors = [];
+        if (empty($results)) {
+            $errors[] = 'Nenhuma imagem encontrada para "'.$query.'". Tente outro termo.';
+            if ($lastError && config('app.debug')) {
+                $errors[] = $lastError;
+            }
+            if (config('app.env') !== 'production' && str_contains((string) $lastError, 'SSL')) {
+                $errors[] = 'Adicione HTTP_VERIFY_SSL=false no .env e rode php artisan config:clear.';
+            }
+        }
+
         return response()->json([
             'results' => $results,
-            'errors' => empty($results)
-                ? ['Nenhuma imagem encontrada para "'.$query.'". Tente outro termo.']
-                : [],
+            'errors' => $errors,
         ]);
     }
 

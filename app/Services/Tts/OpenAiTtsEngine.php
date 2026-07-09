@@ -3,7 +3,7 @@
 namespace App\Services\Tts;
 
 use App\Services\Render\FfmpegRenderService;
-use Illuminate\Support\Facades\Http;
+use App\Support\ExternalHttp;
 
 class OpenAiTtsEngine implements TtsEngineInterface
 {
@@ -18,8 +18,7 @@ class OpenAiTtsEngine implements TtsEngineInterface
 
         $voice = $voice ?: config('criasys.tts.openai_voice', 'nova');
 
-        $response = Http::timeout(120)
-            ->withToken($apiKey)
+        $response = ExternalHttp::client(120)->withToken($apiKey)
             ->post('https://api.openai.com/v1/audio/speech', [
                 'model' => 'tts-1',
                 'input' => $text,

@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\Slide;
+use App\Support\SafeJson;
+use App\Support\Utf8;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -12,7 +14,9 @@ class SlideController extends Controller
 {
     public function index(Project $project): JsonResponse
     {
-        return response()->json($project->slides);
+        return SafeJson::response(
+            $project->slides->map(fn (Slide $slide) => $this->slideResponse($slide))->values()
+        );
     }
 
     public function store(Request $request, Project $project): JsonResponse
@@ -29,13 +33,13 @@ class SlideController extends Controller
 
         $order = ($project->slides()->max('order') ?? -1) + 1;
 
-        $slide = $project->slides()->create(array_merge($data, [
+        $slide = $project->slides()->create(array_merge($this->sanitizeSlideInput($data), [
             'order' => $order,
             'duration_seconds' => $data['duration_seconds'] ?? 5,
             'transition_type' => $data['transition_type'] ?? 'fade',
         ]));
 
-        return response()->json($slide, 201);
+        return SafeJson::response($this->slideResponse($slide), 201);
     }
 
     public function update(Request $request, Project $project, Slide $slide): JsonResponse
@@ -53,9 +57,9 @@ class SlideController extends Controller
             'image_path' => ['nullable', 'string'],
         ]);
 
-        $slide->update($data);
+        $slide->update($this->sanitizeSlideInput($data));
 
-        return response()->json($slide->fresh());
+        return SafeJson::response($this->slideResponse($slide->fresh()));
     }
 
     public function applyScript(Request $request, Project $project): JsonResponse
@@ -69,6 +73,7 @@ class SlideController extends Controller
         $slides = $project->slides()->orderBy('order')->get();
 
         foreach ($data['blocks'] as $index => $block) {
+            $block = $this->sanitizeSlideInput($block);
             if ($slides->has($index)) {
                 $slides[$index]->update([
                     'narration_text' => $block['narration_text'],
@@ -85,7 +90,9 @@ class SlideController extends Controller
             }
         }
 
-        return response()->json($project->fresh('slides')->slides);
+        return SafeJson::response(
+            $project->fresh('slides')->slides->map(fn (Slide $slide) => $this->slideResponse($slide))->values()
+        );
     }
 
     public function destroy(Project $project, Slide $slide): JsonResponse
@@ -112,6 +119,35 @@ class SlideController extends Controller
             Slide::where('id', $slideId)->where('project_id', $project->id)->update(['order' => $order]);
         }
 
-        return response()->json($project->fresh('slides')->slides);
+        return SafeJson::response(
+            $project->fresh('slides')->slides->map(fn (Slide $slide) => $this->slideResponse($slide))->values()
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function sanitizeSlideInput(array $data): array
+    {
+        foreach (['title', 'subtitle', 'body_text', 'narration_text', 'image_path'] as $field) {
+            if (array_key_exists($field, $data) && is_string($data[$field])) {
+                $data[$field] = Utf8::clean($data[$field]);
+            }
+        }
+
+        if (isset($data['text_style']) && is_array($data['text_style'])) {
+            $data['text_style'] = Utf8::cleanArray($data['text_style']);
+        }
+
+        return $data;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function slideResponse(Slide $slide): array
+    {
+        return Utf8::cleanArray($slide->toArray());
     }
 }

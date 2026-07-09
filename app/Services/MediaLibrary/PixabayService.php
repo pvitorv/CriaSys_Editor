@@ -3,7 +3,7 @@
 namespace App\Services\MediaLibrary;
 
 use App\Enums\LicenseType;
-use Illuminate\Support\Facades\Http;
+use App\Support\ExternalHttp;
 
 class PixabayService
 {
@@ -14,7 +14,7 @@ class PixabayService
             throw new \RuntimeException('PIXABAY_API_KEY não configurada no .env');
         }
 
-        $response = Http::get('https://pixabay.com/api/', [
+        $response = ExternalHttp::client()->get('https://pixabay.com/api/', [
             'key' => $apiKey,
             'q' => $query,
             'image_type' => 'photo',

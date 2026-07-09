@@ -2,6 +2,7 @@
 
 namespace App\Services\Tts;
 
+use App\Support\Utf8;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
@@ -13,13 +14,16 @@ class EdgeTtsEngine implements TtsEngineInterface
 
         $script = base_path('scripts/generate-tts.mjs');
         $textFile = dirname($outputPath).DIRECTORY_SEPARATOR.'tts_input_'.uniqid().'.txt';
-        File::put($textFile, $text);
+        File::put($textFile, Utf8::clean($text) ?? '');
 
         $commands = [
             ['node', $script, '--voice', $voice, '--input', $textFile, '--output', $outputPath],
-            ['python', '-m', 'edge_tts', '--voice', $voice, '--file', $textFile, '--write-media', $outputPath],
-            ['edge-tts', '--voice', $voice, '--file', $textFile, '--write-media', $outputPath],
         ];
+
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $commands[] = ['python', '-m', 'edge_tts', '--voice', $voice, '--file', $textFile, '--write-media', $outputPath];
+            $commands[] = ['edge-tts', '--voice', $voice, '--file', $textFile, '--write-media', $outputPath];
+        }
 
         $lastError = null;
 
@@ -27,20 +31,20 @@ class EdgeTtsEngine implements TtsEngineInterface
             $result = Process::timeout(120)->run($command);
             if ($result->successful() && file_exists($outputPath) && filesize($outputPath) > 0) {
                 File::delete($textFile);
-                $duration = $this->probeDuration($outputPath);
 
                 return [
                     'audio_path' => $outputPath,
-                    'duration_seconds' => $duration,
+                    'duration_seconds' => $this->probeDuration($outputPath),
                 ];
             }
-            $lastError = $result->errorOutput() ?: $result->output();
+            $lastError = Utf8::clean(trim($result->errorOutput() ?: $result->output()));
         }
 
         File::delete($textFile);
 
         throw new \RuntimeException(
-            'Edge TTS indisponível. Instale Python edge-tts (`pip install edge-tts`) ou Node. Erro: '.$lastError
+            'Edge TTS indisponível. Verifique se Node.js está instalado (node --version).'
+            .($lastError ? ' Detalhe: '.$lastError : '')
         );
     }
 

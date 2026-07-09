@@ -32,6 +32,8 @@ window.editorApp = function (projectId) {
         ttsEngines: [],
         narration: null,
         narrationLoading: false,
+        previewLoading: false,
+        previewAudioUrl: null,
         mediaQuery: '',
         mediaSource: 'all',
         mediaType: 'image',
@@ -416,7 +418,38 @@ window.editorApp = function (projectId) {
             if (data?.audio_path) {
                 data.audio_url = this.fileUrl('audio', data.audio_path.split(/[/\\]/).pop());
             }
-            this.narration = data;
+            this.narration = data?.id ? data : null;
+        },
+
+        slideNarrationText() {
+            const slide = this.selectedSlide;
+            if (!slide) return '';
+            const text = (slide.narration_text || '').trim();
+            if (text) return text;
+            return [slide.title, slide.subtitle, slide.body_text].filter(v => v?.trim()).join('. ');
+        },
+
+        async testNarration() {
+            const text = this.slideNarrationText();
+            if (!text) {
+                this.error = 'Escreva texto de narração ou preencha título/subtítulo do slide.';
+                return;
+            }
+            this.previewLoading = true;
+            this.error = '';
+            try {
+                const { data } = await api.post(`/projects/${this.projectId}/narration/preview`, {
+                    text,
+                    voice: this.voice,
+                    engine: this.ttsEngine,
+                });
+                this.previewAudioUrl = data.audio_url;
+                this.message = `Teste gerado (${Math.round(data.duration_seconds || 0)}s) — ouça abaixo`;
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao testar narração';
+            } finally {
+                this.previewLoading = false;
+            }
         },
 
         async generateNarration() {
@@ -432,7 +465,8 @@ window.editorApp = function (projectId) {
                     data.audio_url = this.fileUrl('audio', data.audio_path.split(/[/\\]/).pop());
                 }
                 this.narration = data;
-                this.message = 'Narração gerada';
+                this.previewAudioUrl = data.audio_url;
+                this.message = 'Narração completa gerada — ouça abaixo';
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao gerar narração';
             } finally {

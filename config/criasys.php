@@ -17,6 +17,9 @@ return [
     'portable' => env('CRIASYS_PORTABLE', false),
     'data_path' => env('CRIASYS_DATA_PATH'),
 
+    // Laragon/Windows: defina false se buscas externas (Openverse, TTS) falharem por SSL
+    'http_verify_ssl' => env('HTTP_VERIFY_SSL', env('APP_ENV') === 'production'),
+
     'ffmpeg_path' => env('FFMPEG_PATH') ?: 'ffmpeg',
 
     'ffprobe_path' => env('FFPROBE_PATH') ?: 'ffprobe',

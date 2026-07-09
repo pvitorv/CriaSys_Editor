@@ -3,27 +3,23 @@
 namespace App\Services\MediaLibrary;
 
 use App\Enums\LicenseType;
-use Illuminate\Support\Facades\Http;
+use App\Support\ExternalHttp;
 
 /**
  * Openverse (Creative Commons) — busca gratuita sem API key.
- * @see https://api.openverse.org/v1/
  */
 class OpenverseService
 {
     public function searchImages(string $query, int $page = 1, int $perPage = 15): array
     {
-        $response = Http::timeout(20)
-            ->withHeaders(['User-Agent' => 'CriaSys-Editor/1.0'])
-            ->get('https://api.openverse.org/v1/images/', [
-                'q' => $query,
-                'page' => $page,
-                'page_size' => $perPage,
-                'license' => 'cc0,pdm',
-            ]);
+        $response = ExternalHttp::client(25)->get('https://api.openverse.org/v1/images/', [
+            'q' => $query,
+            'page' => $page,
+            'page_size' => $perPage,
+        ]);
 
         if (! $response->successful()) {
-            throw new \RuntimeException('Não foi possível buscar imagens gratuitas agora.');
+            throw new \RuntimeException('Openverse indisponível (HTTP '.$response->status().').');
         }
 
         return collect($response->json('results', []))->map(function (array $item) {

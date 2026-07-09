@@ -1,5 +1,4 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 
 const args = process.argv.slice(2);
 const getArg = (name) => {
@@ -22,27 +21,27 @@ if (!text) {
     process.exit(1);
 }
 
-const py = spawnSync('python', ['-m', 'edge_tts', '--voice', voice, '--text', text, '--write-media', output], {
-    encoding: 'utf8',
-    shell: process.platform === 'win32',
-});
-
-if (py.status === 0) {
-    process.exit(0);
-}
-
 try {
-    const { MsEdgeTTS, OUTPUT_FORMAT } = await import('edge-tts-universal');
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-    const readable = tts.toStream(text);
-    const chunks = [];
-    for await (const chunk of readable) {
-        chunks.push(chunk);
+    const { UniversalEdgeTTS } = await import('edge-tts-universal');
+    const tts = new UniversalEdgeTTS(text, voice);
+    const result = await tts.synthesize();
+    const audio = result?.audio;
+
+    if (!audio) {
+        throw new Error('Nenhum áudio retornado pelo Edge TTS');
     }
-    writeFileSync(output, Buffer.concat(chunks));
+
+    if (typeof audio.arrayBuffer === 'function') {
+        const buffer = Buffer.from(await audio.arrayBuffer());
+        writeFileSync(output, buffer);
+    } else if (audio instanceof Uint8Array) {
+        writeFileSync(output, Buffer.from(audio));
+    } else {
+        writeFileSync(output, Buffer.from(audio));
+    }
+
     process.exit(0);
 } catch (err) {
-    console.error(py.stderr || py.stdout || err.message);
-    process.exit(py.status || 1);
+    console.error(err.message || err);
+    process.exit(1);
 }
