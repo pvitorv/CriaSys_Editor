@@ -40,11 +40,7 @@ class NarrationController extends Controller
         $filename = basename($result['audio_path']);
 
         return SafeJson::response([
-            'audio_url' => route('api.projects.files', [
-                'project' => $project->id,
-                'type' => 'audio',
-                'filename' => $filename,
-            ]),
+            'audio_url' => '/api/projects/'.$project->id.'/files/audio/'.$filename,
             'duration_seconds' => $result['duration_seconds'],
         ]);
     }

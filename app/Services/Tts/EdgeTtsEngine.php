@@ -2,6 +2,7 @@
 
 namespace App\Services\Tts;
 
+use App\Support\TtsNodeRunner;
 use App\Support\Utf8;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -18,11 +19,7 @@ class EdgeTtsEngine implements TtsEngineInterface
             throw new \RuntimeException('Texto de narração vazio.');
         }
 
-        if (app()->runningInConsole()) {
-            app(\App\Support\TtsNodeRunner::class)->synthesize($text, $voice, $outputPath);
-        } else {
-            $this->synthesizeViaArtisanCli($text, $voice, $outputPath);
-        }
+        app(TtsNodeRunner::class)->synthesize($text, $voice, $outputPath);
 
         if (! file_exists($outputPath) || filesize($outputPath) === 0) {
             throw new \RuntimeException('Áudio não foi gerado.');
@@ -34,41 +31,10 @@ class EdgeTtsEngine implements TtsEngineInterface
         ];
     }
 
-    private function synthesizeViaArtisanCli(string $text, string $voice, string $outputPath): void
-    {
-        $inputFile = storage_path('app/tts/web_in_'.uniqid('', false).'.txt');
-        File::ensureDirectoryExists(dirname($inputFile));
-        File::put($inputFile, $text);
-
-        $php = PHP_BINARY;
-        $artisan = base_path('artisan');
-
-        $result = Process::timeout(120)
-            ->path(base_path())
-            ->run([
-                $php,
-                $artisan,
-                'tts:generate',
-                '--input='.$inputFile,
-                '--output='.$outputPath,
-                '--voice='.$voice,
-            ]);
-
-        File::delete($inputFile);
-
-        if (! $result->successful() || ! file_exists($outputPath) || filesize($outputPath) === 0) {
-            $detail = Utf8::clean(trim($result->errorOutput() ?: $result->output()));
-
-            throw new \RuntimeException(
-                'Falha ao gerar áudio (Edge TTS). '.($detail ?: 'exit='.$result->exitCode())
-            );
-        }
-    }
-
     private function probeDuration(string $path): float
     {
         $ffprobe = config('criasys.ffprobe_path');
-        $result = Process::timeout(30)->run([
+        $result = Process::timeout(30)->quietly()->run([
             $ffprobe, '-v', 'error', '-show_entries', 'format=duration',
             '-of', 'default=noprint_wrappers=1:nokey=1', $path,
         ]);
