@@ -11,49 +11,65 @@ class EdgeTtsEngine implements TtsEngineInterface
 {
     public function synthesize(string $text, string $voice, string $outputPath): array
     {
+        $outputPath = $this->normalizePath($outputPath);
         File::ensureDirectoryExists(dirname($outputPath));
 
         $node = NodeBinary::path();
-        $script = base_path('scripts/generate-tts.mjs');
-        $outputPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $outputPath);
-        $textFile = dirname($outputPath).DIRECTORY_SEPARATOR.'tts_input_'.uniqid().'.txt';
+        $script = $this->resolveScript();
+        $workDir = base_path();
+
+        $textFile = $this->normalizePath(storage_path('app/tts/tts_input_'.uniqid('', true).'.txt'));
+        File::ensureDirectoryExists(dirname($textFile));
         File::put($textFile, Utf8::clean($text) ?? '');
 
-        $command = [$node, $script, '--voice', $voice, '--input', $textFile, '--output', $outputPath];
+        // Gera primeiro em storage/app/tts (sempre gravável), depois copia pro destino.
+        $tempOutput = $this->normalizePath(storage_path('app/tts/tts_out_'.uniqid('', true).'.mp3'));
+
+        $command = [$node, $script, '--voice', $voice, '--input', $textFile, '--output', $tempOutput];
+
         $result = Process::timeout(120)
-            ->path(base_path())
-            ->env(array_merge($_ENV, [
-                'NODE_NO_WARNINGS' => '1',
-            ]))
+            ->path($workDir)
             ->run($command);
 
-        if (! file_exists($outputPath) || filesize($outputPath) === 0) {
-            // Node pode ter gravado via path.resolve (slashes normalizados)
-            $resolved = dirname($outputPath).DIRECTORY_SEPARATOR.basename($outputPath);
-            if ($resolved !== $outputPath && file_exists($resolved) && filesize($resolved) > 0) {
-                $outputPath = $resolved;
-            }
-        }
-
-        if (file_exists($outputPath) && filesize($outputPath) > 0) {
-            File::delete($textFile);
-
-            return [
-                'audio_path' => $outputPath,
-                'duration_seconds' => $this->probeDuration($outputPath),
-            ];
-        }
-
-        File::delete($textFile);
-
         $detail = Utf8::clean(trim($result->errorOutput() ?: $result->output()));
-        if ($detail === '') {
-            $detail = 'exit='.$result->exitCode().', node='.$node;
+
+        if (! file_exists($tempOutput) || filesize($tempOutput) === 0) {
+            File::delete($textFile);
+            @File::delete($tempOutput);
+
+            throw new \RuntimeException(
+                'Falha ao gerar áudio (Edge TTS). '
+                .($detail ?: 'exit='.$result->exitCode())
+            );
         }
 
-        throw new \RuntimeException(
-            'Edge TTS indisponível. Defina NODE_PATH no .env (ex.: C:\\Program Files\\nodejs\\node.exe). Detalhe: '.$detail
-        );
+        File::copy($tempOutput, $outputPath);
+        File::delete($textFile);
+        File::delete($tempOutput);
+
+        if (! file_exists($outputPath) || filesize($outputPath) === 0) {
+            throw new \RuntimeException('Áudio gerado mas não foi possível salvar em: '.$outputPath);
+        }
+
+        return [
+            'audio_path' => $outputPath,
+            'duration_seconds' => $this->probeDuration($outputPath),
+        ];
+    }
+
+    private function resolveScript(): string
+    {
+        $cjs = base_path('scripts/generate-tts.cjs');
+        if (PHP_OS_FAMILY === 'Windows' && file_exists($cjs)) {
+            return $cjs;
+        }
+
+        return base_path('scripts/generate-tts.mjs');
+    }
+
+    private function normalizePath(string $path): string
+    {
+        return str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
     }
 
     private function probeDuration(string $path): float
