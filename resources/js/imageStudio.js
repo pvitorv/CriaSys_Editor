@@ -267,6 +267,62 @@ export class ImageStudioEngine {
         this.emitChange();
     }
 
+    applyTemplate(template) {
+        if (!this.canvas || !template) {
+            return;
+        }
+        const width = this.canvas.getWidth();
+        const height = this.canvas.getHeight();
+        this.canvas.clear();
+        const bg = template.background || {};
+        this.setBackgroundColor(bg.color || '#ffffff', bg.opacity ?? 100);
+
+        (template.objects || []).forEach((spec, idx) => {
+            const kind = spec.kind || spec.type;
+            if (kind === 'rect') {
+                const rect = new Rect({
+                    left: (spec.x ?? 0) * width,
+                    top: (spec.y ?? 0) * height,
+                    width: (spec.w ?? 0.5) * width,
+                    height: (spec.h ?? 0.5) * height,
+                    fill: spec.fill || '#ef4444',
+                    opacity: (spec.opacity ?? 100) / 100,
+                    name: spec.name || 'Retângulo',
+                    criasysId: 'tpl_rect_' + idx + '_' + Date.now(),
+                });
+                this.canvas.add(rect);
+            } else if (kind === 'circle') {
+                const r = (spec.r ?? 0.1) * Math.min(width, height);
+                const circle = new Circle({
+                    left: (spec.x ?? 0.5) * width - r,
+                    top: (spec.y ?? 0.5) * height - r,
+                    radius: r,
+                    fill: spec.fill || '#3b82f6',
+                    opacity: (spec.opacity ?? 100) / 100,
+                    name: spec.name || 'Círculo',
+                    criasysId: 'tpl_circle_' + idx + '_' + Date.now(),
+                });
+                this.canvas.add(circle);
+            } else if (kind === 'text') {
+                const textObj = new FabricText(spec.text || 'Texto', {
+                    left: (spec.x ?? 0.5) * width,
+                    top: (spec.y ?? 0.5) * height,
+                    fontFamily: spec.fontFamily || 'Impact, Arial Black, sans-serif',
+                    fontSize: spec.fontSize || 48,
+                    fill: spec.fill || '#ffffff',
+                    originX: spec.originX || 'left',
+                    originY: spec.originY || 'top',
+                    fontWeight: spec.fontWeight || 'bold',
+                    name: spec.name || 'Texto',
+                    criasysId: 'tpl_text_' + idx + '_' + Date.now(),
+                });
+                this.canvas.add(textObj);
+            }
+        });
+        this.canvas.requestRenderAll();
+        this.emitChange();
+    }
+
     async addImageFromUrl(url, name = 'Imagem') {
         const img = await FabricImage.fromURL(url, { crossOrigin: 'anonymous' });
         const maxW = this.canvas.width * 0.85;
@@ -419,6 +475,7 @@ export function imageStudioMethods() {
         imageStudioPresets: [],
         imageStudioGroups: {},
         imageStudioExportFormats: [],
+        imageStudioTemplates: [],
         imageStudioFonts: [],
         imageStudioBgRemoval: false,
         imageStudioPreset: 'ig_feed_square',
@@ -468,6 +525,7 @@ export function imageStudioMethods() {
                 this.imageStudioPresets = data.presets || [];
                 this.imageStudioGroups = data.groups || {};
                 this.imageStudioExportFormats = data.export_formats || [];
+                this.imageStudioTemplates = data.templates || [];
                 this.imageStudioFonts = data.fonts || [];
                 this.imageStudioBgRemoval = Boolean(data.background_removal_available);
                 if (data.defaults?.preset) {
@@ -748,6 +806,31 @@ export function imageStudioMethods() {
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao enviar para biblioteca';
             }
+        },
+
+        async imageStudioApplyTemplate(template) {
+            if (!template?.slug) {
+                return;
+            }
+            const full = (this.imageStudioTemplates || []).find((t) => t.slug === template.slug) || template;
+            if (full.preset && full.preset !== this.imageStudioPreset) {
+                this.imageStudioPreset = full.preset;
+                await this.initImageStudio();
+            }
+            if (!this.imageStudioEngine?.canvas) {
+                return;
+            }
+            if (this.imageStudioLayers?.length && !confirm('Aplicar template substitui o conteúdo atual do canvas. Continuar?')) {
+                return;
+            }
+            this.imageStudioEngine.applyTemplate(full);
+            if (full.background?.color) {
+                this.imageStudioBgColor = full.background.color;
+                this.imageStudioBgOpacity = full.background.opacity ?? 100;
+            }
+            this.refreshImageStudioLayers();
+            this.scheduleImageStudioSave();
+            this.message = `Template "${full.name}" aplicado`;
         },
 
         async imageStudioImportFromLibrary(item) {

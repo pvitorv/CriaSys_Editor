@@ -88,6 +88,80 @@ return [
         'print_poster' => ['name' => 'Poster 50×70 cm', 'group' => 'print', 'width' => 5906, 'height' => 8268, 'icon' => '🖼'],
     ],
 
+    'templates' => [
+        'story_quote' => [
+            'name' => 'Story citação',
+            'description' => 'Overlay escuro + texto central',
+            'preset' => 'ig_story',
+            'group' => 'stories',
+            'background' => ['color' => '#18181b', 'opacity' => 100],
+            'objects' => [
+                ['kind' => 'rect', 'name' => 'Faixa', 'x' => 0.05, 'y' => 0.38, 'w' => 0.9, 'h' => 0.24, 'fill' => '#000000', 'opacity' => 50],
+                ['kind' => 'text', 'name' => 'Citação', 'x' => 0.5, 'y' => 0.5, 'text' => 'Sua citação aqui', 'fontSize' => 48, 'fill' => '#ffffff', 'fontFamily' => 'Georgia, serif', 'originX' => 'center', 'originY' => 'center'],
+            ],
+        ],
+        'ig_promo_sale' => [
+            'name' => 'Post promoção',
+            'description' => 'Destaque vermelho + headline',
+            'preset' => 'ig_feed_square',
+            'group' => 'instagram',
+            'background' => ['color' => '#fafafa', 'opacity' => 100],
+            'objects' => [
+                ['kind' => 'rect', 'name' => 'Faixa promo', 'x' => 0, 'y' => 0.72, 'w' => 1, 'h' => 0.28, 'fill' => '#dc2626', 'opacity' => 100],
+                ['kind' => 'text', 'name' => 'Headline', 'x' => 0.5, 'y' => 0.82, 'text' => 'PROMOÇÃO', 'fontSize' => 72, 'fill' => '#ffffff', 'fontFamily' => 'Impact, Arial Black, sans-serif', 'originX' => 'center', 'originY' => 'center'],
+                ['kind' => 'text', 'name' => 'Subtítulo', 'x' => 0.5, 'y' => 0.92, 'text' => 'Até 50% OFF', 'fontSize' => 36, 'fill' => '#fef2f2', 'fontFamily' => 'Arial, sans-serif', 'originX' => 'center', 'originY' => 'center'],
+            ],
+        ],
+        'yt_thumb_bold' => [
+            'name' => 'Thumbnail YouTube',
+            'description' => 'Barra inferior + título impacto',
+            'preset' => 'yt_thumb',
+            'group' => 'youtube',
+            'background' => ['color' => '#27272a', 'opacity' => 100],
+            'objects' => [
+                ['kind' => 'rect', 'name' => 'Barra inferior', 'x' => 0, 'y' => 0.78, 'w' => 1, 'h' => 0.22, 'fill' => '#7c3aed', 'opacity' => 95],
+                ['kind' => 'text', 'name' => 'Título', 'x' => 0.04, 'y' => 0.86, 'text' => 'TÍTULO DO VÍDEO', 'fontSize' => 56, 'fill' => '#ffffff', 'fontFamily' => 'Impact, Arial Black, sans-serif', 'originX' => 'left', 'originY' => 'center'],
+            ],
+        ],
+        'fb_event_card' => [
+            'name' => 'Card evento Facebook',
+            'description' => 'Data + título evento',
+            'preset' => 'fb_feed',
+            'group' => 'facebook',
+            'background' => ['color' => '#1e3a5f', 'opacity' => 100],
+            'objects' => [
+                ['kind' => 'circle', 'name' => 'Destaque', 'x' => 0.08, 'y' => 0.5, 'r' => 0.12, 'fill' => '#2563eb', 'opacity' => 100],
+                ['kind' => 'text', 'name' => 'Data', 'x' => 0.08, 'y' => 0.5, 'text' => '15\nJUL', 'fontSize' => 28, 'fill' => '#ffffff', 'fontFamily' => 'Arial, sans-serif', 'originX' => 'center', 'originY' => 'center'],
+                ['kind' => 'text', 'name' => 'Evento', 'x' => 0.28, 'y' => 0.42, 'text' => 'Nome do evento', 'fontSize' => 42, 'fill' => '#ffffff', 'fontFamily' => 'Arial, sans-serif', 'originX' => 'left', 'originY' => 'top'],
+                ['kind' => 'text', 'name' => 'Local', 'x' => 0.28, 'y' => 0.62, 'text' => 'Local · Horário', 'fontSize' => 22, 'fill' => '#93c5fd', 'fontFamily' => 'Arial, sans-serif', 'originX' => 'left', 'originY' => 'top'],
+            ],
+        ],
+        'li_article_cover' => [
+            'name' => 'Capa artigo LinkedIn',
+            'description' => 'Minimalista corporativo',
+            'preset' => 'li_feed',
+            'group' => 'linkedin',
+            'background' => ['color' => '#f8fafc', 'opacity' => 100],
+            'objects' => [
+                ['kind' => 'rect', 'name' => 'Barra accent', 'x' => 0, 'y' => 0, 'w' => 0.012, 'h' => 1, 'fill' => '#0a66c2', 'opacity' => 100],
+                ['kind' => 'text', 'name' => 'Título', 'x' => 0.06, 'y' => 0.35, 'text' => 'Título do artigo', 'fontSize' => 44, 'fill' => '#0f172a', 'fontFamily' => 'Arial, sans-serif', 'originX' => 'left', 'originY' => 'top'],
+                ['kind' => 'text', 'name' => 'Autor', 'x' => 0.06, 'y' => 0.72, 'text' => 'Por Seu Nome · Empresa', 'fontSize' => 20, 'fill' => '#64748b', 'fontFamily' => 'Arial, sans-serif', 'originX' => 'left', 'originY' => 'top'],
+            ],
+        ],
+        'web_banner_cta' => [
+            'name' => 'Banner CTA web',
+            'description' => 'Leaderboard com botão',
+            'preset' => 'web_banner_leader',
+            'group' => 'web',
+            'background' => ['color' => '#0f172a', 'opacity' => 100],
+            'objects' => [
+                ['kind' => 'text', 'name' => 'Headline', 'x' => 0.03, 'y' => 0.5, 'text' => 'Sua oferta especial', 'fontSize' => 22, 'fill' => '#ffffff', 'fontFamily' => 'Arial, sans-serif', 'originX' => 'left', 'originY' => 'center'],
+                ['kind' => 'rect', 'name' => 'Botão', 'x' => 0.78, 'y' => 0.22, 'w' => 0.18, 'h' => 0.56, 'fill' => '#22c55e', 'opacity' => 100],
+                ['kind' => 'text', 'name' => 'CTA', 'x' => 0.87, 'y' => 0.5, 'text' => 'Saiba mais', 'fontSize' => 14, 'fill' => '#ffffff', 'fontFamily' => 'Arial, sans-serif', 'originX' => 'center', 'originY' => 'center'],
+            ],
+        ],
+    ],
+
     'defaults' => [
         'preset' => 'ig_feed_square',
         'background_color' => '#ffffff',

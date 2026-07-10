@@ -782,6 +782,22 @@ O narrador continua a história com calma."
                                 </div>
                             </div>
                         </template>
+                        <div class="pt-3 border-t border-zinc-800">
+                            <p class="text-[10px] uppercase tracking-wide text-zinc-500 mb-2">Templates prontos</p>
+                            <div class="space-y-1">
+                                <template x-for="tpl in imageStudioTemplates" :key="'ist-' + tpl.slug">
+                                    <button
+                                        type="button"
+                                        @click="imageStudioApplyTemplate(tpl)"
+                                        class="w-full text-left text-xs px-2 py-1.5 rounded border border-zinc-800 text-zinc-400 hover:border-violet-600 hover:text-violet-200 transition"
+                                        :title="tpl.description"
+                                    >
+                                        <span x-text="tpl.name"></span>
+                                        <span class="block text-[9px] text-zinc-600 truncate" x-text="tpl.description"></span>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
                     </div>
 
                     {{-- Canvas --}}

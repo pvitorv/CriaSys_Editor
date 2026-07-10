@@ -31,6 +31,9 @@ class ImageStudioService
             'export_formats' => config('image_studio.export_formats', []),
             'fonts' => config('thumbnail_templates.fonts', []),
             'defaults' => config('image_studio.defaults', []),
+            'templates' => collect(config('image_studio.templates', []))
+                ->map(fn (array $meta, string $slug) => array_merge($meta, ['slug' => $slug]))
+                ->values(),
             'background_removal_available' => app(BackgroundRemovalService::class)->isAvailable(),
         ];
     }
