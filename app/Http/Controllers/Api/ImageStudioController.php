@@ -139,4 +139,34 @@ class ImageStudioController extends Controller
             ],
         ]);
     }
+
+    public function framePreview(Request $request, Project $project, ImageStudioService $studio): JsonResponse
+    {
+        $data = $request->validate([
+            'slug' => ['required', 'string'],
+            'width' => ['required', 'integer', 'min:100', 'max:8000'],
+            'height' => ['required', 'integer', 'min:100', 'max:8000'],
+            'color' => ['nullable', 'string', 'max:32'],
+            'secondary_color' => ['nullable', 'string', 'max:32'],
+            'frame_width' => ['nullable', 'integer', 'min:4', 'max:120'],
+            'opacity' => ['nullable', 'integer', 'min:0', 'max:100'],
+            'inset' => ['nullable', 'integer', 'min:0', 'max:80'],
+        ]);
+
+        $result = $studio->renderFramePreview(
+            $project,
+            (int) $data['width'],
+            (int) $data['height'],
+            $data['slug'],
+            [
+                'color' => $data['color'] ?? null,
+                'secondary_color' => $data['secondary_color'] ?? null,
+                'width' => $data['frame_width'] ?? null,
+                'opacity' => $data['opacity'] ?? null,
+                'inset' => $data['inset'] ?? null,
+            ]
+        );
+
+        return response()->json($result);
+    }
 }

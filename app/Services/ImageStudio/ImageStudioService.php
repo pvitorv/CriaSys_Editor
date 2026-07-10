@@ -5,6 +5,7 @@ namespace App\Services\ImageStudio;
 use App\Models\Asset;
 use App\Models\Project;
 use App\Services\ProjectStorageService;
+use App\Services\Render\ThumbnailFrameDrawer;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -32,6 +33,9 @@ class ImageStudioService
             'fonts' => config('thumbnail_templates.fonts', []),
             'defaults' => config('image_studio.defaults', []),
             'templates' => collect(config('image_studio.templates', []))
+                ->map(fn (array $meta, string $slug) => array_merge($meta, ['slug' => $slug]))
+                ->values(),
+            'frames' => collect(config('image_studio.frame_presets', []))
                 ->map(fn (array $meta, string $slug) => array_merge($meta, ['slug' => $slug]))
                 ->values(),
             'background_removal_available' => app(BackgroundRemovalService::class)->isAvailable(),
@@ -186,5 +190,43 @@ class ImageStudioService
             'metadata' => ['from' => 'image_studio'],
             'downloaded_at' => now(),
         ]);
+    }
+
+    public function renderFramePreview(Project $project, int $width, int $height, string $slug, array $options = []): array
+    {
+        if ($slug === '' || $slug === 'none') {
+            throw new \InvalidArgumentException('Moldura inválida.');
+        }
+
+        $this->storage->ensureStructure($project);
+        $img = imagecreatetruecolor($width, $height);
+        imagesavealpha($img, true);
+        $transparent = imagecolorallocatealpha($img, 0, 0, 0, 127);
+        imagefill($img, 0, 0, $transparent);
+
+        $settings = array_merge(config('thumbnail_frames.defaults', []), [
+            'frame_slug' => $slug,
+            'frame_color' => $options['color'] ?? '#ffffff',
+            'frame_secondary_color' => $options['secondary_color'] ?? '#ef4444',
+            'frame_width' => (int) ($options['width'] ?? 28),
+            'frame_opacity' => (int) ($options['opacity'] ?? 100),
+            'frame_inset' => (int) ($options['inset'] ?? 12),
+        ]);
+
+        app(ThumbnailFrameDrawer::class)->apply($img, $settings, $width, $height, $project);
+
+        $filename = 'frame_'.$slug.'_'.$width.'x'.$height.'_'.Str::random(4).'.png';
+        $path = $this->designsDir($project).DIRECTORY_SEPARATOR.$filename;
+        imagepng($img, $path);
+        imagedestroy($img);
+
+        return [
+            'filename' => $filename,
+            'url' => route('api.projects.files', [
+                'project' => $project->id,
+                'type' => 'designs',
+                'filename' => $filename,
+            ]).'?t='.time(),
+        ];
     }
 }

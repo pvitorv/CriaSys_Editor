@@ -162,6 +162,21 @@ return [
         ],
     ],
 
+    'frame_presets' => [
+        'thin_white' => ['name' => 'Fina branca', 'category' => 'basico'],
+        'thick_solid' => ['name' => 'Borda grossa', 'category' => 'basico'],
+        'double_line' => ['name' => 'Linha dupla', 'category' => 'basico'],
+        'rounded_modern' => ['name' => 'Cantos arredondados', 'category' => 'moderno'],
+        'gradient_border' => ['name' => 'Borda degradê', 'category' => 'moderno'],
+        'neon_glow' => ['name' => 'Neon glow', 'category' => 'neon'],
+        'letterbox_frame' => ['name' => 'Letterbox cinema', 'category' => 'cinema'],
+        'polaroid' => ['name' => 'Polaroid', 'category' => 'vintage'],
+        'ig_gradient_ring' => ['name' => 'Anel Instagram', 'category' => 'social'],
+        'yt_accent' => ['name' => 'Accent YouTube', 'category' => 'social'],
+        'corner_brackets' => ['name' => 'Cantoneiras', 'category' => 'tech'],
+        'gold_double' => ['name' => 'Dourado duplo', 'category' => 'luxo'],
+    ],
+
     'defaults' => [
         'preset' => 'ig_feed_square',
         'background_color' => '#ffffff',

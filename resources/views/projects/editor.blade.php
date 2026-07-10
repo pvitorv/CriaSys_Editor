@@ -803,6 +803,8 @@ O narrador continua a história com calma."
                     {{-- Canvas --}}
                     <div class="space-y-3 min-w-0">
                         <div class="flex flex-wrap gap-2">
+                            <button type="button" @click="imageStudioUndo()" :disabled="!imageStudioCanUndo" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40" title="Ctrl+Z">↶ Desfazer</button>
+                            <button type="button" @click="imageStudioRedo()" :disabled="!imageStudioCanRedo" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40" title="Ctrl+Y">↷ Refazer</button>
                             <button type="button" @click="imageStudioAddText()" class="text-xs px-2 py-1 rounded bg-violet-800 hover:bg-violet-700">+ Texto</button>
                             <button type="button" @click="imageStudioAddShape('rect')" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">+ Retângulo</button>
                             <button type="button" @click="imageStudioAddShape('circle')" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">+ Círculo</button>
@@ -814,6 +816,19 @@ O narrador continua a história com calma."
                                 ✂ Remover fundo
                                 <input type="file" accept="image/*" @change="imageStudioRemoveBackground($event)" class="hidden" :disabled="!imageStudioBgRemoval">
                             </label>
+                            <label class="text-xs px-2 py-1 rounded bg-zinc-800 flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" x-model="imageStudioShowGrid" @change="onImageStudioGridChange()" class="rounded">
+                                Grid
+                            </label>
+                            <label class="text-xs px-2 py-1 rounded bg-zinc-800 flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" x-model="imageStudioSnapGrid" @change="onImageStudioGridChange()" class="rounded">
+                                Snap
+                            </label>
+                            <select x-model.number="imageStudioGridSize" @change="onImageStudioGridChange()" class="text-xs px-2 py-1 rounded bg-zinc-800 border border-zinc-700">
+                                <option :value="10">10px</option>
+                                <option :value="20">20px</option>
+                                <option :value="40">40px</option>
+                            </select>
                             <button type="button" @click="fitImageStudioCanvas()" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 ml-auto">Ajustar zoom</button>
                         </div>
 
@@ -860,6 +875,14 @@ O narrador continua a história com calma."
                                 Opacidade
                                 <input type="range" min="0" max="100" :value="Math.round((imageStudioSelectedObject?.opacity ?? 1) * 100)" @input="imageStudioObjectOpacity($event.target.value)" class="w-full mt-1">
                             </label>
+                            <div class="flex flex-wrap gap-1 pt-1">
+                                <button type="button" @click="imageStudioAlignObject('left')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800" title="Alinhar esquerda">⬅</button>
+                                <button type="button" @click="imageStudioAlignObject('center-h')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800" title="Centro horizontal">↔</button>
+                                <button type="button" @click="imageStudioAlignObject('right')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800" title="Alinhar direita">➡</button>
+                                <button type="button" @click="imageStudioAlignObject('top')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800" title="Topo">⬆</button>
+                                <button type="button" @click="imageStudioAlignObject('center-v')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800" title="Centro vertical">↕</button>
+                                <button type="button" @click="imageStudioAlignObject('bottom')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800" title="Base">⬇</button>
+                            </div>
                             <template x-if="imageStudioSelectedObject?.type === 'image'">
                                 <div class="space-y-2 pt-2 border-t border-zinc-800">
                                     <p class="text-[10px] text-violet-400 font-medium">Filtros (intensidade)</p>
@@ -871,6 +894,18 @@ O narrador continua a história com calma."
                                     <button type="button" @click="imageStudioClearFilters()" class="text-[10px] px-2 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-white">Limpar filtros</button>
                                 </div>
                             </template>
+                        </div>
+
+                        <div class="rounded-xl border border-zinc-800 bg-zinc-950/50 p-3 space-y-2">
+                            <p class="text-xs font-medium text-zinc-300">Molduras (Thumbnail)</p>
+                            <select x-model="imageStudioFrameSlug" class="w-full text-xs px-2 py-1.5 rounded bg-zinc-900 border border-zinc-700">
+                                <option value="none">Sem moldura</option>
+                                <template x-for="fr in imageStudioFrames" :key="'isfm-' + fr.slug">
+                                    <option :value="fr.slug" x-text="fr.name"></option>
+                                </template>
+                            </select>
+                            <input type="color" x-model="imageStudioFrameColor" class="w-full h-8 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                            <button type="button" @click="imageStudioApplyFrame()" :disabled="imageStudioFrameSlug === 'none'" class="w-full text-xs py-1.5 rounded bg-zinc-800 hover:bg-violet-800 disabled:opacity-40">Aplicar moldura</button>
                         </div>
 
                         <div class="rounded-xl border border-violet-900/40 bg-violet-950/20 p-3 space-y-2">
@@ -887,6 +922,12 @@ O narrador continua a história com calma."
                             <p class="text-xs font-medium text-emerald-200">Integração CriaSys</p>
                             <button type="button" @click="imageStudioPushThumbnail()" class="w-full text-xs py-2 rounded-lg bg-violet-800 hover:bg-violet-700">Enviar para Thumbnail</button>
                             <button type="button" @click="imageStudioPushLibrary()" class="w-full text-xs py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700">Salvar na biblioteca do projeto</button>
+                        </div>
+
+                        <div x-show="typeof window !== 'undefined' && window.criasys?.isDesktop" class="rounded-xl border border-sky-900/40 bg-sky-950/20 p-3 space-y-2">
+                            <p class="text-xs font-medium text-sky-200">Pasta local (Electron)</p>
+                            <button type="button" @click="imageStudioPickLocalFolder()" class="w-full text-xs py-2 rounded-lg bg-sky-800 hover:bg-sky-700">Monitorar pasta de imagens</button>
+                            <p x-show="imageStudioLocalWatch" class="text-[9px] text-zinc-500 break-all" x-text="imageStudioLocalWatch"></p>
                         </div>
 
                         <p x-show="!imageStudioBgRemoval" class="text-[10px] text-amber-600/90">Remover fundo: instale <code class="text-amber-400">pip install rembg pillow</code> e configure REMBG_PYTHON no .env se necessário.</p>

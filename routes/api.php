@@ -47,6 +47,7 @@ Route::post('projects/{project}/image-studio/export', [ImageStudioController::cl
 Route::post('projects/{project}/image-studio/remove-background', [ImageStudioController::class, 'removeBackground']);
 Route::post('projects/{project}/image-studio/push-thumbnail', [ImageStudioController::class, 'pushThumbnail']);
 Route::post('projects/{project}/image-studio/push-library', [ImageStudioController::class, 'pushLibrary']);
+Route::get('projects/{project}/image-studio/frame-preview', [ImageStudioController::class, 'framePreview']);
 
 Route::get('media/providers', [MediaLibraryController::class, 'providers']);
 Route::get('media/suggest-query', [MediaLibraryController::class, 'suggestQuery']);

@@ -16,6 +16,14 @@ export class ImageStudioEngine {
         this.canvasEl = canvasEl;
         this.canvas = null;
         this.onChange = null;
+        this.history = [];
+        this.historyIndex = -1;
+        this.historyPaused = false;
+        this.historyTimeout = null;
+        this.maxHistory = 40;
+        this.showGrid = false;
+        this.snapToGrid = false;
+        this.gridSize = 20;
     }
 
     init(width, height, backgroundColor = '#ffffff') {
@@ -32,16 +40,168 @@ export class ImageStudioEngine {
         this.canvas.on('object:modified', () => this.emitChange());
         this.canvas.on('object:added', () => this.emitChange());
         this.canvas.on('object:removed', () => this.emitChange());
-        this.canvas.on('selection:created', () => this.emitChange());
-        this.canvas.on('selection:updated', () => this.emitChange());
-        this.canvas.on('selection:cleared', () => this.emitChange());
+        this.canvas.on('selection:created', () => this.notifyChange());
+        this.canvas.on('selection:updated', () => this.notifyChange());
+        this.canvas.on('selection:cleared', () => this.notifyChange());
+        this.canvas.on('object:moving', (e) => this.handleObjectMoving(e));
+        this.canvas.on('after:render', () => this.drawGridOverlay());
+        this.history = [];
+        this.historyIndex = -1;
         return this.canvas;
     }
 
-    emitChange() {
+    notifyChange() {
         if (typeof this.onChange === 'function') {
             this.onChange();
         }
+    }
+
+    emitChange(recordHistory = true) {
+        if (recordHistory && !this.historyPaused) {
+            this.scheduleHistory();
+        }
+        this.notifyChange();
+    }
+
+    scheduleHistory() {
+        clearTimeout(this.historyTimeout);
+        this.historyTimeout = setTimeout(() => this.pushHistory(), 350);
+    }
+
+    pushHistory() {
+        if (!this.canvas || this.historyPaused) {
+            return;
+        }
+        const json = JSON.stringify(this.canvas.toJSON());
+        if (this.historyIndex >= 0 && this.history[this.historyIndex] === json) {
+            return;
+        }
+        this.history = this.history.slice(0, this.historyIndex + 1);
+        this.history.push(json);
+        if (this.history.length > this.maxHistory) {
+            this.history.shift();
+        } else {
+            this.historyIndex += 1;
+        }
+    }
+
+    async undo() {
+        if (this.historyIndex <= 0 || !this.canvas) {
+            return false;
+        }
+        this.historyIndex -= 1;
+        await this.restoreHistoryState(this.history[this.historyIndex]);
+        return true;
+    }
+
+    async redo() {
+        if (this.historyIndex >= this.history.length - 1 || !this.canvas) {
+            return false;
+        }
+        this.historyIndex += 1;
+        await this.restoreHistoryState(this.history[this.historyIndex]);
+        return true;
+    }
+
+    canUndo() {
+        return this.historyIndex > 0;
+    }
+
+    canRedo() {
+        return this.historyIndex < this.history.length - 1;
+    }
+
+    async restoreHistoryState(jsonStr) {
+        this.historyPaused = true;
+        await this.canvas.loadFromJSON(JSON.parse(jsonStr));
+        this.canvas.getObjects().forEach((obj) => {
+            if (obj.criasysFilters && obj.type === 'image') {
+                this.applyFiltersToObject(obj, obj.criasysFilters);
+            }
+        });
+        this.canvas.requestRenderAll();
+        this.historyPaused = false;
+        this.notifyChange();
+    }
+
+    setGridOptions({ showGrid, snapToGrid, gridSize } = {}) {
+        if (showGrid !== undefined) {
+            this.showGrid = !!showGrid;
+        }
+        if (snapToGrid !== undefined) {
+            this.snapToGrid = !!snapToGrid;
+        }
+        if (gridSize !== undefined) {
+            this.gridSize = Math.max(5, Math.min(100, Number(gridSize) || 20));
+        }
+        this.canvas?.requestRenderAll();
+    }
+
+    handleObjectMoving(e) {
+        if (!this.snapToGrid || !e.target) {
+            return;
+        }
+        const g = this.gridSize;
+        e.target.set({
+            left: Math.round(e.target.left / g) * g,
+            top: Math.round(e.target.top / g) * g,
+        });
+    }
+
+    drawGridOverlay() {
+        if (!this.canvas || !this.showGrid) {
+            return;
+        }
+        const ctx = this.canvas.contextTop;
+        if (!ctx) {
+            return;
+        }
+        const w = this.canvas.getWidth();
+        const h = this.canvas.getHeight();
+        const g = this.gridSize;
+        const zoom = this.canvas.getZoom();
+        ctx.save();
+        ctx.strokeStyle = 'rgba(139, 92, 246, 0.25)';
+        ctx.lineWidth = 1 / zoom;
+        for (let x = 0; x <= w; x += g) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, h);
+            ctx.stroke();
+        }
+        for (let y = 0; y <= h; y += g) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w, y);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    alignActiveObject(mode) {
+        const obj = this.canvas?.getActiveObject();
+        if (!obj) {
+            return;
+        }
+        const w = this.canvas.getWidth();
+        const h = this.canvas.getHeight();
+        const bounds = obj.getBoundingRect();
+        if (mode === 'left') {
+            obj.set('left', obj.left - bounds.left);
+        } else if (mode === 'center-h') {
+            obj.set('left', obj.left + (w / 2 - (bounds.left + bounds.width / 2)));
+        } else if (mode === 'right') {
+            obj.set('left', obj.left + (w - (bounds.left + bounds.width)));
+        } else if (mode === 'top') {
+            obj.set('top', obj.top - bounds.top);
+        } else if (mode === 'center-v') {
+            obj.set('top', obj.top + (h / 2 - (bounds.top + bounds.height / 2)));
+        } else if (mode === 'bottom') {
+            obj.set('top', obj.top + (h - (bounds.top + bounds.height)));
+        }
+        obj.setCoords();
+        this.canvas.requestRenderAll();
+        this.emitChange();
     }
 
     setSize(width, height, backgroundColor) {
@@ -79,6 +239,7 @@ export class ImageStudioEngine {
         if (!this.canvas || !json) {
             return;
         }
+        this.historyPaused = true;
         await this.canvas.loadFromJSON(json);
         this.canvas.getObjects().forEach((obj) => {
             if (obj.criasysFilters && (obj.type === 'image' || obj instanceof FabricImage)) {
@@ -86,6 +247,8 @@ export class ImageStudioEngine {
             }
         });
         this.canvas.requestRenderAll();
+        this.historyPaused = false;
+        this.pushHistory();
     }
 
     getFilterState(object) {
@@ -489,6 +652,15 @@ export function imageStudioMethods() {
         imageStudioSelectedObject: null,
         imageStudioZoom: 1,
         imageStudioFilters: { ...DEFAULT_FILTER_STATE },
+        imageStudioShowGrid: false,
+        imageStudioSnapGrid: false,
+        imageStudioGridSize: 20,
+        imageStudioCanUndo: false,
+        imageStudioCanRedo: false,
+        imageStudioFrameSlug: 'none',
+        imageStudioFrameColor: '#ffffff',
+        imageStudioFrames: [],
+        imageStudioLocalWatch: null,
 
         get filteredImageStudioPresets() {
             const q = (this.imageStudioPresetFilter || '').trim().toLowerCase();
@@ -526,6 +698,7 @@ export function imageStudioMethods() {
                 this.imageStudioGroups = data.groups || {};
                 this.imageStudioExportFormats = data.export_formats || [];
                 this.imageStudioTemplates = data.templates || [];
+                this.imageStudioFrames = data.frames || [];
                 this.imageStudioFonts = data.fonts || [];
                 this.imageStudioBgRemoval = Boolean(data.background_removal_available);
                 if (data.defaults?.preset) {
@@ -556,7 +729,10 @@ export function imageStudioMethods() {
             };
 
             await this.loadImageStudioDesign();
+            this.imageStudioEngine.pushHistory();
             this.imageStudioReady = true;
+            this.setupImageStudioKeyboard();
+            this.setupImageStudioLocalWatch();
         },
 
         async loadImageStudioDesign() {
@@ -600,6 +776,8 @@ export function imageStudioMethods() {
         refreshImageStudioLayers() {
             this.imageStudioLayers = this.imageStudioEngine?.getLayers() || [];
             this.imageStudioSelectedObject = this.imageStudioEngine?.getActiveObject() || null;
+            this.imageStudioCanUndo = this.imageStudioEngine?.canUndo() ?? false;
+            this.imageStudioCanRedo = this.imageStudioEngine?.canRedo() ?? false;
             if (this.imageStudioSelectedObject?.type === 'image') {
                 this.imageStudioFilters = this.imageStudioEngine.getFilterState(this.imageStudioSelectedObject);
             }
@@ -618,6 +796,130 @@ export function imageStudioMethods() {
                 this.imageStudioEngine.clearFilters(obj);
                 this.imageStudioFilters = { ...DEFAULT_FILTER_STATE };
             }
+        },
+
+        setupImageStudioKeyboard() {
+            if (this._imageStudioKeyHandler) {
+                return;
+            }
+            this._imageStudioKeyHandler = (e) => {
+                if (this.activeTab !== 'image_studio') {
+                    return;
+                }
+                const mod = e.ctrlKey || e.metaKey;
+                if (mod && e.key === 'z' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.imageStudioUndo();
+                } else if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+                    e.preventDefault();
+                    this.imageStudioRedo();
+                }
+            };
+            window.addEventListener('keydown', this._imageStudioKeyHandler);
+        },
+
+        async imageStudioUndo() {
+            const ok = await this.imageStudioEngine?.undo();
+            if (ok) {
+                this.refreshImageStudioLayers();
+            }
+        },
+
+        async imageStudioRedo() {
+            const ok = await this.imageStudioEngine?.redo();
+            if (ok) {
+                this.refreshImageStudioLayers();
+            }
+        },
+
+        onImageStudioGridChange() {
+            this.imageStudioEngine?.setGridOptions({
+                showGrid: this.imageStudioShowGrid,
+                snapToGrid: this.imageStudioSnapGrid,
+                gridSize: this.imageStudioGridSize,
+            });
+        },
+
+        imageStudioAlignObject(mode) {
+            this.imageStudioEngine?.alignActiveObject(mode);
+            this.refreshImageStudioLayers();
+        },
+
+        async imageStudioApplyFrame() {
+            if (!this.imageStudioEngine || this.imageStudioFrameSlug === 'none') {
+                return;
+            }
+            const preset = this.imageStudioCurrentPreset;
+            if (!preset) {
+                return;
+            }
+            try {
+                const { data } = await api.get(`/projects/${this.projectId}/image-studio/frame-preview`, {
+                    params: {
+                        slug: this.imageStudioFrameSlug,
+                        width: preset.width,
+                        height: preset.height,
+                        color: this.imageStudioFrameColor,
+                    },
+                });
+                if (data.url) {
+                    await this.imageStudioEngine.addImageFromUrl(data.url, 'Moldura');
+                    const layers = this.imageStudioEngine.getLayers();
+                    const frameLayer = layers[0];
+                    if (frameLayer?.object) {
+                        this.imageStudioEngine.moveLayer(frameLayer.object, 'top');
+                        frameLayer.object.set({ name: 'Moldura', selectable: true });
+                    }
+                    this.refreshImageStudioLayers();
+                    this.message = 'Moldura aplicada';
+                }
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao aplicar moldura';
+            }
+        },
+
+        async imageStudioPickLocalFolder() {
+            if (!window.criasys?.pickWatchFolder) {
+                this.error = 'Disponível apenas no app desktop (Electron)';
+                return;
+            }
+            const folder = await window.criasys.pickWatchFolder();
+            if (!folder) {
+                return;
+            }
+            await window.criasys.watchFolder(folder);
+            this.imageStudioLocalWatch = folder;
+            this.message = `Monitorando: ${folder}`;
+        },
+
+        setupImageStudioLocalWatch() {
+            if (!window.criasys?.onFolderChanged || this._imageStudioWatchSetup) {
+                return;
+            }
+            this._imageStudioWatchSetup = true;
+            window.criasys.onFolderChanged(async (data) => {
+                if (this.activeTab !== 'image_studio' || !data?.filePath) {
+                    return;
+                }
+                const ext = (data.filePath.split('.').pop() || '').toLowerCase();
+                if (!['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) {
+                    return;
+                }
+                if (!window.criasys.readLocalFile) {
+                    return;
+                }
+                try {
+                    const file = await window.criasys.readLocalFile(data.filePath);
+                    if (file?.dataUrl) {
+                        const name = data.filePath.split(/[/\\]/).pop();
+                        await this.imageStudioEngine?.addImageFromUrl(file.dataUrl, name);
+                        this.refreshImageStudioLayers();
+                        this.message = `Importado: ${name}`;
+                    }
+                } catch {
+                    /* arquivo pode ainda estar sendo gravado */
+                }
+            });
         },
 
         scheduleImageStudioSave() {
