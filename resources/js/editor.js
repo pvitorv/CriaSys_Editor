@@ -104,6 +104,9 @@ window.editorApp = function (projectId, projectMeta = {}) {
         dragFromIndex: null,
         burnSubtitles: false,
         timelineZoom: 18,
+        timelineZoomManual: false,
+        topPanelHeight: 0,
+        timelineWidthRatio: 0.7,
 
         get previewSlide() {
             if (this.previewPlaying && this.slides.length) {
@@ -166,7 +169,9 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
         get timelineTrackWidthPx() {
             const gaps = Math.max(0, this.slides.length - 1) * 8;
-            return this.timelineTotalSeconds * this.timelineZoom + gaps + 16;
+            const content = this.timelineTotalSeconds * this.timelineZoom + gaps + 16;
+
+            return Math.max(content, this.timelineViewportWidthPx());
         },
 
         get timelineTicks() {
@@ -222,6 +227,62 @@ window.editorApp = function (projectId, projectMeta = {}) {
             }, 3000);
 
             document.addEventListener('keydown', (e) => this.handleShortcut(e));
+            this.syncTimelineZoomToViewport();
+            this.initTopPanelHeightSync();
+        },
+
+        syncTopPanelHeight() {
+            this.$nextTick(() => {
+                const el = this.$refs.previewColumn;
+                if (el) {
+                    this.topPanelHeight = Math.round(el.getBoundingClientRect().height);
+                }
+            });
+        },
+
+        initTopPanelHeightSync() {
+            this.syncTopPanelHeight();
+            const el = this.$refs.previewColumn;
+            if (!el || typeof ResizeObserver === 'undefined') {
+                return;
+            }
+            this._topPanelRo?.disconnect();
+            this._topPanelRo = new ResizeObserver(() => this.syncTopPanelHeight());
+            this._topPanelRo.observe(el);
+        },
+
+        timelineViewportWidthPx() {
+            if (typeof window === 'undefined') {
+                return 960;
+            }
+            const root = this.$el?.closest?.('[x-data]') || this.$el;
+            const measured = root?.clientWidth;
+            const fromViewport = Math.floor(window.innerWidth * this.timelineWidthRatio) - 48;
+
+            return Math.max(320, measured || fromViewport);
+        },
+
+        syncTimelineZoomToViewport() {
+            if (this.timelineZoomManual || !this.slides.length) {
+                return;
+            }
+
+            this.$nextTick(() => {
+                const viewport = this.timelineViewportWidthPx();
+                const gaps = Math.max(0, this.slides.length - 1) * 8;
+                const total = this.timelineTotalSeconds;
+                if (total <= 0 || viewport <= 0) {
+                    return;
+                }
+
+                const fit = (viewport - gaps - 32) / total;
+                this.timelineZoom = Math.min(72, Math.max(6, Math.round(fit * 10) / 10));
+            });
+        },
+
+        resetTimelineZoom() {
+            this.timelineZoomManual = false;
+            this.syncTimelineZoomToViewport();
         },
 
         handleShortcut(e) {
@@ -841,6 +902,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.slides = data.map(s => this.enrichSlide(s));
             this.syncSelection();
             this.buildFullScriptFromSlides();
+            this.syncTimelineZoomToViewport();
         },
 
         enrichSlide(slide) {
@@ -1006,7 +1068,8 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         adjustTimelineZoom(delta) {
-            this.timelineZoom = Math.min(48, Math.max(6, this.timelineZoom + delta));
+            this.timelineZoomManual = true;
+            this.timelineZoom = Math.min(72, Math.max(6, this.timelineZoom + delta));
         },
 
         switchTab(tab) {

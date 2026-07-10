@@ -1,5 +1,7 @@
 @extends('layouts.app')
 
+@section('main-class', 'w-full max-w-none px-0 py-4')
+
 @section('title', $project->name . ' — Editor')
 
 @section('header-actions')
@@ -15,8 +17,8 @@
         'defaultVoice' => config('criasys.tts.default_voice'),
     ]))"
     x-init="init()"
-    class="flex flex-col gap-4"
-    style="height: calc(100vh - 8rem);"
+    class="flex flex-col gap-4 w-[70vw] max-w-[70vw] mx-auto px-1 sm:px-2 pb-10"
+    @resize.window="syncTimelineZoomToViewport(); syncTopPanelHeight()"
 >
     <div class="flex items-center justify-between">
         <div>
@@ -34,14 +36,17 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-12 gap-4 flex-1 min-h-0 shrink">
-        {{-- Lista de slides --}}
-        <div class="col-span-3 flex flex-col min-h-0 rounded-xl border border-zinc-800 bg-zinc-900">
-            <div class="p-3 border-b border-zinc-800 flex justify-between items-center">
+    <div class="grid grid-cols-12 gap-4 items-start">
+        {{-- Lista de slides — mesma altura do preview, scroll interno --}}
+        <div
+            class="col-span-3 flex flex-col min-h-0 rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden"
+            :style="topPanelHeight ? 'height:' + topPanelHeight + 'px' : ''"
+        >
+            <div class="p-3 border-b border-zinc-800 flex justify-between items-center shrink-0">
                 <h2 class="font-medium text-sm">Slides</h2>
                 <button @click="addSlide()" class="text-violet-400 hover:text-violet-300 text-sm">+ Adicionar</button>
             </div>
-            <ul class="flex-1 overflow-y-auto p-2 space-y-1" x-ref="slideList">
+            <ul class="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 space-y-1" x-ref="slideList">
                 <template x-for="(slide, index) in slides" :key="slide.id">
                     <li
                         @click="selectSlide(slide)"
@@ -69,9 +74,9 @@
             </ul>
         </div>
 
-        {{-- Preview --}}
-        <div class="col-span-5 flex flex-col min-h-0 rounded-xl border border-zinc-800 bg-zinc-900">
-            <div class="p-3 border-b border-zinc-800 flex items-center justify-between gap-2">
+        {{-- Preview — reprodutor 16:9 inteiro; define a altura da linha --}}
+        <div class="col-span-4 flex flex-col rounded-xl border border-zinc-800 bg-zinc-900" x-ref="previewColumn">
+            <div class="p-3 border-b border-zinc-800 flex items-center justify-between gap-2 shrink-0">
                 <h2 class="font-medium text-sm">Preview</h2>
                 <div class="flex items-center gap-2">
                     <span x-show="previewPlaying" class="text-[10px] text-violet-400" x-text="previewModeLabel"></span>
@@ -88,8 +93,8 @@
                     ></button>
                 </div>
             </div>
-            <div class="flex-1 flex items-center justify-center p-4 overflow-hidden">
-                <div class="w-full aspect-video bg-black rounded-lg border border-zinc-800 relative overflow-hidden">
+            <div class="p-4">
+                <div class="relative w-full aspect-video rounded-lg border border-zinc-800 overflow-hidden shadow-lg shadow-black/40 bg-black">
                     <div
                         class="absolute inset-0 transition-all duration-500"
                         :class="{
@@ -114,12 +119,12 @@
                             <img :src="previewSlide.image_url" class="absolute inset-0 w-full h-full object-cover opacity-80">
                         </template>
                         <div
-                            class="absolute inset-0 flex flex-col items-center text-center p-6"
+                            class="absolute inset-0 flex flex-col items-center text-center p-4 sm:p-6 overflow-hidden"
                             :class="previewVerticalAlignClass()"
                             :style="previewSlide?.video_url || previewSlide?.image_url ? 'background: rgba(0,0,0,0.45)' : 'background: #000'"
                         >
                             <p
-                                class="font-medium leading-relaxed whitespace-pre-line max-w-prose"
+                                class="font-medium leading-relaxed whitespace-pre-line max-w-prose w-full"
                                 :style="previewTextStyle()"
                                 x-text="previewDisplayText || (canPlayPreview ? '' : 'Cole o roteiro ou adicione slides')"
                             ></p>
@@ -130,12 +135,16 @@
             </div>
         </div>
 
-        {{-- Propriedades --}}
-        <div class="col-span-4 flex flex-col min-h-0 rounded-xl border border-zinc-800 bg-zinc-900 overflow-y-auto">
-            <div class="p-3 border-b border-zinc-800 flex justify-between items-center">
+        {{-- Propriedades — mesma altura do preview, scroll interno --}}
+        <div
+            class="col-span-5 flex flex-col min-h-0 rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden"
+            :style="topPanelHeight ? 'height:' + topPanelHeight + 'px' : ''"
+        >
+            <div class="p-3 border-b border-zinc-800 flex justify-between items-center shrink-0">
                 <h2 class="font-medium text-sm">Propriedades</h2>
                 <button x-show="selectedSlide" @click="searchFromSlideBody()" class="text-xs text-violet-400 hover:text-violet-300">Buscar imagem pelo texto</button>
             </div>
+            <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain">
             <div class="p-4 space-y-3" x-show="selectedSlide">
                 <div>
                     <label class="text-xs text-zinc-400">Corpo</label>
@@ -205,11 +214,12 @@
             </div>
             <p x-show="!selectedSlide && slides.length" class="p-4 text-sm text-zinc-500">Selecione um slide na lista.</p>
             <p x-show="!slides.length" class="p-4 text-sm text-zinc-500">Adicione um slide para começar.</p>
+            </div>
         </div>
     </div>
 
-    {{-- Timeline --}}
-    <div class="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden shrink-0">
+    {{-- Timeline — 70% da largura da tela --}}
+    <div class="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden shrink-0 w-full">
         <div class="px-4 py-3 border-b border-zinc-800 flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h2 class="font-semibold text-sm text-white">Timeline</h2>
@@ -232,6 +242,7 @@
                 <button type="button" @click="adjustTimelineZoom(-4)" class="w-7 h-7 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm" title="Diminuir zoom">−</button>
                 <span class="text-[10px] text-zinc-500 w-14 text-center tabular-nums" x-text="timelineZoom + ' px/s'"></span>
                 <button type="button" @click="adjustTimelineZoom(4)" class="w-7 h-7 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm" title="Aumentar zoom">+</button>
+                <button type="button" @click="resetTimelineZoom()" class="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400" title="Ajustar à largura da tela">Ajustar</button>
                 <button
                     type="button"
                     x-show="slides.length > 1"
@@ -247,8 +258,8 @@
             Adicione slides para montar a linha do tempo.
         </div>
 
-        <div x-show="slides.length" x-ref="timelineScroll" class="overflow-x-auto overflow-y-auto px-4 py-4" style="max-height: 300px;">
-            <div class="relative" :style="'width: ' + timelineTrackWidthPx + 'px; min-width: 100%'">
+        <div x-show="slides.length" x-ref="timelineScroll" class="overflow-x-auto overflow-y-auto px-4 py-4 w-full" style="max-height: min(340px, 28vh);">
+            <div class="relative" :style="'width: ' + timelineTrackWidthPx + 'px; min-width: ' + timelineViewportWidthPx() + 'px'">
                 {{-- Régua de tempo --}}
                 <div class="relative h-5 mb-2 border-b border-zinc-700/80">
                     <template x-for="tick in timelineTicks" :key="'tick-' + tick.sec">
@@ -356,8 +367,8 @@
         </div>
     </div>
 
-    {{-- Abas inferiores --}}
-    <div class="rounded-xl border border-zinc-800 bg-zinc-900 flex-1 min-h-0 flex flex-col overflow-hidden">
+    {{-- Abas inferiores — mesma largura da timeline --}}
+    <div class="rounded-xl border border-zinc-800 bg-zinc-900 flex flex-col w-full">
         <div class="flex border-b border-zinc-800 shrink-0">
             <template x-for="tab in editorTabs" :key="tab.id">
                 <button
@@ -375,7 +386,7 @@
             </template>
         </div>
 
-        <div class="p-4 flex-1 min-h-0 overflow-y-auto">
+        <div class="p-4">
             {{-- Roteiro --}}
             <div x-show="activeTab === 'roteiro'" class="space-y-4">
                 <div>

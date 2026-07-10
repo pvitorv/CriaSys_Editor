@@ -47,7 +47,7 @@
         </div>
     </div>
 
-    <main class="max-w-7xl mx-auto px-4 py-6">
+    <main class="@yield('main-class', 'max-w-7xl mx-auto px-4 py-6')">
         @if(session('success'))
             <div class="mb-4 rounded-lg bg-emerald-900/40 border border-emerald-700 text-emerald-200 px-4 py-3">
                 {{ session('success') }}
