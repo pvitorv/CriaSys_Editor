@@ -13,6 +13,7 @@ return [
     ],
 
     'groups' => [
+        'custom' => 'Personalizado',
         'instagram' => 'Instagram',
         'facebook' => 'Facebook',
         'linkedin' => 'LinkedIn',
@@ -31,6 +32,7 @@ return [
     ],
 
     'presets' => [
+        'custom' => ['name' => 'Personalizado', 'group' => 'custom', 'width' => 1920, 'height' => 1080, 'icon' => '▭', 'aspect' => '16:9'],
         // ── Instagram ──
         'ig_feed_square' => ['name' => 'Feed quadrado 1:1', 'group' => 'instagram', 'width' => 1080, 'height' => 1080, 'icon' => '◎', 'aspect' => '1:1'],
         'ig_feed_portrait' => ['name' => 'Feed retrato 4:5', 'group' => 'instagram', 'width' => 1080, 'height' => 1350, 'icon' => '▯', 'aspect' => '4:5'],
@@ -632,8 +634,58 @@ return [
     ],
 
     'defaults' => [
-        'preset' => 'ig_feed_square',
+        'preset' => 'custom',
+        'width' => 1920,
+        'height' => 1080,
         'background_color' => '#ffffff',
         'background_opacity' => 100,
+    ],
+
+    /** Botões principais acima do canvas — sempre visíveis */
+    'primary_formats' => [
+        ['slug' => 'yt_thumb_hd', 'label' => 'YouTube Full HD', 'aspect' => '16:9'],
+        ['slug' => 'yt_thumb', 'label' => 'YouTube Thumbnail', 'aspect' => '16:9'],
+        ['slug' => 'yt_shorts', 'label' => 'YouTube Shorts', 'aspect' => '9:16'],
+        ['slug' => 'ig_feed_square', 'label' => 'Instagram 1:1', 'aspect' => '1:1'],
+        ['slug' => 'ig_story', 'label' => 'Story / Reels', 'aspect' => '9:16'],
+        ['slug' => 'tt_video', 'label' => 'TikTok', 'aspect' => '9:16'],
+        ['slug' => 'ratio_16_9_hd', 'label' => 'Paisagem 16:9', 'aspect' => '16:9'],
+    ],
+
+    /** Ordem dos grupos na lista lateral */
+    'group_order' => [
+        'YouTube',
+        'Proporções genéricas',
+        'Shorts / Reels / vertical',
+        'Instagram',
+        'TikTok',
+        'Facebook',
+        'LinkedIn',
+        'X / Twitter',
+        'Pinterest',
+        'WhatsApp',
+        'Sites & banners',
+        'Stories / vertical',
+        'Avatares & perfis (circular)',
+        'Panfletos, folders & cartões',
+        'Impressão',
+    ],
+
+    /** Formato Image Studio → plataforma do módulo Thumbnail */
+    'preset_platform_map' => [
+        'custom' => 'youtube_landscape',
+        'yt_thumb' => 'youtube_landscape',
+        'yt_thumb_hd' => 'youtube_landscape',
+        'yt_thumb_4k' => 'youtube_landscape',
+        'yt_community_wide' => 'youtube_landscape',
+        'yt_shorts' => 'youtube_shorts',
+        'yt_shorts_thumb' => 'youtube_shorts',
+        'ig_feed_square' => 'instagram_feed_square',
+        'ig_carousel_square' => 'instagram_feed_square',
+        'ig_reels' => 'instagram_reels',
+        'ig_reels_cover_sq' => 'instagram_reels',
+        'ig_story' => 'instagram_stories',
+        'tiktok_cover' => 'tiktok',
+        'tiktok_vertical' => 'tiktok',
     ],
 ];

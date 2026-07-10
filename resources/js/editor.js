@@ -75,6 +75,8 @@ window.editorApp = function (projectId, projectMeta = {}) {
         mediaLibraryProviders: null,
         mediaSfxStartAt: 0,
         mediaResults: [],
+        projectLibraryAssets: [],
+        projectLibraryLoading: false,
         mediaErrors: [],
         mediaSearching: false,
         exportPresets: [],
@@ -512,6 +514,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 this.loadProjectCredits(),
                 this.loadPlatformDescriptions(),
                 this.loadStockLicenses(),
+                this.loadProjectLibraryAssets(),
             ]);
             await this.loadThumbnailCatalog();
             await this.loadThumbnailSettings();
@@ -2478,6 +2481,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
         switchTab(tab) {
             this.activeTab = tab;
             if (tab === 'biblioteca') {
+                this.loadProjectLibraryAssets();
                 this.prepareMediaSearch();
             }
             if (tab === 'exportar') {
@@ -2788,11 +2792,69 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 await this.syncPublish();
             }
 
+            if (type === 'image' || type === 'video') {
+                const formatted = {
+                    id: asset.id,
+                    type: asset.type,
+                    source: asset.source,
+                    item_title: asset.item_title,
+                    file_path: asset.file_path,
+                    url: asset.url || `/api/projects/${this.projectId}/assets/${asset.id}`,
+                    preview_url: asset.preview_url || asset.url || `/api/projects/${this.projectId}/assets/${asset.id}`,
+                };
+                const exists = (this.projectLibraryAssets || []).some((a) => a.id === formatted.id);
+                if (!exists) {
+                    this.projectLibraryAssets = [formatted, ...(this.projectLibraryAssets || [])];
+                }
+            }
+
             return asset;
         },
 
         async saveAudioTrack() {
             await this.saveMusicTrack(0);
+        },
+
+        async loadProjectLibraryAssets() {
+            this.projectLibraryLoading = true;
+            try {
+                const { data } = await api.get(`/projects/${this.projectId}/assets`);
+                this.projectLibraryAssets = data.assets || [];
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao carregar biblioteca do projeto';
+            } finally {
+                this.projectLibraryLoading = false;
+            }
+        },
+
+        projectLibraryVisualAssets() {
+            const wantVideo = this.mediaType === 'video';
+            return (this.projectLibraryAssets || []).filter((asset) => {
+                if (wantVideo) {
+                    return asset.type === 'video';
+                }
+                return asset.type === 'image';
+            });
+        },
+
+        async insertProjectAssetToSlide(asset) {
+            if (!asset?.file_path) {
+                return;
+            }
+            if (!this.selectedSlide) {
+                this.error = 'Selecione um slide antes de inserir.';
+                return;
+            }
+            if (asset.type === 'video') {
+                this.selectedSlide.video_path = asset.file_path;
+                this.selectedSlide.video_url = asset.url || this.fileUrl('assets', asset.file_path.split(/[/\\]/).pop());
+                this.selectedSlide.duration_mode = 'video';
+            } else {
+                this.selectedSlide.image_path = asset.file_path;
+                this.selectedSlide.image_url = asset.url || `/api/projects/${this.projectId}/assets/${asset.id}`;
+            }
+            await this.saveSlide();
+            this.message = `"${asset.item_title || 'Arquivo'}" inserido no slide`;
         },
 
         async searchMedia() {
@@ -2895,6 +2957,18 @@ window.editorApp = function (projectId, projectMeta = {}) {
                             this.selectedSlide.image_url = `/api/projects/${this.projectId}/assets/${asset.id}`;
                         }
                         await this.saveSlide();
+                        const libAsset = {
+                            id: asset.id,
+                            type: asset.type || (item.type === 'video' ? 'video' : 'image'),
+                            source: asset.source || item.source,
+                            item_title: asset.item_title || item.title,
+                            file_path: asset.file_path,
+                            url: `/api/projects/${this.projectId}/assets/${asset.id}`,
+                            preview_url: `/api/projects/${this.projectId}/assets/${asset.id}`,
+                        };
+                        if (!(this.projectLibraryAssets || []).some((a) => a.id === libAsset.id)) {
+                            this.projectLibraryAssets = [libAsset, ...(this.projectLibraryAssets || [])];
+                        }
                     }
 
                     this.message = data.publish?.message || 'Mídia inserida — créditos atualizados na exportação';

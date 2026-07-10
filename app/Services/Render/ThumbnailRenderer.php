@@ -81,6 +81,14 @@ class ThumbnailRenderer
         $image = imagecreatetruecolor($width, $height);
         imagefill($image, 0, 0, imagecolorallocate($image, 0, 0, 0));
 
+        if ($this->shouldRenderImageStudioFinal($settings)) {
+            $this->renderFlatCustomImage($image, $settings, $width, $height);
+            imagejpeg($image, $outputPath, 93);
+            imagedestroy($image);
+
+            return;
+        }
+
         $layout = config('thumbnail_templates.templates.'.$settings['template'].'.layout', 'overlay_center');
         $layout = $this->resolveEffectiveLayout($layout, $width, $height);
 
@@ -180,9 +188,31 @@ class ThumbnailRenderer
         return $result->successful() && file_exists($out) ? $out : null;
     }
 
+    private function shouldRenderImageStudioFinal(array $settings): bool
+    {
+        return ($settings['image_source'] ?? '') === 'image_studio'
+            || ($settings['template'] ?? '') === 'image_studio_final';
+    }
+
+    private function renderFlatCustomImage(\GdImage $canvas, array $settings, int $width, int $height): void
+    {
+        $path = $settings['custom_image_path'] ?? null;
+        if (! $path || ! file_exists($path)) {
+            return;
+        }
+
+        $source = $this->loadImage($path);
+        if (! $source) {
+            return;
+        }
+
+        $this->copyCover($canvas, $source, 0, 0, $width, $height);
+        imagedestroy($source);
+    }
+
     private function drawLayoutBackground(\GdImage $canvas, Project $project, ?Slide $slide, array $settings, string $layout, int $width, int $height): void
     {
-        if ($layout === 'solid') {
+        if ($layout === 'solid' || $layout === 'image_studio_final') {
             return;
         }
 

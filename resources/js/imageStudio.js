@@ -20,6 +20,21 @@ import {
     FALLBACK_FONTS,
 } from './imageStudioTextFonts';
 
+const OBJECT_SCALE_MIN_PERCENT = 5;
+const OBJECT_SCALE_MAX_PERCENT = 600;
+
+const FALLBACK_PRESETS = [
+    { slug: 'yt_thumb_hd', name: 'Thumbnail Full HD', group: 'youtube', group_label: 'YouTube', width: 1920, height: 1080, icon: '▶', aspect: '16:9' },
+    { slug: 'yt_thumb', name: 'Thumbnail 16:9', group: 'youtube', group_label: 'YouTube', width: 1280, height: 720, icon: '▶', aspect: '16:9' },
+    { slug: 'yt_shorts', name: 'Shorts capa 9:16', group: 'youtube', group_label: 'YouTube', width: 1080, height: 1920, icon: '▲', aspect: '9:16' },
+    { slug: 'ig_feed_square', name: 'Feed quadrado 1:1', group: 'instagram', group_label: 'Instagram', width: 1080, height: 1080, icon: '◎', aspect: '1:1' },
+    { slug: 'ig_story', name: 'Story 9:16', group: 'instagram', group_label: 'Instagram', width: 1080, height: 1920, icon: '▲', aspect: '9:16' },
+    { slug: 'tt_video', name: 'Vídeo / capa 9:16', group: 'tiktok', group_label: 'TikTok', width: 1080, height: 1920, icon: '♪', aspect: '9:16' },
+    { slug: 'ratio_16_9_hd', name: 'Paisagem 16:9 — 1280', group: 'ratios', group_label: 'Proporções genéricas', width: 1280, height: 720, icon: '▭', aspect: '16:9' },
+];
+
+const DEFAULT_CANVAS_FALLBACK = { slug: 'yt_thumb', width: 1280, height: 720, aspect: '16:9' };
+
 function normalizeFabricType(obj) {
     const t = String(obj?.type || '').toLowerCase();
     if (t === 'image') return 'image';
@@ -59,6 +74,98 @@ function loadHtmlImage(url) {
         el.onerror = () => reject(new Error('Navegador não conseguiu decodificar a imagem'));
         el.src = url;
     });
+}
+
+function parseHexColor(hex) {
+    let h = String(hex || '#ffffff').replace('#', '').trim();
+    if (h.length === 3) {
+        h = h.split('').map((c) => c + c).join('');
+    }
+    if (h.length !== 6) {
+        return { r: 255, g: 255, b: 255 };
+    }
+
+    return {
+        r: parseInt(h.substring(0, 2), 16),
+        g: parseInt(h.substring(2, 4), 16),
+        b: parseInt(h.substring(4, 6), 16),
+    };
+}
+
+function parseCanvasBackgroundState(backgroundColor, fallbackColor = '#ffffff') {
+    const bg = backgroundColor;
+    if (!bg || bg === 'transparent') {
+        return { color: fallbackColor, transparency: 100 };
+    }
+    if (typeof bg === 'string' && bg.startsWith('rgba')) {
+        const match = bg.match(/rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)/i);
+        if (match) {
+            const alpha = parseFloat(match[4]);
+            const r = Number(match[1]).toString(16).padStart(2, '0');
+            const g = Number(match[2]).toString(16).padStart(2, '0');
+            const b = Number(match[3]).toString(16).padStart(2, '0');
+            return {
+                color: `#${r}${g}${b}`,
+                transparency: Math.round((1 - alpha) * 100),
+            };
+        }
+    }
+
+    return { color: bg, transparency: 0 };
+}
+
+async function canvasToBlob(canvas, mime, quality = 0.92) {
+    return new Promise((resolve) => {
+        canvas.toBlob((blob) => resolve(blob), mime, quality);
+    });
+}
+
+function drawCoverMedia(ctx, media, destW, destH) {
+    const sw = media.videoWidth || media.width || 1;
+    const sh = media.videoHeight || media.height || 1;
+    const scale = Math.max(destW / sw, destH / sh);
+    const dw = sw * scale;
+    const dh = sh * scale;
+    ctx.drawImage(media, (destW - dw) / 2, (destH - dh) / 2, dw, dh);
+}
+
+async function loadVideoFrameCanvas(url) {
+    return new Promise((resolve, reject) => {
+        const video = document.createElement('video');
+        video.crossOrigin = 'anonymous';
+        video.preload = 'auto';
+        video.muted = true;
+        video.playsInline = true;
+        const fail = () => {
+            video.src = '';
+            reject(new Error('video'));
+        };
+        video.addEventListener('error', fail, { once: true });
+        video.addEventListener('loadeddata', () => {
+            const seekTo = Math.min(0.5, Math.max(0, (video.duration || 1) * 0.05));
+            video.currentTime = Number.isFinite(seekTo) ? seekTo : 0;
+        }, { once: true });
+        video.addEventListener('seeked', () => {
+            const c = document.createElement('canvas');
+            c.width = Math.max(1, video.videoWidth || 1);
+            c.height = Math.max(1, video.videoHeight || 1);
+            c.getContext('2d').drawImage(video, 0, 0);
+            video.src = '';
+            resolve(c);
+        }, { once: true });
+        video.src = url;
+    });
+}
+
+async function loadMediaDrawable(url, isVideo = false) {
+    if (!url) {
+        return null;
+    }
+    if (isVideo) {
+        return loadVideoFrameCanvas(url);
+    }
+
+    return loadHtmlImage(url);
 }
 
 async function compositeFrameOnCanvasDataUrl(canvas, frameUrl, frameVisible = true) {
@@ -109,6 +216,51 @@ export class ImageStudioEngine {
         this.viewportZoom = 1;
         this.scaleWrapper = null;
         this.showFormatGuides = true;
+        this._bgColor = '#ffffff';
+        this._bgTransparency = 0;
+        this._underlaySlideIndex = null;
+        this._underlayEnabled = true;
+    }
+
+    getBackgroundState() {
+        return {
+            color: this._bgColor || '#ffffff',
+            transparency: this._bgTransparency ?? 0,
+        };
+    }
+
+    getBackgroundPaint() {
+        const transparency = Math.max(0, Math.min(100, Number(this._bgTransparency) || 0));
+        if (transparency >= 100) {
+            return null;
+        }
+        const { r, g, b } = parseHexColor(this._bgColor);
+        const alpha = transparency <= 0 ? 1 : 1 - (transparency / 100);
+
+        return { r, g, b, a: alpha };
+    }
+
+    syncBackgroundUiState() {
+        const parsed = parseCanvasBackgroundState(this.canvas?.backgroundColor, this._bgColor);
+        this._bgColor = parsed.color;
+        this._bgTransparency = parsed.transparency;
+
+        return this.getBackgroundState();
+    }
+
+    getUnderlayState() {
+        return {
+            slideIndex: this._underlaySlideIndex,
+            enabled: this._underlayEnabled !== false,
+        };
+    }
+
+    setUnderlayState(slideIndex, enabled = true) {
+        const idx = slideIndex === null || slideIndex === undefined || Number(slideIndex) < 0
+            ? null
+            : Math.max(0, Number(slideIndex) || 0);
+        this._underlaySlideIndex = idx;
+        this._underlayEnabled = enabled !== false;
     }
 
     setScaleWrapper(el) {
@@ -182,12 +334,20 @@ export class ImageStudioEngine {
             stopContextMenu: true,
             controlsAboveOverlay: true,
         });
-        this.canvas.on('object:scaling', () => {
+        this.canvas.on('object:scaling', (e) => {
+            if (e.target) {
+                this.clampObjectScale(e.target);
+            }
             this.canvas?.requestRenderAll();
             this.notifyChange();
         });
         this.canvas.on('object:rotating', () => this.notifyChange());
-        this.canvas.on('object:modified', () => this.emitChange());
+        this.canvas.on('object:modified', (e) => {
+            if (e.target) {
+                this.clampObjectScale(e.target);
+            }
+            this.emitChange();
+        });
         this.canvas.on('object:added', (e) => {
             if (e.target) {
                 this.configureSelectableObject(e.target);
@@ -390,12 +550,6 @@ export class ImageStudioEngine {
         this.viewportZoom = z;
         this.canvas.setZoom(1);
         this.canvas.setDimensions({ width: this.designWidth, height: this.designHeight });
-        if (this.scaleWrapper) {
-            this.scaleWrapper.style.width = `${this.designWidth}px`;
-            this.scaleWrapper.style.height = `${this.designHeight}px`;
-            this.scaleWrapper.style.transform = `scale(${z})`;
-            this.scaleWrapper.style.transformOrigin = 'top center';
-        }
         requestAnimationFrame(() => {
             this.configureAllObjects();
             this.canvas?.calcOffset();
@@ -414,6 +568,33 @@ export class ImageStudioEngine {
         return Math.round(((sx + sy) / 2) * 100);
     }
 
+    clampObjectScale(obj) {
+        if (!obj || obj.criasysGuide) {
+            return false;
+        }
+        const sx = Math.abs(obj.scaleX ?? 1) || 1;
+        const sy = Math.abs(obj.scaleY ?? 1) || 1;
+        const ratio = sy / sx;
+        const currentPercent = ((sx + sy) / 2) * 100;
+        const clampedPercent = Math.max(
+            OBJECT_SCALE_MIN_PERCENT,
+            Math.min(OBJECT_SCALE_MAX_PERCENT, currentPercent)
+        );
+        if (Math.abs(clampedPercent - currentPercent) < 0.5) {
+            return false;
+        }
+        const p = clampedPercent / 100;
+        const signX = (obj.scaleX ?? 1) < 0 ? -1 : 1;
+        const signY = (obj.scaleY ?? 1) < 0 ? -1 : 1;
+        if (Math.abs(ratio - 1) < 0.02) {
+            obj.set({ scaleX: signX * p, scaleY: signY * p });
+        } else {
+            obj.set({ scaleX: signX * p, scaleY: signY * p * ratio });
+        }
+        obj.setCoords();
+        return true;
+    }
+
     setActiveObjectScalePercent(percent) {
         const obj = this.canvas?.getActiveObject();
         if (!obj || obj.criasysGuide) {
@@ -422,7 +603,10 @@ export class ImageStudioEngine {
         const sx = Math.abs(obj.scaleX ?? 1) || 1;
         const sy = Math.abs(obj.scaleY ?? 1) || 1;
         const ratio = sy / sx;
-        const p = Math.max(5, Math.min(400, Number(percent) || 100)) / 100;
+        const p = Math.max(
+            OBJECT_SCALE_MIN_PERCENT,
+            Math.min(OBJECT_SCALE_MAX_PERCENT, Number(percent) || 100)
+        ) / 100;
         const signX = (obj.scaleX ?? 1) < 0 ? -1 : 1;
         const signY = (obj.scaleY ?? 1) < 0 ? -1 : 1;
         if (Math.abs(ratio - 1) < 0.02) {
@@ -516,37 +700,69 @@ export class ImageStudioEngine {
         this.emitChange();
     }
 
-    setBackgroundColor(color, opacity = 100) {
+    setBackgroundColor(color, transparency = 0) {
         if (!this.canvas) {
             return;
         }
-        if (opacity <= 0) {
+        const t = Math.max(0, Math.min(100, Number(transparency) || 0));
+        this._bgColor = color || '#ffffff';
+        this._bgTransparency = t;
+
+        if (t >= 100) {
             this.canvas.backgroundColor = 'transparent';
-        } else if (opacity >= 100) {
-            this.canvas.backgroundColor = color;
+        } else if (t <= 0) {
+            this.canvas.backgroundColor = this._bgColor;
         } else {
-            const hex = color.replace('#', '');
-            const r = parseInt(hex.substring(0, 2), 16);
-            const g = parseInt(hex.substring(2, 4), 16);
-            const b = parseInt(hex.substring(4, 6), 16);
-            this.canvas.backgroundColor = `rgba(${r},${g},${b},${opacity / 100})`;
+            const { r, g, b } = parseHexColor(this._bgColor);
+            const alpha = 1 - (t / 100);
+            this.canvas.backgroundColor = `rgba(${r},${g},${b},${alpha})`;
         }
         this.canvas.requestRenderAll();
         this.emitChange();
+    }
+
+    applyBackgroundState(color, transparency) {
+        this.setBackgroundColor(color, transparency);
     }
 
     async loadFromJSON(json) {
         if (!this.canvas || !json) {
             return;
         }
+        const payload = typeof json === 'string' ? JSON.parse(json) : { ...json };
+        const savedBg = payload.criasysBackground;
+        if (savedBg && typeof savedBg === 'object') {
+            delete payload.criasysBackground;
+        }
+        const savedUnderlay = payload.criasysUnderlay;
+        if (savedUnderlay && typeof savedUnderlay === 'object') {
+            delete payload.criasysUnderlay;
+        }
+
         this.historyPaused = true;
-        await this.canvas.loadFromJSON(json);
+        await this.canvas.loadFromJSON(payload);
         this.canvas.getObjects().forEach((obj) => {
             this.configureSelectableObject(obj);
             if (obj.criasysFilters && isFabricImage(obj)) {
                 this.applyFiltersToObject(obj, obj.criasysFilters);
             }
         });
+
+        if (savedBg?.color !== undefined) {
+            const transparency = savedBg.transparency ?? savedBg.opacity;
+            if (savedBg.opacity !== undefined && savedBg.transparency === undefined) {
+                this.applyBackgroundState(savedBg.color, Math.max(0, 100 - Number(savedBg.opacity)));
+            } else {
+                this.applyBackgroundState(savedBg.color, transparency ?? 0);
+            }
+        } else {
+            this.syncBackgroundUiState();
+        }
+
+        if (savedUnderlay && typeof savedUnderlay === 'object') {
+            this.setUnderlayState(savedUnderlay.slideIndex, savedUnderlay.enabled);
+        }
+
         this.canvas.requestRenderAll();
         this.historyPaused = false;
         this.pushHistory();
@@ -609,7 +825,57 @@ export class ImageStudioEngine {
     }
 
     toJSON() {
-        return this.canvas?.toJSON() ?? null;
+        const base = this.canvas?.toObject?.() ?? this.canvas?.toJSON?.() ?? null;
+        if (!base) {
+            return null;
+        }
+
+        return {
+            ...base,
+            criasysBackground: {
+                color: this._bgColor || '#ffffff',
+                transparency: this._bgTransparency ?? 0,
+            },
+            criasysUnderlay: this.getUnderlayState(),
+        };
+    }
+
+    async renderExportCanvas(multiplier = 1, options = {}) {
+        const { underlayUrl = null, underlayIsVideo = false } = options;
+        const w = this.canvas.getWidth();
+        const h = this.canvas.getHeight();
+        const out = document.createElement('canvas');
+        out.width = w * multiplier;
+        out.height = h * multiplier;
+        const ctx = out.getContext('2d');
+        ctx.clearRect(0, 0, out.width, out.height);
+
+        if (underlayUrl) {
+            try {
+                const media = await loadMediaDrawable(underlayUrl, underlayIsVideo);
+                if (media) {
+                    drawCoverMedia(ctx, media, out.width, out.height);
+                }
+            } catch {
+                /* slide sem mídia utilizável */
+            }
+        }
+
+        const paint = this.getBackgroundPaint();
+        if (paint) {
+            ctx.fillStyle = `rgba(${paint.r},${paint.g},${paint.b},${paint.a})`;
+            ctx.fillRect(0, 0, out.width, out.height);
+        }
+
+        const savedBg = this.canvas.backgroundColor;
+        this.canvas.backgroundColor = 'transparent';
+        this.canvas.requestRenderAll();
+        const objectsLayer = this.canvas.toCanvasElement(multiplier);
+        this.canvas.backgroundColor = savedBg;
+        this.canvas.requestRenderAll();
+        ctx.drawImage(objectsLayer, 0, 0);
+
+        return out;
     }
 
     getLayers() {
@@ -927,7 +1193,7 @@ export class ImageStudioEngine {
         const height = this.canvas.getHeight();
         this.canvas.clear();
         const bg = template.background || {};
-        this.setBackgroundColor(bg.color || '#ffffff', bg.opacity ?? 100);
+        this.setBackgroundColor(bg.color || '#ffffff', bg.transparency ?? Math.max(0, 100 - (bg.opacity ?? 100)));
 
         const fontList = Object.values(fontMap || {});
 
@@ -1224,7 +1490,13 @@ export class ImageStudioEngine {
         if (!this.canvas) {
             return null;
         }
-        const { frameOverlayUrl = null, frameVisible = true } = options;
+        const {
+            frameOverlayUrl = null,
+            frameVisible = true,
+            underlayUrl = null,
+            underlayIsVideo = false,
+        } = options;
+        const exportOpts = { underlayUrl, underlayIsVideo };
         if (format === 'svg') {
             const svg = this.canvas.toSVG();
             return new Blob([svg], { type: 'image/svg+xml' });
@@ -1233,15 +1505,25 @@ export class ImageStudioEngine {
             return new Blob([JSON.stringify(this.toJSON(), null, 2)], { type: 'application/json' });
         }
         if (format === 'psd') {
-            return await this.exportPsdBlob(frameOverlayUrl, frameVisible);
+            return await this.exportPsdBlob(frameOverlayUrl, frameVisible, exportOpts);
         }
         if (format === 'pdf') {
-            return this.exportPdfBlob(quality, frameOverlayUrl, frameVisible);
+            return this.exportPdfBlob(quality, frameOverlayUrl, frameVisible, exportOpts);
         }
         const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
-        let dataUrl;
-        if (frameOverlayUrl && frameVisible !== false) {
-            dataUrl = await compositeFrameOnCanvasDataUrl(this.canvas, frameOverlayUrl, frameVisible);
+        let blob;
+        if (format === 'jpg') {
+            const exportCanvas = await this.renderExportCanvas(1, exportOpts);
+            const jpegOff = document.createElement('canvas');
+            jpegOff.width = exportCanvas.width;
+            jpegOff.height = exportCanvas.height;
+            const ctx = jpegOff.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, jpegOff.width, jpegOff.height);
+            ctx.drawImage(exportCanvas, 0, 0);
+            blob = await canvasToBlob(jpegOff, mime, quality);
+        } else if (frameOverlayUrl && frameVisible !== false) {
+            let dataUrl = await compositeFrameOnCanvasDataUrl(this.canvas, frameOverlayUrl, frameVisible);
             if (format === 'jpg') {
                 const jpegOff = document.createElement('canvas');
                 jpegOff.width = this.canvas.getWidth();
@@ -1253,29 +1535,44 @@ export class ImageStudioEngine {
                 ctx.drawImage(img, 0, 0);
                 dataUrl = jpegOff.toDataURL('image/jpeg', quality);
             }
+            const res = await fetch(dataUrl);
+            blob = await res.blob();
         } else {
-            dataUrl = this.canvas.toDataURL({
-                format: format === 'jpg' ? 'jpeg' : 'png',
-                quality,
-                multiplier: 1,
-            });
+            const exportCanvas = await this.renderExportCanvas(1, exportOpts);
+            blob = await canvasToBlob(exportCanvas, mime, quality);
         }
-        const res = await fetch(dataUrl);
-        return new Blob([await res.blob()], { type: mime });
+
+        return blob;
     }
 
-    async exportPsdBlob(frameOverlayUrl = null, frameVisible = true) {
+    async exportPsdBlob(frameOverlayUrl = null, frameVisible = true, exportOpts = {}) {
         const w = this.canvas.getWidth();
         const h = this.canvas.getHeight();
         const layers = [];
 
-        const bg = this.canvas.backgroundColor;
-        if (bg && bg !== 'transparent') {
+        const { underlayUrl = null, underlayIsVideo = false } = exportOpts;
+        if (underlayUrl) {
+            try {
+                const media = await loadMediaDrawable(underlayUrl, underlayIsVideo);
+                if (media) {
+                    const underCanvas = document.createElement('canvas');
+                    underCanvas.width = w;
+                    underCanvas.height = h;
+                    drawCoverMedia(underCanvas.getContext('2d'), media, w, h);
+                    layers.push({ name: 'Slide', canvas: underCanvas });
+                }
+            } catch {
+                /* skip */
+            }
+        }
+
+        const paint = this.getBackgroundPaint();
+        if (paint) {
             const bgCanvas = document.createElement('canvas');
             bgCanvas.width = w;
             bgCanvas.height = h;
             const ctx = bgCanvas.getContext('2d');
-            ctx.fillStyle = bg;
+            ctx.fillStyle = `rgba(${paint.r},${paint.g},${paint.b},${paint.a})`;
             ctx.fillRect(0, 0, w, h);
             layers.push({ name: 'Fundo', canvas: bgCanvas });
         }
@@ -1317,7 +1614,7 @@ export class ImageStudioEngine {
         return new Blob([buffer], { type: 'application/vnd.adobe.photoshop' });
     }
 
-    async exportPdfBlob(quality = 0.92, frameOverlayUrl = null, frameVisible = true) {
+    async exportPdfBlob(quality = 0.92, frameOverlayUrl = null, frameVisible = true, exportOpts = {}) {
         const w = this.canvas.getWidth();
         const h = this.canvas.getHeight();
         let dataUrl;
@@ -1333,11 +1630,8 @@ export class ImageStudioEngine {
             ctx.drawImage(img, 0, 0);
             dataUrl = jpegOff.toDataURL('image/jpeg', quality);
         } else {
-            dataUrl = this.canvas.toDataURL({
-                format: 'jpeg',
-                quality,
-                multiplier: 1,
-            });
+            const exportCanvas = await this.renderExportCanvas(1, exportOpts);
+            dataUrl = exportCanvas.toDataURL('image/jpeg', quality);
         }
         const orientation = w >= h ? 'landscape' : 'portrait';
         const pdf = new jsPDF({
@@ -1354,12 +1648,13 @@ export class ImageStudioEngine {
         if (!this.canvas || !containerWidth || !containerHeight) {
             return this.viewportZoom || 1;
         }
-        const pad = 32;
+        const pad = 12;
         const scale = Math.min(
             (containerWidth - pad) / this.designWidth,
             (containerHeight - pad) / this.designHeight
         );
-        return this.applyViewportZoom(scale);
+
+        return this.applyViewportZoom(Math.max(0.08, Math.min(1, scale)));
     }
 }
 
@@ -1367,6 +1662,8 @@ export function imageStudioMethods() {
     return {
         imageStudioReady: false,
         imageStudioPresets: [],
+        imageStudioPrimaryFormatDefs: [],
+        imageStudioGroupOrder: [],
         imageStudioGroups: {},
         imageStudioExportFormats: [],
         imageStudioTemplates: [],
@@ -1394,14 +1691,20 @@ export function imageStudioMethods() {
         imageStudioTextShadowBlur: 8,
         _syncingTextUi: false,
         imageStudioBgRemoval: false,
-        imageStudioPreset: 'ig_feed_square',
-        imageStudioPresetFilter: '',
+        imageStudioPreset: 'custom',
+        imageStudioCustomWidth: 1920,
+        imageStudioCustomHeight: 1080,
+        imageStudioDimensionsModalOpen: false,
+        imageStudioDimensionsFilter: '',
+        imageStudioPresetPlatformMap: {},
         imageStudioEngine: null,
         imageStudioLayers: [],
         imageStudioSaving: false,
         imageStudioLastExport: null,
         imageStudioBgColor: '#ffffff',
-        imageStudioBgOpacity: 100,
+        imageStudioBgTransparency: 0,
+        imageStudioUnderlaySlideIndex: -1,
+        imageStudioUnderlayEnabled: true,
         imageStudioSelectedObject: null,
         imageStudioObjectScale: 100,
         imageStudioObjectAngle: 0,
@@ -1424,6 +1727,7 @@ export function imageStudioMethods() {
         imageStudioElementFilterGroup: '',
         imageStudioElementsModalOpen: false,
         _imageStudioElementsModalShown: false,
+        imageStudioExpanded: false,
         imageStudioLocalWatch: null,
 
         normalizeImageStudioElementList(source) {
@@ -1485,6 +1789,7 @@ export function imageStudioMethods() {
         imageStudioElementQuickGroups() {
             return [
                 { id: '', label: 'Todos' },
+                { id: 'icones', label: 'Ícones' },
                 { id: 'emojis', label: 'Emojis' },
                 { id: 'blobs', label: 'Slimes' },
                 { id: 'formas', label: 'Formas' },
@@ -1494,6 +1799,58 @@ export function imageStudioMethods() {
                 { id: 'adesivos', label: 'Adesivos' },
                 { id: 'linhas', label: 'Linhas' },
             ];
+        },
+
+        imageStudioIconGlyphClass(font) {
+            const map = {
+                fa_regular: 'is-ic-fa-regular',
+                fa_brands: 'is-ic-fa-brands',
+                material_symbols: 'is-ic-material',
+                fa_solid: 'is-ic-fa-solid',
+            };
+            return map[font] || 'is-ic-fa-solid';
+        },
+
+        syncImageStudioElementsCatalog() {
+            const base = this.normalizeImageStudioElementList(this.imageStudioElements)
+                .filter((el) => el?.type !== 'icon_glyph');
+            const glyphs = (this.imageStudioIconGlyphs || []).map((g) => ({
+                type: 'icon_glyph',
+                slug: g.slug || ('icon_' + String(g.char || '').charCodeAt(0)),
+                name: g.label || g.slug || 'Ícone',
+                char: g.char,
+                font: g.font || 'fa_solid',
+                group: 'icones',
+                icon_group: g.group || '',
+            }));
+            const slugs = new Set(base.map((el) => el.slug));
+            const merged = [...base];
+            glyphs.forEach((g) => {
+                if (g.slug && !slugs.has(g.slug)) {
+                    merged.push(g);
+                    slugs.add(g.slug);
+                }
+            });
+            this.imageStudioElements = merged;
+            if (!this.imageStudioElementGroups?.icones) {
+                this.imageStudioElementGroups = {
+                    ...(this.imageStudioElementGroups || {}),
+                    icones: 'Ícones',
+                };
+            }
+        },
+
+        toggleImageStudioExpanded() {
+            this.imageStudioExpanded = !this.imageStudioExpanded;
+            this.$nextTick(() => this.fitImageStudioCanvas());
+        },
+
+        closeImageStudioExpanded() {
+            if (!this.imageStudioExpanded) {
+                return;
+            }
+            this.imageStudioExpanded = false;
+            this.$nextTick(() => this.fitImageStudioCanvas());
         },
 
         imageStudioOpenElementsModal() {
@@ -1530,11 +1887,193 @@ export function imageStudioMethods() {
                 if (!groups[key]) groups[key] = [];
                 groups[key].push(p);
             });
-            return groups;
+            const order = this.imageStudioGroupOrder?.length
+                ? this.imageStudioGroupOrder
+                : ['YouTube', 'Proporções genéricas', 'Instagram'];
+            const sorted = {};
+            order.forEach((name) => {
+                if (groups[name]?.length) {
+                    sorted[name] = groups[name];
+                }
+            });
+            Object.keys(groups).forEach((name) => {
+                if (!sorted[name]) {
+                    sorted[name] = groups[name];
+                }
+            });
+            return sorted;
+        },
+
+        imageStudioPrimaryFormats() {
+            const defs = this.imageStudioPrimaryFormatDefs?.length
+                ? this.imageStudioPrimaryFormatDefs
+                : [
+                    { slug: 'yt_thumb_hd', label: 'YouTube Full HD', aspect: '16:9' },
+                    { slug: 'yt_thumb', label: 'YouTube Thumbnail', aspect: '16:9' },
+                    { slug: 'yt_shorts', label: 'YouTube Shorts', aspect: '9:16' },
+                ];
+            return defs.map((def) => {
+                const preset = (this.imageStudioPresets || []).find((p) => p.slug === def.slug);
+                if (!preset) {
+                    return null;
+                }
+                return {
+                    slug: def.slug,
+                    label: def.label || preset.name,
+                    aspect: def.aspect || preset.aspect,
+                    width: preset.width,
+                    height: preset.height,
+                };
+            }).filter(Boolean);
+        },
+
+        imageStudioCanvasAspectLabel() {
+            const w = this.imageStudioEngine?.designWidth || this.imageStudioCustomWidth || 1920;
+            const h = this.imageStudioEngine?.designHeight || this.imageStudioCustomHeight || 1080;
+            if (w === h) {
+                return '1:1';
+            }
+            if (w > h) {
+                const ratio = (w / h).toFixed(2);
+                return `${ratio}:1`;
+            }
+            return `1:${(h / w).toFixed(2)}`;
+        },
+
+        syncImageStudioCustomDimensionsFromEngine() {
+            const w = this.imageStudioEngine?.designWidth;
+            const h = this.imageStudioEngine?.designHeight;
+            if (w && h) {
+                this.imageStudioCustomWidth = w;
+                this.imageStudioCustomHeight = h;
+            }
+        },
+
+        imageStudioReferencePresets() {
+            const q = (this.imageStudioDimensionsFilter || '').trim().toLowerCase();
+            return (this.imageStudioPresets || [])
+                .filter((p) => p.slug !== 'custom')
+                .filter((p) => {
+                    if (!q) {
+                        return true;
+                    }
+                    return (p.name || '').toLowerCase().includes(q)
+                        || (p.group_label || '').toLowerCase().includes(q)
+                        || String(p.width).includes(q)
+                        || String(p.height).includes(q)
+                        || (p.aspect || '').includes(q);
+                });
+        },
+
+        imageStudioReferencePresetGroups() {
+            const groups = {};
+            this.imageStudioReferencePresets().forEach((p) => {
+                const key = p.group_label || p.group || 'Outros';
+                if (!groups[key]) {
+                    groups[key] = [];
+                }
+                groups[key].push(p);
+            });
+            const order = this.imageStudioGroupOrder?.length
+                ? this.imageStudioGroupOrder
+                : ['YouTube', 'Proporções genéricas', 'Instagram', 'TikTok', 'Facebook'];
+            const sorted = {};
+            order.forEach((name) => {
+                if (groups[name]?.length) {
+                    sorted[name] = groups[name];
+                }
+            });
+            Object.keys(groups).forEach((name) => {
+                if (!sorted[name]) {
+                    sorted[name] = groups[name];
+                }
+            });
+            return sorted;
+        },
+
+        openImageStudioDimensionsModal() {
+            this.imageStudioDimensionsModalOpen = true;
+        },
+
+        closeImageStudioDimensionsModal() {
+            this.imageStudioDimensionsModalOpen = false;
+        },
+
+        pickImageStudioReferenceDimensions(preset) {
+            if (!preset?.width || !preset?.height) {
+                return;
+            }
+            this.imageStudioCustomWidth = preset.width;
+            this.imageStudioCustomHeight = preset.height;
+            this.closeImageStudioDimensionsModal();
+            this.applyImageStudioCustomDimensions();
+            this.message = `Dimensões: ${preset.name} (${preset.width}×${preset.height})`;
+        },
+
+        async applyImageStudioCustomDimensions() {
+            let w = Math.round(Number(this.imageStudioCustomWidth) || 0);
+            let h = Math.round(Number(this.imageStudioCustomHeight) || 0);
+            w = Math.min(8000, Math.max(100, w));
+            h = Math.min(8000, Math.max(100, h));
+            this.imageStudioCustomWidth = w;
+            this.imageStudioCustomHeight = h;
+            this.imageStudioPreset = 'custom';
+
+            if (!this.imageStudioEngine?.canvas) {
+                await this.initImageStudio();
+            }
+            if (!this.imageStudioEngine?.canvas) {
+                return;
+            }
+
+            this.imageStudioEngine.setSize(w, h);
+            this.fitImageStudioCanvas();
+            await this.saveImageStudioDesign();
+            this.message = `Canvas ${w}×${h} px (${this.imageStudioCanvasAspectLabel()})`;
+        },
+
+        imageStudioCanvasViewportStyle() {
+            const w = this.imageStudioEngine?.designWidth || this.imageStudioCustomWidth || 1920;
+            const h = this.imageStudioEngine?.designHeight || this.imageStudioCustomHeight || 1080;
+            const z = (this.imageStudioZoom || 100) / 100;
+
+            return {
+                width: `${Math.ceil(w * z)}px`,
+                height: `${Math.ceil(h * z)}px`,
+                flexShrink: '0',
+            };
+        },
+
+        imageStudioCanvasScalerStyle() {
+            const w = this.imageStudioEngine?.designWidth || this.imageStudioCustomWidth || 1920;
+            const h = this.imageStudioEngine?.designHeight || this.imageStudioCustomHeight || 1080;
+            const z = (this.imageStudioZoom || 100) / 100;
+            const checker = 'repeating-conic-gradient(#3f3f46 0% 25%, #27272a 0% 50%) 50% / 16px 16px';
+            const bg = this.imageStudioShowUnderlayMedia() ? 'transparent' : checker;
+
+            return {
+                width: `${w}px`,
+                height: `${h}px`,
+                transform: `scale(${z})`,
+                transformOrigin: 'top left',
+                background: bg,
+            };
+        },
+
+        resolveImageStudioPresetMeta(slug = null) {
+            const w = this.imageStudioEngine?.designWidth || this.imageStudioCustomWidth || 1920;
+            const h = this.imageStudioEngine?.designHeight || this.imageStudioCustomHeight || 1080;
+            return {
+                slug: 'custom',
+                name: 'Personalizado',
+                width: w,
+                height: h,
+                aspect: this.imageStudioCanvasAspectLabel(),
+            };
         },
 
         get imageStudioCurrentPreset() {
-            return (this.imageStudioPresets || []).find((p) => p.slug === this.imageStudioPreset) || null;
+            return this.resolveImageStudioPresetMeta();
         },
 
         get filteredImageStudioFonts() {
@@ -1605,7 +2144,36 @@ export function imageStudioMethods() {
             this.imageStudioFontMap = map;
         },
 
+        seedImageStudioPresetsFromEmbedded() {
+            const presets = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-presets');
+            const defaults = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-defaults');
+            const primary = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-primary-formats');
+            const groupOrder = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-group-order');
+
+            if (Array.isArray(presets) && presets.length) {
+                this.imageStudioPresets = presets;
+            } else if (!this.imageStudioPresets?.length) {
+                this.imageStudioPresets = FALLBACK_PRESETS;
+            }
+            if (Array.isArray(primary) && primary.length) {
+                this.imageStudioPrimaryFormatDefs = primary;
+            }
+            if (Array.isArray(groupOrder) && groupOrder.length) {
+                this.imageStudioGroupOrder = groupOrder;
+            }
+            if (defaults?.preset) {
+                this.imageStudioPreset = 'custom';
+            }
+            if (defaults?.width) {
+                this.imageStudioCustomWidth = defaults.width;
+            }
+            if (defaults?.height) {
+                this.imageStudioCustomHeight = defaults.height;
+            }
+        },
+
         seedImageStudioFromEmbedded(meta = {}) {
+            this.seedImageStudioPresetsFromEmbedded();
             let fonts = meta.imageStudioFonts;
             let icons = meta.imageStudioIconGlyphs;
             let iconFonts = meta.imageStudioIconFonts;
@@ -1642,6 +2210,7 @@ export function imageStudioMethods() {
             if (elementGroups && typeof elementGroups === 'object') {
                 this.imageStudioElementGroups = elementGroups;
             }
+            this.syncImageStudioElementsCatalog();
             this.buildImageStudioFontMap();
             preloadIconFontCdns(iconFonts || []);
             preloadStarterGoogleFonts(this.imageStudioFonts);
@@ -1666,9 +2235,12 @@ export function imageStudioMethods() {
         },
 
         async loadImageStudioCatalog() {
+            this.seedImageStudioPresetsFromEmbedded();
             try {
                 const { data } = await api.get('/image-studio/catalog');
-                this.imageStudioPresets = data.presets || [];
+                if (data.presets?.length) {
+                    this.imageStudioPresets = data.presets;
+                }
                 this.imageStudioGroups = data.groups || {};
                 this.imageStudioExportFormats = data.export_formats || [];
                 this.imageStudioTemplates = data.templates || [];
@@ -1681,19 +2253,36 @@ export function imageStudioMethods() {
                 preloadIconFontCdns(data.icon_fonts || []);
                 preloadStarterGoogleFonts(this.imageStudioFonts);
                 this.imageStudioBgRemoval = true;
+                this.imageStudioPresetPlatformMap = data.preset_platform_map || {};
+                if (data.primary_formats?.length) {
+                    this.imageStudioPrimaryFormatDefs = data.primary_formats;
+                }
+                if (data.group_order?.length) {
+                    this.imageStudioGroupOrder = data.group_order;
+                }
                 if (data.defaults?.preset) {
-                    this.imageStudioPreset = data.defaults.preset;
+                    this.imageStudioPreset = 'custom';
+                }
+                if (data.defaults?.width) {
+                    this.imageStudioCustomWidth = data.defaults.width;
+                }
+                if (data.defaults?.height) {
+                    this.imageStudioCustomHeight = data.defaults.height;
                 }
                 if (!this.imageStudioFontMap[this.imageStudioTextFontSlug]) {
                     this.imageStudioTextFontSlug = this.imageStudioFonts[0]?.slug || 'bebas_neue';
                 }
+                this.syncImageStudioElementsCatalog();
             } catch (e) {
                 console.error('Image Studio catalog:', e);
+                if (!this.imageStudioPresets?.length) {
+                    this.imageStudioPresets = FALLBACK_PRESETS;
+                }
                 if (!this.imageStudioFonts?.length) {
                     this.imageStudioFonts = FALLBACK_FONTS;
                     this.buildImageStudioFontMap();
                 }
-                this.error = e.response?.data?.message || 'Não foi possível carregar catálogo do Image Studio';
+                this.error = e.response?.data?.message || 'Catálogo remoto indisponível — formatos locais carregados.';
             }
         },
 
@@ -1707,6 +2296,11 @@ export function imageStudioMethods() {
                 if (embeddedGroups && typeof embeddedGroups === 'object') {
                     this.imageStudioElementGroups = embeddedGroups;
                 }
+                const embeddedIcons = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-icons');
+                if (Array.isArray(embeddedIcons) && embeddedIcons.length) {
+                    this.imageStudioIconGlyphs = embeddedIcons;
+                }
+                this.syncImageStudioElementsCatalog();
             }
 
             await this.loadImageStudioCatalog();
@@ -1738,51 +2332,141 @@ export function imageStudioMethods() {
             await this.loadImageStudioDesign();
 
             if (!this.imageStudioEngine?.canvas) {
-                const p = this.imageStudioPresets.find((x) => x.slug === this.imageStudioPreset)
-                    || { width: 1080, height: 1080 };
+                const p = this.resolveImageStudioPresetMeta();
                 this.imageStudioEngine.init(p.width, p.height, this.imageStudioBgColor);
-                this.imageStudioEngine.setBackgroundColor(this.imageStudioBgColor, this.imageStudioBgOpacity);
+                this.imageStudioEngine.setBackgroundColor(this.imageStudioBgColor, this.imageStudioBgTransparency);
             }
 
+            this.syncImageStudioBackgroundFromEngine();
+            this.syncImageStudioUnderlayFromEngine();
+            this.syncImageStudioUnderlayToEngine();
             this.imageStudioEngine.pushHistory();
             this.imageStudioReady = true;
             this.setupImageStudioKeyboard();
             this.setupImageStudioLocalWatch();
             this.setupImageStudioWheelZoom();
             this.fitImageStudioCanvas();
-            if (!this._imageStudioElementsModalShown) {
-                this._imageStudioElementsModalShown = true;
-                this.imageStudioOpenElementsModal();
-            }
+            this.syncImageStudioCustomDimensionsFromEngine();
         },
 
         async loadImageStudioDesign() {
-            const fallback = this.imageStudioPresets.find((p) => p.slug === this.imageStudioPreset)
-                || { width: 1080, height: 1080 };
-            let w = fallback.width || 1080;
-            let h = fallback.height || 1080;
+            let w = this.imageStudioCustomWidth || 1920;
+            let h = this.imageStudioCustomHeight || 1080;
             let canvasJson = null;
             try {
                 const { data } = await api.get(`/projects/${this.projectId}/image-studio`, {
-                    params: { preset: this.imageStudioPreset },
+                    params: { preset: 'custom' },
                 });
-                const preset = this.imageStudioPresets.find((p) => p.slug === data.preset) || fallback;
-                w = preset.width || data.width || w;
-                h = preset.height || data.height || h;
+                if (data.width && data.height) {
+                    w = data.width;
+                    h = data.height;
+                }
                 canvasJson = data.canvas;
+                this.imageStudioPreset = 'custom';
             } catch (e) {
                 this.error = e.response?.data?.message || null;
             }
+            this.imageStudioCustomWidth = w;
+            this.imageStudioCustomHeight = h;
             this.imageStudioEngine.init(w, h, this.imageStudioBgColor);
-            this.imageStudioEngine.setBackgroundColor(this.imageStudioBgColor, this.imageStudioBgOpacity);
             if (canvasJson) {
                 try {
                     await this.imageStudioEngine.loadFromJSON(canvasJson);
                 } catch {
-                    /* canvas vazio ok */
+                    this.imageStudioEngine.setBackgroundColor(this.imageStudioBgColor, this.imageStudioBgTransparency);
                 }
+            } else {
+                this.imageStudioEngine.setBackgroundColor(this.imageStudioBgColor, this.imageStudioBgTransparency);
             }
+            this.imageStudioEngine.setSize(w, h);
+            this.syncImageStudioCustomDimensionsFromEngine();
+            this.syncImageStudioBackgroundFromEngine();
+            this.syncImageStudioUnderlayFromEngine();
+            this.syncImageStudioUnderlayToEngine();
             this.refreshImageStudioLayers();
+        },
+
+        syncImageStudioBackgroundFromEngine() {
+            const bg = this.imageStudioEngine?.getBackgroundState();
+            if (!bg) {
+                return;
+            }
+            this.imageStudioBgColor = bg.color;
+            this.imageStudioBgTransparency = bg.transparency;
+        },
+
+        syncImageStudioUnderlayFromEngine() {
+            const underlay = this.imageStudioEngine?.getUnderlayState();
+            if (!underlay) {
+                return;
+            }
+            this.imageStudioUnderlaySlideIndex = underlay.slideIndex ?? -1;
+            this.imageStudioUnderlayEnabled = underlay.enabled !== false;
+        },
+
+        syncImageStudioUnderlayToEngine() {
+            const slideIndex = Number(this.imageStudioUnderlaySlideIndex) >= 0
+                ? Number(this.imageStudioUnderlaySlideIndex)
+                : null;
+            this.imageStudioEngine?.setUnderlayState(
+                slideIndex,
+                this.imageStudioUnderlayEnabled
+            );
+        },
+
+        resolveImageStudioUnderlaySlideIndex() {
+            if (Number(this.imageStudioUnderlaySlideIndex) >= 0) {
+                const idx = Number(this.imageStudioUnderlaySlideIndex);
+                return Math.max(0, Math.min((this.slides?.length || 1) - 1, Number.isFinite(idx) ? idx : 0));
+            }
+            const selectedIdx = (this.slides || []).findIndex((s) => s.id === this.selectedSlide?.id);
+            return selectedIdx >= 0 ? selectedIdx : 0;
+        },
+
+        resolveImageStudioUnderlaySlide() {
+            const idx = this.resolveImageStudioUnderlaySlideIndex();
+            return this.slides?.[idx] ?? null;
+        },
+
+        getImageStudioUnderlayImageUrl() {
+            if (!this.imageStudioUnderlayEnabled) {
+                return null;
+            }
+            const slide = this.resolveImageStudioUnderlaySlide();
+            return slide?.image_url || null;
+        },
+
+        getImageStudioUnderlayVideoUrl() {
+            if (!this.imageStudioUnderlayEnabled) {
+                return null;
+            }
+            const slide = this.resolveImageStudioUnderlaySlide();
+            if (slide?.image_url) {
+                return null;
+            }
+            return slide?.video_url || null;
+        },
+
+        imageStudioShowUnderlayMedia() {
+            return this.imageStudioUnderlayEnabled
+                && !!(this.getImageStudioUnderlayImageUrl() || this.getImageStudioUnderlayVideoUrl());
+        },
+
+        buildImageStudioExportOptions() {
+            const slide = this.resolveImageStudioUnderlaySlide();
+            const underlayUrl = this.imageStudioUnderlayEnabled
+                ? (slide?.image_url || slide?.video_url || null)
+                : null;
+
+            return {
+                underlayUrl,
+                underlayIsVideo: !!(underlayUrl && slide?.video_url && !slide?.image_url),
+            };
+        },
+
+        onImageStudioUnderlayChange() {
+            this.syncImageStudioUnderlayToEngine();
+            this.scheduleImageStudioSave();
         },
 
         fitImageStudioCanvas() {
@@ -1792,6 +2476,9 @@ export function imageStudioMethods() {
             }
             const z = this.imageStudioEngine.zoomToFit(wrap.clientWidth, wrap.clientHeight);
             this.imageStudioZoom = Math.round(z * 100);
+            this.$nextTick(() => {
+                this.imageStudioEngine?.canvas?.calcOffset();
+            });
         },
 
         imageStudioSetZoomPercent(percent) {
@@ -1800,6 +2487,9 @@ export function imageStudioMethods() {
             }
             const z = this.imageStudioEngine.applyViewportZoom(percent / 100);
             this.imageStudioZoom = Math.round(z * 100);
+            this.$nextTick(() => {
+                this.imageStudioEngine?.canvas?.calcOffset();
+            });
         },
 
         imageStudioZoomIn() {
@@ -1828,6 +2518,16 @@ export function imageStudioMethods() {
                 const delta = e.deltaY > 0 ? -8 : 8;
                 this.imageStudioSetZoomPercent(this.imageStudioZoom + delta);
             }, { passive: false });
+
+            if (!wrap._criasysResizeFit) {
+                wrap._criasysResizeFit = true;
+                const ro = new ResizeObserver(() => {
+                    if (this.activeTab === 'image_studio' && this.imageStudioReady) {
+                        this.fitImageStudioCanvas();
+                    }
+                });
+                ro.observe(wrap);
+            }
         },
 
         onImageStudioFormatGuidesChange() {
@@ -1964,7 +2664,10 @@ export function imageStudioMethods() {
                     return;
                 }
                 const mod = e.ctrlKey || e.metaKey;
-                if (mod && e.key === 'z' && !e.shiftKey) {
+                if (e.key === 'Escape' && this.imageStudioExpanded && !this.imageStudioElementsModalOpen && !this.imageStudioDimensionsModalOpen) {
+                    e.preventDefault();
+                    this.closeImageStudioExpanded();
+                } else if (mod && e.key === 'z' && !e.shiftKey) {
                     e.preventDefault();
                     this.imageStudioUndo();
                 } else if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
@@ -2064,8 +2767,10 @@ export function imageStudioMethods() {
             this.imageStudioSaving = true;
             try {
                 const json = this.imageStudioEngine.toJSON();
+                json.width = this.imageStudioEngine.designWidth;
+                json.height = this.imageStudioEngine.designHeight;
                 await api.put(`/projects/${this.projectId}/image-studio`, {
-                    preset: this.imageStudioPreset,
+                    preset: 'custom',
                     canvas: json,
                 });
             } catch (e) {
@@ -2075,8 +2780,39 @@ export function imageStudioMethods() {
             }
         },
 
+        async ensureImageStudioFormatForThumbnailPlatform() {
+            const platform = this.selectedThumbnailPlatform || 'youtube_landscape';
+            const presetMap = {
+                youtube_landscape: 'yt_thumb_hd',
+                youtube_shorts: 'yt_shorts',
+                instagram_feed_square: 'ig_feed_square',
+                instagram_reels: 'ig_story',
+                tiktok: 'tt_video',
+            };
+            const targetSlug = presetMap[platform];
+            if (!targetSlug) {
+                return;
+            }
+            const current = this.resolveImageStudioPresetMeta();
+            if (current.width === current.height && platform === 'youtube_landscape') {
+                await this.switchImageStudioPreset('yt_thumb_hd');
+                return;
+            }
+            if (this.imageStudioPreset !== targetSlug && !this._imageStudioPresetLocked) {
+                await this.switchImageStudioPreset(targetSlug);
+            }
+        },
+
         async switchImageStudioPreset(slug) {
+            const preset = this.resolveImageStudioPresetMeta(slug);
             if (slug === this.imageStudioPreset) {
+                if (this.imageStudioEngine?.canvas
+                    && (this.imageStudioEngine.designWidth !== preset.width
+                        || this.imageStudioEngine.designHeight !== preset.height)) {
+                    this.imageStudioEngine.setSize(preset.width, preset.height);
+                    this.fitImageStudioCanvas();
+                    this.message = `Canvas ajustado: ${preset.aspect || ''} ${preset.width}×${preset.height}px`;
+                }
                 return;
             }
             if (!this.imageStudioEngine?.canvas) {
@@ -2084,17 +2820,17 @@ export function imageStudioMethods() {
             }
             await this.saveImageStudioDesign();
             this.imageStudioPreset = slug;
-            const preset = this.imageStudioPresets.find((p) => p.slug === slug);
-            if (preset && this.imageStudioEngine?.canvas) {
-                this.imageStudioEngine.setSize(preset.width, preset.height);
-                this.fitImageStudioCanvas();
-                this.message = `Formato: ${preset.name} (${preset.width}×${preset.height})`;
-            }
+            this._imageStudioPresetLocked = true;
+            await this.loadImageStudioDesign();
+            this.fitImageStudioCanvas();
+            this.message = `Formato: ${preset.name || slug} — ${preset.aspect || ''} ${preset.width}×${preset.height}px`;
             this.refreshImageStudioLayers();
         },
 
         onImageStudioBgChange() {
-            this.imageStudioEngine?.setBackgroundColor(this.imageStudioBgColor, this.imageStudioBgOpacity);
+            this.imageStudioEngine?.setBackgroundColor(this.imageStudioBgColor, this.imageStudioBgTransparency);
+            this.syncImageStudioUnderlayToEngine();
+            this.scheduleImageStudioSave();
         },
 
         async imageStudioSelectFont(slug) {
@@ -2307,6 +3043,15 @@ export function imageStudioMethods() {
                 this.error = 'Canvas não carregou';
                 return;
             }
+            if (el?.type === 'icon_glyph') {
+                await this.imageStudioAddIconGlyph({
+                    char: el.char,
+                    font: el.font,
+                    slug: el.slug,
+                    label: el.name || el.label,
+                });
+                return;
+            }
             try {
                 await this.imageStudioEngine.addElementFromCatalog(el);
                 this.refreshImageStudioLayers();
@@ -2410,12 +3155,13 @@ export function imageStudioMethods() {
             }
         },
 
-        async imageStudioExport(format) {
+        async imageStudioExport(format, options = {}) {
             if (!this.imageStudioEngine) {
                 return;
             }
+            const openPreview = options.openPreview !== false;
             try {
-                const blob = await this.imageStudioEngine.exportBlob(format, 0.92);
+                const blob = await this.imageStudioEngine.exportBlob(format, 0.92, this.buildImageStudioExportOptions());
                 if (!blob) {
                     return;
                 }
@@ -2429,12 +3175,17 @@ export function imageStudioMethods() {
                 });
                 this.imageStudioLastExport = data.export;
                 this.message = `Exportado: ${format.toUpperCase()}`;
-                if (format === 'png' || format === 'jpg') {
+                if (openPreview && (format === 'png' || format === 'jpg')) {
                     window.open(data.export.url, '_blank');
                 }
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao exportar';
             }
+        },
+
+        imageStudioResolveThumbnailPlatform() {
+            const mapped = this.imageStudioPresetPlatformMap?.[this.imageStudioPreset];
+            return mapped || this.selectedThumbnailPlatform || 'youtube_landscape';
         },
 
         async imageStudioPushThumbnail() {
@@ -2444,33 +3195,57 @@ export function imageStudioMethods() {
             if (!this.imageStudioLastExport?.filename) {
                 return;
             }
+            const platform = this.imageStudioResolveThumbnailPlatform();
             try {
                 const { data } = await api.post(`/projects/${this.projectId}/image-studio/push-thumbnail`, {
                     filename: this.imageStudioLastExport.filename,
-                    platform: this.selectedThumbnailPlatform,
+                    platform,
+                    preset: this.imageStudioPreset,
                 });
-                this.message = 'Enviado para aba Thumbnail';
+                this.message = `Arte do Image Studio aplicada na capa ${platform}`;
+                if (data.settings) {
+                    this.applyThumbnailSettingsPatch(data.settings);
+                }
+                if (data.platform) {
+                    this.selectedThumbnailPlatform = data.platform;
+                    this.thumbnailSettingsByPlatform[data.platform] = {
+                        ...(this.thumbnailSettingsByPlatform[data.platform] || {}),
+                        ...(data.settings || {}),
+                    };
+                }
                 if (data.thumbnail?.url) {
                     this.thumbnailPreviewUrl = data.thumbnail.url;
+                    this.thumbnailPreviewUrls[platform] = data.thumbnail.url;
                 }
                 this.switchTab('thumbnail');
             } catch (e) {
-                this.error = e.response?.data?.message || 'Erro ao enviar para thumbnail';
+                this.error = e.response?.data?.message || 'Erro ao enviar para Thumbnail';
             }
         },
 
         async imageStudioPushLibrary() {
             if (!this.imageStudioLastExport?.filename) {
-                await this.imageStudioExport('png');
+                await this.imageStudioExport('png', { openPreview: false });
             }
             if (!this.imageStudioLastExport?.filename) {
+                this.error = 'Exporte o design antes de salvar na biblioteca.';
                 return;
             }
             try {
-                await api.post(`/projects/${this.projectId}/image-studio/push-library`, {
+                const { data } = await api.post(`/projects/${this.projectId}/image-studio/push-library`, {
                     filename: this.imageStudioLastExport.filename,
+                    preset: this.imageStudioPreset,
                 });
-                this.message = 'Imagem adicionada à biblioteca do projeto';
+                if (data.asset) {
+                    const exists = (this.projectLibraryAssets || []).some((a) => a.id === data.asset.id);
+                    if (!exists) {
+                        this.projectLibraryAssets = [data.asset, ...(this.projectLibraryAssets || [])];
+                    }
+                } else {
+                    await this.loadProjectLibraryAssets();
+                }
+                this.message = data.message || 'Imagem adicionada à biblioteca do projeto';
+                this.switchTab('biblioteca');
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao enviar para biblioteca';
             }
@@ -2495,9 +3270,13 @@ export function imageStudioMethods() {
                 }
             }
             await this.imageStudioEngine.applyTemplate(full, this.imageStudioFontMap);
-            if (full.background?.color) {
+            if (full.background?.color !== undefined) {
                 this.imageStudioBgColor = full.background.color;
-                this.imageStudioBgOpacity = full.background.opacity ?? 100;
+                this.imageStudioBgTransparency = full.background.transparency
+                    ?? (full.background.opacity !== undefined
+                        ? Math.max(0, 100 - Number(full.background.opacity))
+                        : 0);
+                this.syncImageStudioBackgroundFromEngine();
             }
             const hookFont = (full.objects || []).find((o) => o.fontSlug)?.fontSlug;
             if (hookFont && this.imageStudioFontMap[hookFont]) {
@@ -2538,16 +3317,18 @@ export function imageStudioMethods() {
         },
 
         async imageStudioImportFromAsset(asset) {
-            if (!asset?.id) {
+            if (!asset?.id && !asset?.url) {
                 return;
             }
-            const url = `/api/projects/${this.projectId}/assets/${asset.id}`;
+            const url = asset.url || `/api/projects/${this.projectId}/assets/${asset.id}`;
             if (!this.imageStudioReady) {
                 this.switchTab('image_studio');
                 await this.$nextTick();
                 if (!this.imageStudioReady) {
                     await this.initImageStudio();
                 }
+            } else {
+                this.switchTab('image_studio');
             }
             await this.imageStudioEngine?.addImageFromUrl(url, asset.item_title || 'Asset');
             this.refreshImageStudioLayers();

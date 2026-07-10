@@ -103,6 +103,7 @@ class ImageStudioController extends Controller
         $data = $request->validate([
             'filename' => ['required', 'string'],
             'platform' => ['nullable', 'string'],
+            'preset' => ['nullable', 'string'],
         ]);
 
         $path = $studio->designsDir($project).DIRECTORY_SEPARATOR.basename($data['filename']);
@@ -110,11 +111,18 @@ class ImageStudioController extends Controller
             return response()->json(['message' => 'Arquivo não encontrado. Exporte o design primeiro.'], 404);
         }
 
-        $result = $studio->pushToThumbnail($project, $path, $data['platform'] ?? null);
+        $result = $studio->pushToThumbnail(
+            $project,
+            $path,
+            $data['platform'] ?? null,
+            $data['preset'] ?? null
+        );
 
         return response()->json([
-            'message' => 'Enviado para Thumbnail.',
+            'message' => 'Arte do Image Studio vinculada ao módulo Thumbnail.',
             'thumbnail' => $result,
+            'platform' => $result['platform'],
+            'settings' => $result['settings'],
         ]);
     }
 
@@ -122,6 +130,8 @@ class ImageStudioController extends Controller
     {
         $data = $request->validate([
             'filename' => ['required', 'string'],
+            'preset' => ['nullable', 'string'],
+            'title' => ['nullable', 'string', 'max:255'],
         ]);
 
         $path = $studio->designsDir($project).DIRECTORY_SEPARATOR.basename($data['filename']);
@@ -129,14 +139,18 @@ class ImageStudioController extends Controller
             return response()->json(['message' => 'Arquivo não encontrado.'], 404);
         }
 
-        $asset = $studio->pushToAssetLibrary($project, $path, $data['filename']);
+        $asset = $studio->pushToAssetLibrary(
+            $project,
+            $path,
+            $data['title'] ?? $data['filename'],
+            $data['preset'] ?? null
+        );
+
+        $formatted = app(AssetController::class)->formatAsset($asset, $project);
 
         return response()->json([
             'message' => 'Adicionado à biblioteca do projeto.',
-            'asset' => [
-                'id' => $asset->id,
-                'url' => route('api.projects.assets', ['project' => $project->id, 'asset' => $asset->id]),
-            ],
+            'asset' => $formatted,
         ]);
     }
 

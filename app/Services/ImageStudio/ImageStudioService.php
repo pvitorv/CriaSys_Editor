@@ -2,11 +2,13 @@
 
 namespace App\Services\ImageStudio;
 
+use App\Enums\LicenseType;
 use App\Models\Asset;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\ProjectStorageService;
 use App\Services\Render\ThumbnailFrameDrawer;
+use App\Services\Render\ThumbnailRenderer;
 use App\Services\ThumbnailFrameLibraryService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
@@ -16,6 +18,7 @@ class ImageStudioService
 {
     public function __construct(
         private ProjectStorageService $storage,
+        private ThumbnailRenderer $thumbnailRenderer,
     ) {}
 
     public function catalog(?User $user = null): array
@@ -57,7 +60,22 @@ class ImageStudioService
             ),
             'background_removal_available' => true,
             'background_removal_client' => true,
+            'preset_platform_map' => config('image_studio.preset_platform_map', []),
+            'primary_formats' => config('image_studio.primary_formats', []),
+            'group_order' => config('image_studio.group_order', []),
         ];
+    }
+
+    public function resolvePlatformForPreset(?string $presetSlug, ?string $fallbackPlatform = null): string
+    {
+        if ($presetSlug) {
+            $mapped = config('image_studio.preset_platform_map.'.$presetSlug);
+            if ($mapped) {
+                return $mapped;
+            }
+        }
+
+        return $fallbackPlatform ?? config('thumbnail_templates.default_platform', 'youtube_landscape');
     }
 
     /**
@@ -125,7 +143,7 @@ class ImageStudioService
     public function loadDesign(Project $project, ?string $presetSlug = null): array
     {
         $settings = $project->settings['image_studio'] ?? [];
-        $preset = $presetSlug ?? ($settings['active_preset'] ?? config('image_studio.defaults.preset', 'ig_feed_square'));
+        $preset = $presetSlug ?? ($settings['active_preset'] ?? config('image_studio.defaults.preset', 'yt_thumb'));
         $path = $this->designPath($project, $preset);
 
         $canvas = null;
@@ -133,11 +151,11 @@ class ImageStudioService
             $canvas = json_decode(File::get($path), true);
         }
 
-        $meta = config('image_studio.presets.'.$preset, config('image_studio.presets.ig_feed_square'));
+        $meta = config('image_studio.presets.'.$preset, config('image_studio.presets.yt_thumb'));
 
         return [
             'preset' => $preset,
-            'width' => (int) ($canvas['width'] ?? $meta['width'] ?? 1080),
+            'width' => (int) ($canvas['width'] ?? $meta['width'] ?? 1920),
             'height' => (int) ($canvas['height'] ?? $meta['height'] ?? 1080),
             'canvas' => is_array($canvas) ? $canvas : null,
             'updated_at' => $settings['designs'][$preset]['updated_at'] ?? null,
@@ -198,35 +216,55 @@ class ImageStudioService
         ];
     }
 
-    public function pushToThumbnail(Project $project, string $absolutePath, ?string $platform = null): array
+    public function pushToThumbnail(Project $project, string $absolutePath, ?string $platform = null, ?string $studioPreset = null): array
     {
         if (! file_exists($absolutePath)) {
             throw new \InvalidArgumentException('Arquivo exportado não encontrado.');
         }
 
         $this->storage->ensureStructure($project);
-        $platform = $platform ?? 'youtube_landscape';
+        $platform = $this->resolvePlatformForPreset($studioPreset, $platform);
+        $exportPreset = $this->thumbnailRenderer->presetForPlatform($platform);
         $meta = config('thumbnail_templates.platforms.'.$platform);
         $filename = $meta['filename'] ?? 'thumbnail_'.$platform.'.jpg';
         $dest = $this->storage->thumbPath($project, $filename);
 
-        File::copy($absolutePath, $dest);
+        $this->composeStudioExportToThumbnail(
+            $absolutePath,
+            $dest,
+            (int) $exportPreset->width,
+            (int) $exportPreset->height
+        );
 
         $settings = $project->settings ?? [];
         $thumbnails = $settings['thumbnails'] ?? [];
-        $thumbnails[$platform] = array_merge(
-            $thumbnails[$platform] ?? [],
+        $platformSettings = array_merge(
+            $this->thumbnailRenderer->resolveSettings($project, $platform),
             [
-                'image_source' => 'upload',
+                'image_source' => 'image_studio',
+                'template' => 'image_studio_final',
                 'custom_image_path' => $dest,
+                'frame_slug' => 'none',
+                'overlay_opacity' => 0,
+                'accent_opacity' => 0,
+                'background_opacity' => 0,
+                'image_studio_preset' => $studioPreset,
+                'image_studio_export' => basename($absolutePath),
+                'image_studio_pushed_at' => now()->toIso8601String(),
             ]
         );
+        $thumbnails[$platform] = $platformSettings;
         $settings['thumbnails'] = $thumbnails;
         $project->update(['settings' => $settings]);
+
+        $freshSettings = $this->thumbnailRenderer->resolveSettings($project->fresh(), $platform);
 
         return [
             'platform' => $platform,
             'filename' => $filename,
+            'width' => (int) $exportPreset->width,
+            'height' => (int) $exportPreset->height,
+            'settings' => $freshSettings,
             'url' => route('api.projects.files', [
                 'project' => $project->id,
                 'type' => 'thumbs',
@@ -235,8 +273,52 @@ class ImageStudioService
         ];
     }
 
-    public function pushToAssetLibrary(Project $project, string $absolutePath, string $originalName = 'design.png'): Asset
+    private function composeStudioExportToThumbnail(string $sourcePath, string $destPath, int $width, int $height): void
     {
+        $source = $this->loadStudioImage($sourcePath);
+        if (! $source) {
+            throw new \InvalidArgumentException('Não foi possível ler a imagem exportada do Image Studio.');
+        }
+
+        File::ensureDirectoryExists(dirname($destPath));
+
+        $canvas = imagecreatetruecolor($width, $height);
+        imagefill($canvas, 0, 0, imagecolorallocate($canvas, 0, 0, 0));
+        imagealphablending($canvas, true);
+
+        $srcW = imagesx($source);
+        $srcH = imagesy($source);
+        $scale = max($width / max(1, $srcW), $height / max(1, $srcH));
+        $newW = (int) ($srcW * $scale);
+        $newH = (int) ($srcH * $scale);
+        $dx = (int) (($width - $newW) / 2);
+        $dy = (int) (($height - $newH) / 2);
+
+        imagecopyresampled($canvas, $source, $dx, $dy, 0, 0, $newW, $newH, $srcW, $srcH);
+        imagejpeg($canvas, $destPath, 93);
+
+        imagedestroy($source);
+        imagedestroy($canvas);
+    }
+
+    private function loadStudioImage(string $path): ?\GdImage
+    {
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+        return match ($ext) {
+            'jpg', 'jpeg' => @imagecreatefromjpeg($path) ?: null,
+            'png' => @imagecreatefrompng($path) ?: null,
+            'webp' => function_exists('imagecreatefromwebp') ? (@imagecreatefromwebp($path) ?: null) : null,
+            default => @imagecreatefrompng($path) ?: @imagecreatefromjpeg($path) ?: null,
+        };
+    }
+
+    public function pushToAssetLibrary(
+        Project $project,
+        string $absolutePath,
+        string $originalName = 'design.png',
+        ?string $studioPreset = null
+    ): Asset {
         if (! file_exists($absolutePath)) {
             throw new \InvalidArgumentException('Arquivo não encontrado.');
         }
@@ -247,14 +329,25 @@ class ImageStudioService
         $dest = $this->storage->projectPath($project).DIRECTORY_SEPARATOR.'assets'.DIRECTORY_SEPARATOR.$filename;
         File::copy($absolutePath, $dest);
 
+        $presetMeta = $studioPreset ? config('image_studio.presets.'.$studioPreset) : null;
+        $title = $presetMeta
+            ? 'Image Studio — '.($presetMeta['name'] ?? $studioPreset)
+            : pathinfo($originalName, PATHINFO_FILENAME);
+
         return Asset::create([
             'project_id' => $project->id,
             'type' => 'image',
             'source' => 'image_studio',
             'file_path' => $dest,
             'file_hash' => hash_file('sha256', $dest),
-            'item_title' => $originalName,
-            'metadata' => ['from' => 'image_studio'],
+            'item_title' => $title,
+            'license_type' => LicenseType::Local->value,
+            'requires_attribution' => false,
+            'metadata' => [
+                'from' => 'image_studio',
+                'studio_preset' => $studioPreset,
+                'original_export' => basename($absolutePath),
+            ],
             'downloaded_at' => now(),
         ]);
     }

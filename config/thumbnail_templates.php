@@ -210,5 +210,11 @@ return [
             'layout' => 'solid',
             'category' => 'básico',
         ],
+        'image_studio_final' => [
+            'name' => 'Image Studio (arte final)',
+            'description' => 'Usa a arte exportada do Image Studio sem reprocessar molduras ou textos',
+            'layout' => 'image_studio_final',
+            'category' => 'image_studio',
+        ],
     ],
 ];

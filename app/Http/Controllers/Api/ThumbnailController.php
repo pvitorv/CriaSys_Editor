@@ -26,13 +26,19 @@ class ThumbnailController extends Controller
             ->values();
 
         $platforms = collect($renderer->platformPresets())
-            ->map(fn (array $meta, string $slug) => [
-                'slug' => $slug,
-                'name' => $meta['name'],
-                'icon' => $meta['icon'] ?? '',
-                'aspect' => $meta['aspect'] ?? '',
-                'hint' => $meta['hint'] ?? '',
-            ])
+            ->map(function (array $meta, string $slug) use ($renderer) {
+                $preset = $renderer->presetForPlatform($slug);
+
+                return [
+                    'slug' => $slug,
+                    'name' => $meta['name'],
+                    'icon' => $meta['icon'] ?? '',
+                    'aspect' => $meta['aspect'] ?? '',
+                    'hint' => $meta['hint'] ?? '',
+                    'width' => (int) $preset->width,
+                    'height' => (int) $preset->height,
+                ];
+            })
             ->values();
 
         $frameCatalog = $frameLibrary->catalogForUser($request->user());
@@ -67,7 +73,7 @@ class ThumbnailController extends Controller
         $data = $request->validate([
             'platform_preset' => ['required', 'string'],
             'template' => ['nullable', 'string'],
-            'image_source' => ['nullable', 'in:slide,upload,solid'],
+            'image_source' => ['nullable', 'in:slide,upload,solid,image_studio'],
             'custom_image_path' => ['nullable', 'string'],
             'slide_index' => ['nullable', 'integer', 'min:0'],
             'slide_id' => ['nullable', 'integer', 'min:1'],
@@ -157,7 +163,7 @@ class ThumbnailController extends Controller
         $data = $request->validate([
             'platform_preset' => ['nullable', 'string'],
             'template' => ['nullable', 'string'],
-            'image_source' => ['nullable', 'in:slide,upload,solid'],
+            'image_source' => ['nullable', 'in:slide,upload,solid,image_studio'],
             'custom_image_path' => ['nullable', 'string'],
             'slide_index' => ['nullable', 'integer', 'min:0'],
             'slide_id' => ['nullable', 'integer', 'min:1'],

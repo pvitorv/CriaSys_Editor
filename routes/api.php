@@ -36,6 +36,7 @@ Route::put('projects/{project}/slides/reorder', [SlideController::class, 'reorde
 Route::put('projects/{project}/slides/{slide}', [SlideController::class, 'update']);
 Route::delete('projects/{project}/slides/{slide}', [SlideController::class, 'destroy']);
 
+Route::get('projects/{project}/assets', [AssetController::class, 'index']);
 Route::post('projects/{project}/assets/upload', [AssetController::class, 'upload']);
 Route::get('projects/{project}/assets/{asset}', [AssetController::class, 'serve'])->name('api.projects.assets');
 Route::get('projects/{project}/files/{type}/{filename}', [AssetController::class, 'serveFile'])->name('api.projects.files');

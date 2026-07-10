@@ -18,6 +18,22 @@ class AssetController extends Controller
 {
     public function __construct(private ProjectStorageService $storage) {}
 
+    public function index(Request $request, Project $project): JsonResponse
+    {
+        $type = $request->query('type');
+
+        $query = $project->assets()->orderByDesc('id');
+        if ($type) {
+            $query->where('type', $type);
+        } else {
+            $query->whereIn('type', ['image', 'video']);
+        }
+
+        $assets = $query->get()->map(fn (Asset $asset) => $this->formatAsset($asset, $project))->values();
+
+        return response()->json(['assets' => $assets]);
+    }
+
     public function upload(Request $request, Project $project): JsonResponse
     {
         $request->validate([
@@ -88,7 +104,27 @@ class AssetController extends Controller
 
         app(\App\Services\Export\ProjectPublishAutoSyncService::class)->sync($project);
 
-        return response()->json($asset->load('stockLicense'), 201);
+        return response()->json($this->formatAsset($asset->load('stockLicense'), $project), 201);
+    }
+
+    /** @return array<string, mixed> */
+    public function formatAsset(Asset $asset, Project $project): array
+    {
+        $url = route('api.projects.assets', ['project' => $project->id, 'asset' => $asset->id]);
+
+        return [
+            'id' => $asset->id,
+            'type' => $asset->type,
+            'source' => $asset->source,
+            'item_title' => $asset->item_title,
+            'file_path' => $asset->file_path,
+            'url' => $url,
+            'preview_url' => in_array($asset->type, ['image', 'video'], true) ? $url : null,
+            'metadata' => $asset->metadata ?? [],
+            'license_type' => $asset->license_type,
+            'requires_attribution' => (bool) $asset->requires_attribution,
+            'created_at' => $asset->created_at?->toIso8601String(),
+        ];
     }
 
     private function resolveStockLicense(Project $project, ?int $id): ?ProjectStockLicense
