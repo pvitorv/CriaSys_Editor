@@ -45,7 +45,7 @@ class ImageStudioController extends Controller
     {
         $data = $request->validate([
             'file' => ['required', 'file', 'max:51200'],
-            'format' => ['required', 'string', 'in:png,jpg,jpeg,svg,json'],
+            'format' => ['required', 'string', 'in:png,jpg,jpeg,svg,json,psd'],
             'preset' => ['nullable', 'string'],
         ]);
 

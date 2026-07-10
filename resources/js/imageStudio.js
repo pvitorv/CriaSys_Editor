@@ -1,4 +1,5 @@
 import { Canvas, FabricText, FabricImage, Rect, Circle, filters } from 'fabric';
+import { writePsdBuffer } from 'ag-psd';
 
 const DEFAULT_FILTER_STATE = {
     brightness: 50,
@@ -317,6 +318,9 @@ export class ImageStudioEngine {
         if (format === 'json') {
             return new Blob([JSON.stringify(this.toJSON(), null, 2)], { type: 'application/json' });
         }
+        if (format === 'psd') {
+            return this.exportPsdBlob();
+        }
         const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
         const dataUrl = this.canvas.toDataURL({
             format: format === 'jpg' ? 'jpeg' : 'png',
@@ -325,6 +329,46 @@ export class ImageStudioEngine {
         });
         const res = await fetch(dataUrl);
         return res.blob();
+    }
+
+    exportPsdBlob() {
+        const w = this.canvas.getWidth();
+        const h = this.canvas.getHeight();
+        const layers = [];
+
+        const bg = this.canvas.backgroundColor;
+        if (bg && bg !== 'transparent') {
+            const bgCanvas = document.createElement('canvas');
+            bgCanvas.width = w;
+            bgCanvas.height = h;
+            const ctx = bgCanvas.getContext('2d');
+            ctx.fillStyle = bg;
+            ctx.fillRect(0, 0, w, h);
+            layers.push({ name: 'Fundo', canvas: bgCanvas });
+        }
+
+        [...this.canvas.getObjects()].reverse().forEach((obj, idx) => {
+            if (obj.visible === false) {
+                return;
+            }
+            const bounds = obj.getBoundingRect();
+            let el;
+            try {
+                el = obj.toCanvasElement({ multiplier: 1 });
+            } catch {
+                return;
+            }
+            layers.push({
+                name: obj.name || obj.type || `Camada ${idx + 1}`,
+                left: Math.round(bounds.left),
+                top: Math.round(bounds.top),
+                opacity: obj.opacity ?? 1,
+                canvas: el,
+            });
+        });
+
+        const buffer = writePsdBuffer({ width: w, height: h, children: layers });
+        return new Blob([buffer], { type: 'application/vnd.adobe.photoshop' });
     }
 
     zoomToFit(containerWidth, containerHeight) {
@@ -627,7 +671,8 @@ export function imageStudioMethods() {
                     return;
                 }
                 const form = new FormData();
-                form.append('file', blob, `design.${format}`);
+                const ext = format === 'jpeg' ? 'jpg' : format;
+                form.append('file', blob, `design.${ext}`);
                 form.append('format', format);
                 form.append('preset', this.imageStudioPreset);
                 const { data } = await api.post(`/projects/${this.projectId}/image-studio/export`, form, {
