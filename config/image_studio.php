@@ -8,6 +8,7 @@ return [
         ['id' => 'jpg', 'label' => 'JPG (foto)', 'ext' => 'jpg', 'mime' => 'image/jpeg', 'hint' => 'Redes sociais, sites'],
         ['id' => 'svg', 'label' => 'SVG (vetor)', 'ext' => 'svg', 'mime' => 'image/svg+xml', 'hint' => 'CorelDRAW, Affinity, Illustrator'],
         ['id' => 'psd', 'label' => 'PSD (camadas)', 'ext' => 'psd', 'mime' => 'application/vnd.adobe.photoshop', 'hint' => 'Photoshop, Affinity Photo'],
+        ['id' => 'pdf', 'label' => 'PDF (impressão)', 'ext' => 'pdf', 'mime' => 'application/pdf', 'hint' => 'CorelDRAW, Affinity, impressão'],
         ['id' => 'json', 'label' => 'Projeto CriaSys (.json)', 'ext' => 'json', 'mime' => 'application/json', 'hint' => 'Reabrir e editar depois'],
     ],
 

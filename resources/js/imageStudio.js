@@ -1,5 +1,6 @@
 import { Canvas, FabricText, FabricImage, Rect, Circle, filters } from 'fabric';
 import { writePsdBuffer } from 'ag-psd';
+import { jsPDF } from 'jspdf';
 
 const DEFAULT_FILTER_STATE = {
     brightness: 50,
@@ -321,6 +322,9 @@ export class ImageStudioEngine {
         if (format === 'psd') {
             return this.exportPsdBlob();
         }
+        if (format === 'pdf') {
+            return this.exportPdfBlob(quality);
+        }
         const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
         const dataUrl = this.canvas.toDataURL({
             format: format === 'jpg' ? 'jpeg' : 'png',
@@ -369,6 +373,25 @@ export class ImageStudioEngine {
 
         const buffer = writePsdBuffer({ width: w, height: h, children: layers });
         return new Blob([buffer], { type: 'application/vnd.adobe.photoshop' });
+    }
+
+    async exportPdfBlob(quality = 0.92) {
+        const w = this.canvas.getWidth();
+        const h = this.canvas.getHeight();
+        const dataUrl = this.canvas.toDataURL({
+            format: 'jpeg',
+            quality,
+            multiplier: 1,
+        });
+        const orientation = w >= h ? 'landscape' : 'portrait';
+        const pdf = new jsPDF({
+            orientation,
+            unit: 'px',
+            format: [w, h],
+            hotfixes: ['px_scaling'],
+        });
+        pdf.addImage(dataUrl, 'JPEG', 0, 0, w, h);
+        return pdf.output('blob');
     }
 
     zoomToFit(containerWidth, containerHeight) {
