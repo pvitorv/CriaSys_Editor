@@ -835,6 +835,17 @@ O narrador continua a história com calma."
                                 Opacidade
                                 <input type="range" min="0" max="100" :value="Math.round((imageStudioSelectedObject?.opacity ?? 1) * 100)" @input="imageStudioObjectOpacity($event.target.value)" class="w-full mt-1">
                             </label>
+                            <template x-if="imageStudioSelectedObject?.type === 'image'">
+                                <div class="space-y-2 pt-2 border-t border-zinc-800">
+                                    <p class="text-[10px] text-violet-400 font-medium">Filtros (intensidade)</p>
+                                    <label class="text-[10px] text-zinc-400 block">Brilho<input type="range" min="0" max="100" x-model.number="imageStudioFilters.brightness" @input="imageStudioApplyFilters()" class="w-full mt-1"></label>
+                                    <label class="text-[10px] text-zinc-400 block">Contraste<input type="range" min="0" max="100" x-model.number="imageStudioFilters.contrast" @input="imageStudioApplyFilters()" class="w-full mt-1"></label>
+                                    <label class="text-[10px] text-zinc-400 block">Saturação<input type="range" min="0" max="100" x-model.number="imageStudioFilters.saturation" @input="imageStudioApplyFilters()" class="w-full mt-1"></label>
+                                    <label class="text-[10px] text-zinc-400 block">Desfoque<input type="range" min="0" max="100" x-model.number="imageStudioFilters.blur" @input="imageStudioApplyFilters()" class="w-full mt-1"></label>
+                                    <label class="text-[10px] text-zinc-400 block">Preto e branco<input type="range" min="0" max="100" x-model.number="imageStudioFilters.grayscale" @input="imageStudioApplyFilters()" class="w-full mt-1"></label>
+                                    <button type="button" @click="imageStudioClearFilters()" class="text-[10px] px-2 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-white">Limpar filtros</button>
+                                </div>
+                            </template>
                         </div>
 
                         <div class="rounded-xl border border-violet-900/40 bg-violet-950/20 p-3 space-y-2">

@@ -1,4 +1,13 @@
-import { Canvas, FabricText, FabricImage, Rect, Circle, Gradient } from 'fabric';
+import { Canvas, FabricText, FabricImage, Rect, Circle, filters } from 'fabric';
+
+const DEFAULT_FILTER_STATE = {
+    brightness: 50,
+    contrast: 50,
+    saturation: 50,
+    blur: 0,
+    grayscale: 0,
+    vignette: 0,
+};
 
 export class ImageStudioEngine {
     constructor(canvasEl) {
@@ -21,6 +30,9 @@ export class ImageStudioEngine {
         this.canvas.on('object:modified', () => this.emitChange());
         this.canvas.on('object:added', () => this.emitChange());
         this.canvas.on('object:removed', () => this.emitChange());
+        this.canvas.on('selection:created', () => this.emitChange());
+        this.canvas.on('selection:updated', () => this.emitChange());
+        this.canvas.on('selection:cleared', () => this.emitChange());
         return this.canvas;
     }
 
@@ -66,7 +78,68 @@ export class ImageStudioEngine {
             return;
         }
         await this.canvas.loadFromJSON(json);
+        this.canvas.getObjects().forEach((obj) => {
+            if (obj.criasysFilters && (obj.type === 'image' || obj instanceof FabricImage)) {
+                this.applyFiltersToObject(obj, obj.criasysFilters);
+            }
+        });
         this.canvas.requestRenderAll();
+    }
+
+    getFilterState(object) {
+        return { ...DEFAULT_FILTER_STATE, ...(object?.criasysFilters || {}) };
+    }
+
+    applyFiltersToObject(object, state) {
+        if (!object || object.type !== 'image') {
+            return;
+        }
+
+        const s = { ...DEFAULT_FILTER_STATE, ...state };
+        object.criasysFilters = s;
+
+        const strength = (v) => Math.max(0, Math.min(100, Number(v) || 0)) / 100;
+        const list = [];
+
+        const bri = (strength(s.brightness) - 0.5) * 0.6;
+        if (Math.abs(bri) > 0.01) {
+            list.push(new filters.Brightness({ brightness: bri }));
+        }
+
+        const con = (strength(s.contrast) - 0.5) * 0.8;
+        if (Math.abs(con) > 0.01) {
+            list.push(new filters.Contrast({ contrast: con }));
+        }
+
+        const sat = (strength(s.saturation) - 0.5) * 1.2;
+        if (Math.abs(sat) > 0.01) {
+            list.push(new filters.Saturation({ saturation: sat }));
+        }
+
+        const blurVal = strength(s.blur) * 0.35;
+        if (blurVal > 0.01) {
+            list.push(new filters.Blur({ blur: blurVal }));
+        }
+
+        if (strength(s.grayscale) > 0.05) {
+            list.push(new filters.Grayscale());
+        }
+
+        object.filters = list;
+        object.applyFilters();
+        this.canvas?.requestRenderAll();
+        this.emitChange();
+    }
+
+    clearFilters(object) {
+        if (!object || object.type !== 'image') {
+            return;
+        }
+        object.criasysFilters = { ...DEFAULT_FILTER_STATE };
+        object.filters = [];
+        object.applyFilters();
+        this.canvas?.requestRenderAll();
+        this.emitChange();
     }
 
     toJSON() {
@@ -291,6 +364,7 @@ export function imageStudioMethods() {
         imageStudioBgOpacity: 100,
         imageStudioSelectedObject: null,
         imageStudioZoom: 1,
+        imageStudioFilters: { ...DEFAULT_FILTER_STATE },
 
         get filteredImageStudioPresets() {
             const q = (this.imageStudioPresetFilter || '').trim().toLowerCase();
@@ -401,6 +475,24 @@ export function imageStudioMethods() {
         refreshImageStudioLayers() {
             this.imageStudioLayers = this.imageStudioEngine?.getLayers() || [];
             this.imageStudioSelectedObject = this.imageStudioEngine?.getActiveObject() || null;
+            if (this.imageStudioSelectedObject?.type === 'image') {
+                this.imageStudioFilters = this.imageStudioEngine.getFilterState(this.imageStudioSelectedObject);
+            }
+        },
+
+        imageStudioApplyFilters() {
+            const obj = this.imageStudioEngine?.getActiveObject();
+            if (obj?.type === 'image') {
+                this.imageStudioEngine.applyFiltersToObject(obj, this.imageStudioFilters);
+            }
+        },
+
+        imageStudioClearFilters() {
+            const obj = this.imageStudioEngine?.getActiveObject();
+            if (obj?.type === 'image') {
+                this.imageStudioEngine.clearFilters(obj);
+                this.imageStudioFilters = { ...DEFAULT_FILTER_STATE };
+            }
         },
 
         scheduleImageStudioSave() {
