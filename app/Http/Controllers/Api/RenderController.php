@@ -8,7 +8,8 @@ use App\Jobs\RenderVideoJob;
 use App\Models\ExportPreset;
 use App\Models\Project;
 use App\Models\RenderJob;
-use App\Services\Render\FfmpegRenderService;
+use App\Services\ProjectStorageService;
+use App\Services\Render\ThumbnailRenderer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -72,17 +73,24 @@ class RenderController extends Controller
         return response()->json($renderJob->fresh());
     }
 
-    public function thumbnail(Request $request, Project $project, FfmpegRenderService $ffmpeg): JsonResponse
+    public function thumbnail(Request $request, Project $project, ThumbnailRenderer $renderer, ProjectStorageService $storage): JsonResponse
     {
         $data = $request->validate([
             'slide_index' => ['nullable', 'integer', 'min:0'],
         ]);
 
         $project->load('slides');
-        $preset = ExportPreset::where('slug', 'youtube_landscape')->firstOrFail();
+        $preset = ExportPreset::where('slug', 'thumbnail')->first()
+            ?? ExportPreset::where('slug', 'youtube_landscape')->firstOrFail();
 
         try {
-            $path = $ffmpeg->generateThumbnail($project, $preset, $data['slide_index'] ?? 0);
+            $slideIndex = $data['slide_index'] ?? $renderer->resolveSettings($project)['slide_index'] ?? 0;
+            $slide = $project->slides[$slideIndex] ?? $project->slides->first();
+            if (! $slide) {
+                throw new \RuntimeException('Projeto sem slides para gerar thumbnail.');
+            }
+            $path = $storage->thumbPath($project);
+            $renderer->render($project, $slide, $preset, $path);
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
@@ -93,7 +101,7 @@ class RenderController extends Controller
                 'project' => $project->id,
                 'type' => 'thumbs',
                 'filename' => basename($path),
-            ]),
+            ]).'?t='.time(),
         ]);
     }
 }

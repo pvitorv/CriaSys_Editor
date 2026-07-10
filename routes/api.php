@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\ProjectTemplateController;
 use App\Http\Controllers\Api\RenderController;
 use App\Http\Controllers\Api\SlideController;
 use App\Http\Controllers\Api\SoundEffectController;
+use App\Http\Controllers\Api\ThumbnailController;
 use App\Http\Controllers\Api\TtsController;
 use Illuminate\Support\Facades\Route;
 
@@ -73,6 +74,13 @@ Route::get('projects/{project}/narration', [NarrationController::class, 'show'])
 Route::post('projects/{project}/narration/preview', [NarrationController::class, 'preview']);
 Route::post('projects/{project}/narration/generate', [NarrationController::class, 'generate']);
 Route::post('projects/{project}/narration/sync', [NarrationController::class, 'sync']);
+
+Route::put('projects/{project}/narration', [NarrationController::class, 'update']);
+
+Route::get('thumbnail/templates', [ThumbnailController::class, 'templates']);
+Route::get('projects/{project}/thumbnail', [ThumbnailController::class, 'show']);
+Route::put('projects/{project}/thumbnail', [ThumbnailController::class, 'update']);
+Route::post('projects/{project}/thumbnail/generate', [ThumbnailController::class, 'generate']);
 
 Route::get('projects/{project}/render-jobs', [RenderController::class, 'index']);
 Route::post('projects/{project}/render-jobs', [RenderController::class, 'store']);

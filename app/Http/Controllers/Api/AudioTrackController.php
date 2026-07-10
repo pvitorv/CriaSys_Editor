@@ -26,6 +26,9 @@ class AudioTrackController extends Controller
             'file_path' => ['nullable', 'string'],
             'volume' => ['nullable', 'numeric', 'min:0', 'max:1'],
             'start_at' => ['nullable', 'numeric', 'min:0'],
+            'trim_in' => ['nullable', 'numeric', 'min:0'],
+            'trim_out' => ['nullable', 'numeric', 'min:0'],
+            'source_duration' => ['nullable', 'numeric', 'min:0'],
             'ducking_enabled' => ['nullable', 'boolean'],
         ]);
 
@@ -43,6 +46,9 @@ class AudioTrackController extends Controller
                 'file_path' => $data['file_path'] ?? null,
                 'volume' => $data['volume'] ?? 0.35,
                 'start_at' => $data['start_at'] ?? 0,
+                'trim_in' => $data['trim_in'] ?? 0,
+                'trim_out' => $data['trim_out'] ?? null,
+                'source_duration' => $data['source_duration'] ?? null,
                 'ducking_enabled' => $data['ducking_enabled'] ?? true,
             ]
         );
@@ -57,6 +63,9 @@ class AudioTrackController extends Controller
         $data = $request->validate([
             'volume' => ['nullable', 'numeric', 'min:0', 'max:1'],
             'start_at' => ['nullable', 'numeric', 'min:0'],
+            'trim_in' => ['nullable', 'numeric', 'min:0'],
+            'trim_out' => ['nullable', 'numeric', 'min:0'],
+            'source_duration' => ['nullable', 'numeric', 'min:0'],
             'ducking_enabled' => ['nullable', 'boolean'],
             'file_path' => ['nullable', 'string'],
             'asset_id' => ['nullable', 'exists:assets,id'],

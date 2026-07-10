@@ -24,6 +24,10 @@ class SoundEffectController extends Controller
             'asset_id' => ['nullable', 'exists:assets,id'],
             'file_path' => ['nullable', 'string'],
             'start_at' => ['nullable', 'numeric', 'min:0'],
+            'trim_in' => ['nullable', 'numeric', 'min:0'],
+            'trim_out' => ['nullable', 'numeric', 'min:0'],
+            'source_duration' => ['nullable', 'numeric', 'min:0'],
+            'clip_duration' => ['nullable', 'numeric', 'min:0.1'],
             'volume' => ['nullable', 'numeric', 'min:0', 'max:1'],
         ]);
 
@@ -32,6 +36,10 @@ class SoundEffectController extends Controller
             'asset_id' => $data['asset_id'] ?? null,
             'file_path' => $data['file_path'] ?? null,
             'start_at' => $data['start_at'] ?? 0,
+            'trim_in' => $data['trim_in'] ?? 0,
+            'trim_out' => $data['trim_out'] ?? null,
+            'source_duration' => $data['source_duration'] ?? null,
+            'clip_duration' => $data['clip_duration'] ?? null,
             'volume' => $data['volume'] ?? 1,
         ]);
 
@@ -45,6 +53,10 @@ class SoundEffectController extends Controller
         $data = $request->validate([
             'label' => ['nullable', 'string', 'max:120'],
             'start_at' => ['nullable', 'numeric', 'min:0'],
+            'trim_in' => ['nullable', 'numeric', 'min:0'],
+            'trim_out' => ['nullable', 'numeric', 'min:0'],
+            'source_duration' => ['nullable', 'numeric', 'min:0'],
+            'clip_duration' => ['nullable', 'numeric', 'min:0.1'],
             'volume' => ['nullable', 'numeric', 'min:0', 'max:1'],
             'file_path' => ['nullable', 'string'],
             'asset_id' => ['nullable', 'exists:assets,id'],

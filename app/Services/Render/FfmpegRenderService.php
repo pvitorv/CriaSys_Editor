@@ -67,7 +67,7 @@ class FfmpegRenderService
         $thumbPreset = ExportPreset::where('slug', 'thumbnail')->first() ?? $preset;
         $outputPath = $this->storage->thumbPath($project);
 
-        app(SlideImageRenderer::class)->render($slide, $thumbPreset, $outputPath);
+        app(ThumbnailRenderer::class)->render($project, $slide, $thumbPreset, $outputPath);
 
         return $outputPath;
     }

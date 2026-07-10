@@ -15,6 +15,9 @@ class AudioTrack extends Model
         'file_path',
         'volume',
         'start_at',
+        'trim_in',
+        'trim_out',
+        'source_duration',
         'ducking_enabled',
     ];
 
@@ -23,6 +26,9 @@ class AudioTrack extends Model
         return [
             'volume' => 'float',
             'start_at' => 'float',
+            'trim_in' => 'float',
+            'trim_out' => 'float',
+            'source_duration' => 'float',
             'track_slot' => 'integer',
             'ducking_enabled' => 'boolean',
         ];

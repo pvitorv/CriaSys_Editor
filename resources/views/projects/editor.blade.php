@@ -258,15 +258,39 @@
             Adicione slides para montar a linha do tempo.
         </div>
 
-        <div x-show="slides.length" x-ref="timelineScroll" class="overflow-x-auto overflow-y-auto px-4 py-4 w-full" style="max-height: min(340px, 28vh);">
-            <div class="relative" :style="'width: ' + timelineTrackWidthPx + 'px; min-width: ' + timelineViewportWidthPx() + 'px'">
-                {{-- Régua de tempo --}}
-                <div class="relative h-5 mb-2 border-b border-zinc-700/80">
-                    <template x-for="tick in timelineTicks" :key="'tick-' + tick.sec">
+        <div x-show="slides.length" x-ref="timelineScroll" class="overflow-x-auto overflow-y-auto px-4 py-4 w-full" style="max-height: min(380px, 32vh);">
+            {{-- Ferramentas: playhead e cortes --}}
+            <div class="flex flex-wrap items-center gap-2 mb-3 pb-2 border-b border-zinc-800/80">
+                <span class="text-[10px] text-zinc-500 uppercase tracking-wide">Marcador</span>
+                <span class="text-xs tabular-nums text-violet-300 font-medium" x-text="formatTimelineTime(timelinePlayheadSec)"></span>
+                <button type="button" @click="timelineTool = 'select'" class="text-[10px] px-2 py-1 rounded" :class="timelineTool === 'select' ? 'bg-violet-700 text-white' : 'bg-zinc-800 text-zinc-400'">Selecionar</button>
+                <button type="button" @click="timelineTool = 'cut'" class="text-[10px] px-2 py-1 rounded" :class="timelineTool === 'cut' ? 'bg-rose-800 text-rose-100' : 'bg-zinc-800 text-zinc-400'">Cortar</button>
+                <button type="button" @click="markTimelineCutIn()" class="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300" title="Marca entrada">In ↓</button>
+                <button type="button" @click="markTimelineCutOut()" class="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300" title="Marca saída">Out ↑</button>
+                <button type="button" @click="applyTimelineTrim()" class="text-[10px] px-2 py-1 rounded bg-rose-900/60 hover:bg-rose-800 text-rose-200" :disabled="!timelineSelectedClip">Aplicar corte</button>
+                <button type="button" @click="clearTimelineCutMarks()" class="text-[10px] px-2 py-1 rounded bg-zinc-800 text-zinc-500" x-show="timelineCutMarkIn != null || timelineCutMarkOut != null">Limpar marcas</button>
+                <span x-show="timelineCutMarkIn != null" class="text-[10px] text-emerald-400 tabular-nums">In: <span x-text="formatTimelineTime(timelineCutMarkIn)"></span></span>
+                <span x-show="timelineCutMarkOut != null" class="text-[10px] text-amber-400 tabular-nums">Out: <span x-text="formatTimelineTime(timelineCutMarkOut)"></span></span>
+                <span x-show="timelineSelectedClip" class="text-[10px] text-zinc-500 ml-auto">Selecionado: <span class="text-zinc-300" x-text="timelineSelectedClipLabel || timelineSelectedClip?.kind"></span></span>
+            </div>
+
+            <div class="relative" :style="'width: ' + timelineTrackWidthPx + 'px; min-width: ' + timelineViewportWidthPx() + 'px'" x-ref="timelineTrackArea" @click="setPlayheadFromTimelineEvent($event)">
+                {{-- Régua superior --}}
+                <div class="relative h-5 mb-2 border-b border-zinc-700/80 pointer-events-none">
+                    <template x-for="tick in timelineTicks" :key="'tick-top-' + tick.sec">
                         <div class="absolute top-0 h-full border-l border-zinc-700/60" :style="'left: ' + tick.px + 'px'">
                             <span class="absolute -top-0.5 left-1 text-[9px] text-zinc-600 tabular-nums whitespace-nowrap" x-text="tick.label"></span>
                         </div>
                     </template>
+                </div>
+
+                {{-- Playhead + marcas de corte --}}
+                <div class="absolute inset-0 pointer-events-none z-20" style="top: 1.25rem; bottom: 1.25rem;">
+                    <div class="absolute top-0 bottom-0 w-px bg-violet-400 shadow-[0_0_6px_rgba(167,139,250,0.8)]" :style="'left: ' + timelineSecondsToPx(timelinePlayheadSec) + 'px'">
+                        <div class="absolute -top-1 -left-1.5 w-3 h-3 bg-violet-400 rotate-45"></div>
+                    </div>
+                    <div x-show="timelineCutMarkIn != null" class="absolute top-0 bottom-0 w-px bg-emerald-500/80" :style="'left: ' + timelineSecondsToPx(timelineCutMarkIn) + 'px'"></div>
+                    <div x-show="timelineCutMarkOut != null" class="absolute top-0 bottom-0 w-px bg-amber-500/80" :style="'left: ' + timelineSecondsToPx(timelineCutMarkOut) + 'px'"></div>
                 </div>
 
                 {{-- Faixa de clips --}}
@@ -316,44 +340,46 @@
                         <button type="button" @click="openAudioTab()" class="text-[10px] text-violet-400 hover:text-violet-300">Editar trilhas & efeitos →</button>
                     </div>
 
-                    <div class="flex items-center gap-2 h-6">
+                    <div class="flex items-center gap-2 h-6" @click.stop>
                         <span class="w-[4.5rem] shrink-0 text-[9px] text-emerald-500/90 truncate">Narração</span>
-                        <div class="relative h-5 rounded border border-zinc-800 bg-zinc-950/60" :style="'width: ' + Math.max(timelineTrackWidthPx, 120) + 'px'">
+                        <div class="relative h-5 rounded border border-zinc-800 bg-zinc-950/60 cursor-pointer" :style="'width: ' + Math.max(timelineTrackWidthPx, 120) + 'px'" @click.stop="selectTimelineNarration()">
                             <div
                                 x-show="narration?.audio_url"
-                                class="absolute inset-y-0 left-0 rounded bg-emerald-900/40 border border-emerald-700/40"
-                                :style="'width: ' + timelineSecondsToPx(timelineTotalSeconds) + 'px'"
-                                title="Narração completa"
+                                class="absolute inset-y-0 left-0 rounded border border-emerald-700/40"
+                                :class="timelineSelectedClip?.kind === 'narration' ? 'bg-emerald-800/60 ring-1 ring-emerald-400' : 'bg-emerald-900/40'"
+                                :style="'width: ' + timelineNarrationWidthPx() + 'px'"
+                                title="Narração — clique para selecionar e cortar"
                             ></div>
                         </div>
                     </div>
 
                     <template x-for="(track, slot) in audioTracks" :key="'tl-audio-' + slot">
-                        <div class="flex items-center gap-2 h-6">
+                        <div class="flex items-center gap-2 h-6" @click.stop>
                             <span class="w-[4.5rem] shrink-0 text-[9px] text-amber-500/90 truncate" x-text="track.label"></span>
                             <div class="relative h-5 rounded border border-zinc-800 bg-zinc-950/60" :style="'width: ' + Math.max(timelineTrackWidthPx, 120) + 'px'">
                                 <div
                                     x-show="track.file_path"
-                                    class="absolute inset-y-0 rounded bg-amber-900/35 border border-amber-700/40 cursor-pointer hover:bg-amber-900/50"
-                                    :style="'left: ' + timelineSecondsToPx(track.start_at) + 'px; width: ' + timelineAudioSpanWidth(track.start_at) + 'px'"
-                                    :title="track.label + ' · vol ' + Math.round((track.volume ?? 0.35) * 100) + '% · início ' + formatTimelineTime(track.start_at)"
-                                    @click="openAudioTab()"
+                                    @click.stop="selectTimelineMusic(slot)"
+                                    class="absolute inset-y-0 rounded border cursor-pointer hover:brightness-110"
+                                    :class="timelineSelectedClip?.kind === 'music' && timelineSelectedClip?.slot === slot ? 'bg-amber-800/55 border-amber-400 ring-1 ring-amber-400' : 'bg-amber-900/35 border-amber-700/40'"
+                                    :style="'left: ' + timelineSecondsToPx(track.start_at) + 'px; width: ' + timelineMusicClipWidth(track) + 'px'"
+                                    :title="track.label + ' · vol ' + Math.round((track.volume ?? 0.35) * 100) + '% · clique para cortar'"
                                 ></div>
                             </div>
                         </div>
                     </template>
 
-                    <div class="flex items-start gap-2 min-h-[26px]">
+                    <div class="flex items-start gap-2 min-h-[26px]" @click.stop>
                         <span class="w-[4.5rem] shrink-0 text-[9px] text-rose-400/90 pt-1">Efeitos</span>
                         <div class="relative h-6 rounded border border-zinc-800 bg-zinc-950/60" :style="'width: ' + Math.max(timelineTrackWidthPx, 120) + 'px'">
                             <template x-for="fx in soundEffects" :key="'tl-fx-' + fx.id">
                                 <button
                                     type="button"
-                                    class="absolute top-0 h-5 rounded px-1 truncate text-left bg-rose-900/50 border border-rose-600/50 hover:bg-rose-900/70 text-[8px] text-rose-100"
-                                    :class="selectedSoundEffectId === fx.id ? 'ring-1 ring-rose-400' : ''"
-                                    :style="'left: ' + timelineSecondsToPx(fx.start_at) + 'px; width: ' + timelineFxClipWidth() + 'px; max-width: 120px'"
+                                    class="absolute top-0 h-5 rounded px-1 truncate text-left border hover:brightness-110"
+                                    :class="timelineSelectedClip?.kind === 'sfx' && timelineSelectedClip?.id === fx.id ? 'bg-rose-800/70 border-rose-400 ring-1 ring-rose-400 text-rose-50' : 'bg-rose-900/50 border-rose-600/50 text-rose-100'"
+                                    :style="'left: ' + timelineSecondsToPx(fx.start_at) + 'px; width: ' + timelineFxDisplayWidth(fx) + 'px'"
                                     :title="(fx.label || 'Efeito') + ' · ' + formatTimelineTime(fx.start_at)"
-                                    @click="selectSoundEffect(fx)"
+                                    @click.stop="selectSoundEffect(fx)"
                                     x-text="fx.label || 'FX'"
                                 ></button>
                             </template>
@@ -362,6 +388,15 @@
                             </span>
                         </div>
                     </div>
+                </div>
+
+                {{-- Régua inferior (espelho da superior) --}}
+                <div class="relative h-5 mt-3 pt-2 border-t border-zinc-700/80 pointer-events-none">
+                    <template x-for="tick in timelineTicks" :key="'tick-bottom-' + tick.sec">
+                        <div class="absolute top-2 h-full border-l border-zinc-700/60" :style="'left: ' + tick.px + 'px'">
+                            <span class="absolute top-3 left-1 text-[9px] text-zinc-600 tabular-nums whitespace-nowrap" x-text="tick.label"></span>
+                        </div>
+                    </template>
                 </div>
             </div>
         </div>
@@ -699,6 +734,109 @@ O narrador continua a história com calma."
                             </template>
                         </div>
                     </template>
+                </div>
+            </div>
+
+            {{-- Thumbnail --}}
+            <div x-show="activeTab === 'thumbnail'" class="space-y-4">
+                <div class="flex flex-wrap items-start gap-6">
+                    <div class="flex-1 min-w-[280px] space-y-4">
+                        <div>
+                            <h3 class="text-sm font-medium text-zinc-300 mb-2">Modelos</h3>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                                <template x-for="tpl in thumbnailTemplates" :key="tpl.slug">
+                                    <button
+                                        type="button"
+                                        @click="selectThumbnailTemplate(tpl.slug)"
+                                        class="rounded-lg border p-3 text-left transition"
+                                        :class="thumbnailSettings.template === tpl.slug ? 'border-violet-500 bg-violet-950/40' : 'border-zinc-700 bg-zinc-900/60 hover:border-zinc-600'"
+                                    >
+                                        <span class="text-xs font-medium text-zinc-200" x-text="tpl.name"></span>
+                                        <p class="text-[10px] text-zinc-500 mt-1 line-clamp-2" x-text="tpl.description"></p>
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="text-xs text-zinc-400">
+                                Slide base
+                                <select x-model.number="thumbnailSettings.slide_index" @change="scheduleThumbnailPreview()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                                    <template x-for="(slide, idx) in slides" :key="'th-slide-' + slide.id">
+                                        <option :value="idx" x-text="'Slide ' + (idx + 1)"></option>
+                                    </template>
+                                </select>
+                            </label>
+                            <label class="text-xs text-zinc-400">
+                                Fonte
+                                <select x-model="thumbnailSettings.font_family" @change="scheduleThumbnailPreview()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                                    <template x-for="font in thumbnailFonts" :key="font.slug">
+                                        <option :value="font.slug" x-text="font.label"></option>
+                                    </template>
+                                </select>
+                            </label>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="text-xs text-zinc-400">
+                                Título (opcional)
+                                <input x-model="thumbnailSettings.title_text" @input="scheduleThumbnailPreview()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm" placeholder="Usa título do slide se vazio">
+                            </label>
+                            <label class="text-xs text-zinc-400">
+                                Subtítulo (opcional)
+                                <input x-model="thumbnailSettings.subtitle_text" @input="scheduleThumbnailPreview()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                            </label>
+                        </div>
+
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <label class="text-xs text-zinc-400">Cor título<input type="color" x-model="thumbnailSettings.title_color" @input="scheduleThumbnailPreview()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer"></label>
+                            <label class="text-xs text-zinc-400">Cor subtítulo<input type="color" x-model="thumbnailSettings.subtitle_color" @input="scheduleThumbnailPreview()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer"></label>
+                            <label class="text-xs text-zinc-400">Destaque<input type="color" x-model="thumbnailSettings.accent_color" @input="scheduleThumbnailPreview()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer"></label>
+                            <label class="text-xs text-zinc-400">Fundo<input type="color" x-model="thumbnailSettings.background_color" @input="scheduleThumbnailPreview()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer"></label>
+                        </div>
+
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <label class="text-xs text-zinc-400">
+                                Tamanho título
+                                <input type="number" min="18" max="120" x-model.number="thumbnailSettings.title_size" @input="scheduleThumbnailPreview()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                            </label>
+                            <label class="text-xs text-zinc-400">
+                                Tamanho subtítulo
+                                <input type="number" min="14" max="72" x-model.number="thumbnailSettings.subtitle_size" @input="scheduleThumbnailPreview()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                            </label>
+                            <label class="text-xs text-zinc-400">
+                                Clarear / escurecer (%)
+                                <input type="range" min="-100" max="100" x-model.number="thumbnailSettings.brightness" @input="scheduleThumbnailPreview()" class="w-full mt-2">
+                                <span class="text-[10px] text-zinc-500 tabular-nums" x-text="thumbnailSettings.brightness + '%'"></span>
+                            </label>
+                            <label class="text-xs text-zinc-400">
+                                Contraste (%)
+                                <input type="range" min="-100" max="100" x-model.number="thumbnailSettings.contrast" @input="scheduleThumbnailPreview()" class="w-full mt-2">
+                                <span class="text-[10px] text-zinc-500 tabular-nums" x-text="thumbnailSettings.contrast + '%'"></span>
+                            </label>
+                        </div>
+
+                        <label class="text-xs text-zinc-400 block">
+                            Overlay escuro (%)
+                            <input type="range" min="0" max="100" x-model.number="thumbnailSettings.overlay_opacity" @input="scheduleThumbnailPreview()" class="w-full mt-2">
+                            <span class="text-[10px] text-zinc-500 tabular-nums" x-text="thumbnailSettings.overlay_opacity + '%'"></span>
+                        </label>
+
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" @click="saveAndPreviewThumbnail()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Atualizar preview</button>
+                            <button type="button" @click="generateThumbnailFinal(false)" class="px-4 py-2 rounded-lg bg-violet-700 hover:bg-violet-600 text-sm">Gerar thumbnail final</button>
+                        </div>
+                    </div>
+
+                    <div class="w-full sm:w-[360px] shrink-0">
+                        <p class="text-xs text-zinc-500 mb-2">Preview 16:9</p>
+                        <div class="aspect-video rounded-lg border border-zinc-700 bg-zinc-950 overflow-hidden">
+                            <img x-show="thumbnailPreviewUrl" :src="thumbnailPreviewUrl" alt="Preview thumbnail" class="w-full h-full object-cover">
+                            <div x-show="!thumbnailPreviewUrl" class="w-full h-full flex items-center justify-center text-sm text-zinc-600 p-4 text-center">
+                                Ajuste as opções e clique em Atualizar preview
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 

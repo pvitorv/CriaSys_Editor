@@ -82,4 +82,21 @@ class NarrationController extends Controller
 
         return SafeJson::response($project->fresh('slides')->slides);
     }
+
+    public function update(Request $request, Project $project): JsonResponse
+    {
+        $narration = $project->latestNarration();
+        if (! $narration) {
+            return response()->json(['message' => 'Narração não encontrada.'], 404);
+        }
+
+        $data = $request->validate([
+            'trim_in' => ['nullable', 'numeric', 'min:0'],
+            'trim_out' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $narration->update($data);
+
+        return response()->json($narration->fresh());
+    }
 }

@@ -13,6 +13,10 @@ class SoundEffect extends Model
         'asset_id',
         'file_path',
         'start_at',
+        'trim_in',
+        'trim_out',
+        'source_duration',
+        'clip_duration',
         'volume',
     ];
 
@@ -20,6 +24,10 @@ class SoundEffect extends Model
     {
         return [
             'start_at' => 'float',
+            'trim_in' => 'float',
+            'trim_out' => 'float',
+            'source_duration' => 'float',
+            'clip_duration' => 'float',
             'volume' => 'float',
         ];
     }

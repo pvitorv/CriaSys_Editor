@@ -14,6 +14,8 @@ class Narration extends Model
         'full_script',
         'audio_path',
         'duration_seconds',
+        'trim_in',
+        'trim_out',
         'segments',
         'status',
     ];
@@ -23,6 +25,8 @@ class Narration extends Model
         return [
             'segments' => 'array',
             'duration_seconds' => 'float',
+            'trim_in' => 'float',
+            'trim_out' => 'float',
         ];
     }
 
