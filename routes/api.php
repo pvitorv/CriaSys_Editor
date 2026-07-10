@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\RenderController;
 use App\Http\Controllers\Api\SlideController;
 use App\Http\Controllers\Api\SoundEffectController;
 use App\Http\Controllers\Api\ThumbnailController;
+use App\Http\Controllers\Api\ThumbnailFrameController;
 use App\Http\Controllers\Api\TtsController;
 use Illuminate\Support\Facades\Route;
 
@@ -78,8 +79,17 @@ Route::post('projects/{project}/narration/sync', [NarrationController::class, 's
 Route::put('projects/{project}/narration', [NarrationController::class, 'update']);
 
 Route::get('thumbnail/templates', [ThumbnailController::class, 'templates']);
+Route::get('thumbnail/frames/library', [ThumbnailFrameController::class, 'library']);
+Route::post('thumbnail/frames/categories', [ThumbnailFrameController::class, 'storeCategory']);
+Route::delete('thumbnail/frames/categories/{slug}', [ThumbnailFrameController::class, 'destroyCategory']);
+Route::post('thumbnail/frames/categories/{slug}/restore', [ThumbnailFrameController::class, 'restoreCategory']);
+Route::post('thumbnail/frames', [ThumbnailFrameController::class, 'store']);
+Route::delete('thumbnail/frames/{slug}', [ThumbnailFrameController::class, 'destroy']);
+Route::post('thumbnail/frames/{slug}/restore', [ThumbnailFrameController::class, 'restore']);
+Route::get('thumbnail/frames/file/{filename}', [ThumbnailFrameController::class, 'serveFile']);
 Route::get('projects/{project}/thumbnail', [ThumbnailController::class, 'show']);
 Route::put('projects/{project}/thumbnail', [ThumbnailController::class, 'update']);
+Route::post('projects/{project}/thumbnail/upload', [ThumbnailController::class, 'uploadImage']);
 Route::post('projects/{project}/thumbnail/generate', [ThumbnailController::class, 'generate']);
 
 Route::get('projects/{project}/render-jobs', [RenderController::class, 'index']);

@@ -66,8 +66,9 @@ class FfmpegRenderService
 
         $thumbPreset = ExportPreset::where('slug', 'thumbnail')->first() ?? $preset;
         $outputPath = $this->storage->thumbPath($project);
+        $platform = config('thumbnail_templates.default_platform', 'youtube_landscape');
 
-        app(ThumbnailRenderer::class)->render($project, $slide, $thumbPreset, $outputPath);
+        app(ThumbnailRenderer::class)->renderForPlatform($project, $platform, $slide, $outputPath);
 
         return $outputPath;
     }

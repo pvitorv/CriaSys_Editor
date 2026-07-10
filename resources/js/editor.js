@@ -115,28 +115,265 @@ window.editorApp = function (projectId, projectMeta = {}) {
         timelineCutMarkOut: null,
         timelineSelectedClipLabel: '',
         thumbnailTemplates: [],
+        thumbnailPlatforms: [],
+        thumbnailFrames: [],
+        thumbnailFrameCategories: {},
+        selectedFrameCategory: 'all',
+        thumbnailFrameSearch: '',
+        frameManageMode: false,
+        frameLibraryHiddenFrames: [],
+        frameLibraryHiddenCategories: [],
+        frameCustomCategories: {},
+        newFrameCollectionName: '',
+        newCustomFrameName: '',
+        newCustomFrameCategory: 'personalizado',
+        thumbnailPreviewPanY: 0,
         thumbnailFonts: [],
+        selectedThumbnailPlatform: 'youtube_landscape',
+        thumbnailSettingsByPlatform: {},
+        thumbnailPreviewUrls: {},
         thumbnailSettings: {
-            template: 'classic',
+            template: 'youtube_pro',
+            platform_preset: 'youtube_landscape',
+            image_source: 'slide',
+            custom_image_path: null,
             slide_index: 0,
             title_text: '',
             subtitle_text: '',
             title_color: '#ffffff',
-            subtitle_color: '#e5e7eb',
-            accent_color: '#8b5cf6',
-            background_color: '#18181b',
-            font_family: 'arial',
-            title_size: 64,
-            subtitle_size: 32,
+            subtitle_color: '#f4f4f5',
+            accent_color: '#ef4444',
+            accent_opacity: 0,
+            background_color: '#09090b',
+            background_opacity: 0,
+            font_family: 'impact',
+            title_size: 72,
+            subtitle_size: 34,
             brightness: 0,
-            contrast: 0,
-            overlay_opacity: 45,
-            text_align: 'center',
-            vertical_align: 'center',
+            contrast: 5,
+            overlay_opacity: 50,
+            text_align: 'left',
+            vertical_align: 'bottom',
+            frame_slug: 'none',
+            frame_color: '#ffffff',
+            frame_secondary_color: '#ef4444',
+            frame_width: 28,
+            frame_opacity: 100,
+            frame_inset: 12,
         },
         thumbnailPreviewUrl: null,
         thumbnailSaving: false,
         thumbnailPreviewTimeout: null,
+        thumbnailTextPreviewTimeout: null,
+        thumbnailTextEditing: false,
+
+        get thumbnailPreviewAspectClass() {
+            const platform = this.thumbnailPlatforms.find((p) => p.slug === this.selectedThumbnailPlatform);
+            if (!platform) return 'aspect-video w-full';
+            if (platform.aspect === '9:16') return 'aspect-[9/16] w-full';
+            if (platform.aspect === '1:1') return 'aspect-square w-full max-w-[360px] mx-auto';
+
+            return 'aspect-video w-full';
+        },
+
+        isCustomFrameCategory(slug) {
+            return Boolean(slug && String(slug).startsWith('custom_cat_'));
+        },
+
+        canDeleteFrameCategory(slug) {
+            if (!slug || slug === 'all' || slug === 'basico' || slug === 'personalizado') {
+                return false;
+            }
+
+            return this.isCustomFrameCategory(slug) || this.frameManageMode;
+        },
+
+        frameCategoryLabel(slug) {
+            if (this.frameCustomCategories[slug]?.label) {
+                return this.frameCustomCategories[slug].label;
+            }
+
+            return this.thumbnailFrameCategories[slug] || slug;
+        },
+
+        get filteredThumbnailFrames() {
+            let list = this.thumbnailFrames;
+
+            if (this.selectedFrameCategory !== 'all') {
+                list = list.filter((f) => f.category === this.selectedFrameCategory);
+            }
+
+            const q = (this.thumbnailFrameSearch || '').trim().toLowerCase();
+            if (q) {
+                list = list.filter(
+                    (f) =>
+                        (f.name || '').toLowerCase().includes(q)
+                        || (f.description || '').toLowerCase().includes(q)
+                        || (f.category_label || '').toLowerCase().includes(q)
+                        || (f.creator || '').toLowerCase().includes(q)
+                );
+            }
+
+            return list;
+        },
+
+        get thumbnailFontGroups() {
+            const groups = {};
+            this.thumbnailFonts.forEach((font) => {
+                const name = font.group || 'Outras';
+                if (!groups[name]) {
+                    groups[name] = [];
+                }
+                groups[name].push(font);
+            });
+
+            const order = ['Destaque', 'Sans-serif', 'Serif', 'Pop & criativo', 'Tech & código', 'Outras'];
+
+            return order
+                .filter((name) => groups[name]?.length)
+                .concat(Object.keys(groups).filter((k) => !order.includes(k)))
+                .map((name) => ({ name, fonts: groups[name] }));
+        },
+
+        framePreviewStyle(frame) {
+            if (frame?.type === 'overlay_image' && frame?.preview_url) {
+                return `background-image: url('${frame.preview_url}'); background-size: contain; background-repeat: no-repeat; background-position: center; background-color: #18181b`;
+            }
+
+            const primary = frame?.default_color || this.thumbnailSettings.frame_color || '#ffffff';
+            const secondary = this.thumbnailSettings.frame_secondary_color || '#ef4444';
+            const style = frame?.style || 'solid';
+            const slug = frame?.slug || 'none';
+
+            if (slug === 'none') {
+                return 'border: 1px dashed #52525b; background: linear-gradient(135deg, #27272a 25%, #18181b 25%, #18181b 50%, #27272a 50%, #27272a 75%, #18181b 75%); background-size: 8px 8px';
+            }
+
+            const byStyle = {
+                solid: `border: ${style === 'solid' ? '3px' : '2px'} solid ${primary}`,
+                double: `border: 3px double ${primary}`,
+                triple: `border: 2px solid ${primary}; outline: 2px solid ${secondary}; outline-offset: 2px`,
+                dashed: `border: 2px dashed ${primary}`,
+                dotted: `border: 3px dotted ${primary}`,
+                inset_mat: `box-shadow: inset 0 0 0 12px ${primary}33; border: 2px solid ${primary}`,
+                rounded: `border: 2px solid ${primary}; border-radius: 12px`,
+                rounded_thick: `border: 5px solid ${primary}; border-radius: 16px`,
+                pill_inset: `border: 3px solid ${primary}; border-radius: 999px`,
+                offset_shadow: `border: 2px solid ${primary}; box-shadow: 4px 4px 0 ${secondary}`,
+                side_bars: `border-left: 8px solid ${primary}; border-right: 8px solid ${secondary}`,
+                top_bottom_bars: `border-top: 6px solid ${primary}; border-bottom: 6px solid ${secondary}`,
+                gradient_border: `border: 3px solid transparent; background: linear-gradient(#18181b,#18181b) padding-box, linear-gradient(135deg,${primary},${secondary}) border-box`,
+                split_duotone: `border: 3px solid ${primary}; background: linear-gradient(180deg, ${primary}22 50%, ${secondary}22 50%)`,
+                letterbox: 'border-top: 14px solid #000; border-bottom: 14px solid #000',
+                film_strip: 'border-top: 10px solid #333; border-bottom: 10px solid #333; background-image: radial-gradient(circle, #111 30%, transparent 30%); background-size: 12px 10px; background-position: 0 0, 0 100%',
+                broadcast: 'border-top: 8px solid #1e1e28; border-bottom: 8px solid #1e1e28; box-shadow: inset 0 0 0 2px #ef4444',
+                viewfinder: `box-shadow: inset 0 0 0 1px ${primary}88; border: 2px solid ${primary}44`,
+                rec_dot: `border: 2px solid ${primary}; box-shadow: inset 12px 12px 0 -8px #dc2626`,
+                scope_bars: 'border-top: 16px solid #000; border-bottom: 16px solid #000',
+                polaroid: 'border: 6px solid #fafaf9; border-bottom-width: 22px',
+                ornate_corners: `border: 2px solid ${primary}; box-shadow: inset 8px 8px 0 -6px ${primary}, inset -8px -8px 0 -6px ${primary}`,
+                ticket: `border: 3px dashed ${primary}`,
+                scotch_tape: 'border: 2px solid #d4d4d8; box-shadow: 8px -4px 0 #f5f0dc88',
+                newspaper: 'border: 2px solid #404040; border-top-width: 6px',
+                vignette_warm: 'box-shadow: inset 0 0 24px 8px #78350f88',
+                neon_glow: `border: 2px solid ${primary}; box-shadow: 0 0 10px ${primary}, inset 0 0 6px ${primary}44`,
+                neon_double: `border: 2px solid ${primary}; box-shadow: 0 0 8px ${primary}, 0 0 0 3px ${secondary}`,
+                cyber_grid: `background-image: linear-gradient(${primary}33 1px, transparent 1px), linear-gradient(90deg, ${primary}33 1px, transparent 1px); background-size: 10px 10px; border: 1px solid ${primary}`,
+                rgb_segments: 'border: 2px solid; border-image: linear-gradient(90deg,#ff0050,#00ff88,#0088ff) 1',
+                pulse_ring: `border: 2px solid ${primary}; outline: 2px solid ${secondary}66; outline-offset: 3px`,
+                gold_double: 'border: 3px solid #d4af37; box-shadow: inset 0 0 0 1px #fff8dc',
+                gold_ornate: 'border: 3px solid #c9a227; box-shadow: inset 0 0 0 1px #fde68a',
+                chrome: 'border: 3px solid; border-image: linear-gradient(135deg,#e5e5e5,#888,#e5e5e5) 1',
+                marble_mat: 'border: 3px solid #d4d4d8; background: linear-gradient(135deg,#fafafa,#e5e5e5)',
+                luxury_inset: `border: 2px solid ${primary}; box-shadow: inset 0 0 20px #00000088`,
+                ig_gradient_ring: 'border: 3px solid transparent; background: linear-gradient(#18181b,#18181b) padding-box, linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888) border-box',
+                tiktok_offset: `border: 2px solid ${primary}; box-shadow: 3px 3px 0 ${secondary}`,
+                yt_accent: `border: 2px solid #fff; border-bottom: 5px solid ${primary}`,
+                stories_gradient: 'border: 3px solid transparent; background: linear-gradient(#18181b,#18181b) padding-box, linear-gradient(45deg,#833ab4,#fd1d1d,#fcb045) border-box; border-radius: 12px',
+                safe_zone: `border: 2px dashed ${primary}88`,
+                corner_brackets: `box-shadow: inset 10px 10px 0 -8px ${primary}, inset -10px -10px 0 -8px ${primary}`,
+                crosshair: `background: radial-gradient(circle, transparent 40%, ${primary}22 41%, transparent 42%)`,
+                scanlines: 'background: repeating-linear-gradient(0deg, transparent, transparent 2px, #00000044 2px, #00000044 4px)',
+                circuit_corners: `border: 1px solid ${primary}66; box-shadow: inset 0 0 0 2px ${secondary}44`,
+                data_hud: `border: 1px solid ${primary}; box-shadow: inset 0 0 0 1px ${primary}44`,
+                diagonal_stripes: `background: repeating-linear-gradient(45deg, ${primary}33, ${primary}33 4px, transparent 4px, transparent 8px); border: 2px solid ${secondary}`,
+                zigzag: `border-bottom: 4px solid ${primary}`,
+                star_corners: `border: 2px solid ${primary}`,
+                diamond_corners: `border: 2px solid ${primary}`,
+                brush_edges: `border-top: 4px solid ${primary}; border-bottom: 4px solid ${secondary}`,
+                torn_paper: 'border-top: 3px wavy #faf8f0; border-bottom: 3px wavy #faf8f0',
+                comic: 'border: 5px solid #000',
+                rainbow: 'border: 3px solid; border-image: linear-gradient(90deg,red,orange,yellow,green,blue,violet) 1',
+                magazine_bleed: `border-left: 5px solid ${primary}`,
+                headline_bar: `border-top: 10px solid ${primary}; border-bottom: 2px solid ${secondary}`,
+                column_gutter: `border: 2px solid ${primary}; background: linear-gradient(90deg, transparent 32%, ${primary}22 33%, transparent 34%, transparent 65%, ${primary}22 66%, transparent 67%)`,
+                photo_credit: `border: 2px solid ${primary}; box-shadow: inset -20px -8px 0 -4px #00000066`,
+                gallery_white: 'border: 8px solid #fff; box-shadow: inset 0 0 0 1px #d4d4d8',
+                beveled_3d: `border: 3px solid ${primary}; box-shadow: inset 2px 2px 0 #ffffff44, inset -2px -2px 0 #00000044`,
+                depth_shadow: `border: 2px solid ${primary}; box-shadow: 4px 4px 0 #00000088, 8px 8px 0 #00000044`,
+                thin_hairline: `border: 1px solid ${primary}`,
+                corner_dots: `border: 1px solid ${primary}; background: radial-gradient(circle at 8px 8px, ${secondary} 3px, transparent 3px)`,
+                spotlight_vignette: `box-shadow: inset 0 0 30px 10px ${primary}66`,
+                glass_border: `border: 2px solid ${primary}66; border-radius: 10px; backdrop-filter: blur(4px); background: #ffffff11`,
+                nested_frame: `border: 3px solid ${primary}; outline: 2px solid ${secondary}; outline-offset: 4px`,
+                glow_soft: `border: 1px solid ${primary}; box-shadow: 0 0 16px ${primary}88`,
+                gradient_vignette: `box-shadow: inset 0 0 30px 8px ${primary}55, inset 0 0 50px 20px ${secondary}33`,
+                holographic_border: 'border: 3px solid; border-image: linear-gradient(90deg,#ff0080,#00c8ff,#ffcc00,#8000ff) 1',
+                dual_corner_accent: `border: 1px solid ${primary}; background: linear-gradient(135deg, ${secondary}44 8px, transparent 8px)`,
+                cinematic_ultra: 'border-top: 18px solid #000; border-bottom: 18px solid #000',
+                monitor_bezel: 'border: 10px solid #1e1e23; box-shadow: inset 0 -6px 0 -4px #3cb371',
+                breaking_news: `border-top: 12px solid ${primary}; border-bottom: 2px solid ${secondary}`,
+                vhs_retro: 'border: 2px solid #888; background: repeating-linear-gradient(0deg, transparent, transparent 2px, #00000033 2px, #00000033 3px)',
+                stamp_seal: `border: 2px solid ${primary}; background: radial-gradient(circle at 90% 10%, ${primary}44 0, transparent 30%)`,
+                glitch_chroma: `border: 2px solid ${primary}; box-shadow: -2px 0 0 #00ffff88, 2px 0 0 #ff00ff88`,
+                corporate_accent: `border: 1px solid ${primary}; border-left: 4px solid ${secondary}; border-bottom: 4px solid ${primary}`,
+                sport_diagonal: `background: linear-gradient(135deg, ${primary} 0, ${primary} 12%, transparent 12%); border: 2px solid ${primary}`,
+                ribbon_corner: `border: 1px solid #ccc; background: linear-gradient(135deg, ${primary} 0, ${primary} 30%, transparent 30%)`,
+                barcode_strip: `border: 1px solid ${primary}; background: repeating-linear-gradient(90deg, ${primary} 0 1px, transparent 1px 3px) bottom / 40% 8px no-repeat`,
+                podcast_wave: `border: 2px solid ${primary}; border-radius: 8px; background: linear-gradient(to top, ${primary}44 0, transparent 20%)`,
+                confetti_dots: `border: 1px solid #fff3; background: radial-gradient(circle, #ef4444 2px, transparent 2px) 4px 4px / 12px 12px`,
+                halftone_edge: `border: 2px solid ${primary}; background: radial-gradient(circle, ${primary} 1.5px, transparent 1.5px) 0 0 / 6px 6px`,
+                frost_ice: `border: 2px solid ${primary}; box-shadow: inset 0 8px 12px -6px #e0f2fe88`,
+                fire_warm: `border: 2px solid #ff8c00; box-shadow: 0 0 12px #ff450088, inset 0 0 8px #ff660044`,
+                comic_yellow_red: 'border: 6px solid #000; box-shadow: inset 0 0 0 3px #fbbf24; border-bottom: 8px solid #dc2626',
+                ray_burst: `background: repeating-conic-gradient(from -90deg at 50% 50%, ${primary}cc 0deg 6deg, #ffffffcc 6deg 12deg, ${secondary}aa 12deg 18deg, transparent 18deg 24deg); border: 6px solid #000`,
+                vs_diagonal_split: `background: linear-gradient(135deg, ${primary}88 50%, ${secondary}88 50%); border: 3px solid #fff`,
+                speech_bubble_corner: `border: 5px solid #000; border-radius: 40% 40% 40% 10%; background: radial-gradient(ellipse at 20% 20%, #fff 30%, transparent 31%)`,
+                comic_bubble_round: 'border: 5px solid #000; background: radial-gradient(ellipse at 18% 22%, #fff 35%, transparent 36%)',
+                comic_bubble_shout: 'border: 5px solid #000; background: radial-gradient(circle at 28% 22%, #fff 22%, transparent 23%), repeating-conic-gradient(from 0deg at 28% 22%, #fff 0 8deg, transparent 8deg 16deg)',
+                comic_bubble_thought: 'border: 4px solid #000; background: radial-gradient(circle at 20% 18%, #fff 18%, transparent 19%), radial-gradient(circle at 14% 28%, #fff 8%, transparent 9%)',
+                manga_bubble: 'border: 6px solid #000; background: radial-gradient(ellipse at 70% 18%, #fff 28%, transparent 29%)',
+                manga_scream: 'border: 7px solid #000; background: radial-gradient(circle at 72% 28%, #fff 20%, transparent 21%), repeating-conic-gradient(from 0deg at 72% 28%, #fff 0 6deg, transparent 6deg 12deg)',
+                comic_bubble_double: 'border: 5px solid #000; background: radial-gradient(ellipse at 15% 20%, #fff 22%, transparent 23%), radial-gradient(ellipse at 65% 28%, #fff 24%, transparent 25%)',
+                comic_narrator_box: 'border: 5px solid #000; border-top: 16px solid #fff; box-shadow: inset 0 12px 0 #fff',
+                comic_panel_bubbles: 'border: 6px solid #000; background: linear-gradient(#0002 1px, transparent 1px), linear-gradient(90deg, #0002 1px, transparent 1px); background-size: 50% 50%',
+                ndn_navy_brand: `border: 1px solid #fff3; border-bottom: 10px solid ${primary}; box-shadow: inset 4px 0 0 ${secondary}`,
+                ndn_growth_stripe: `border-left: 4px solid ${secondary}; border-bottom: 6px solid ${primary}`,
+                ide_titlebar: 'border-top: 14px solid #27272a; border: 2px solid #38bdf8; box-shadow: inset 16px 6px 0 -10px #ff5f57, inset 32px 6px 0 -10px #febc2e',
+                cftv_orange_brackets: `border: 2px solid ${primary}; box-shadow: inset 10px 10px 0 -8px ${primary}, inset -10px -10px 0 -8px ${secondary}`,
+                horror_crimson: `box-shadow: inset 0 0 40px 15px #450a0a; border: 3px solid ${primary}`,
+                chalkboard_edu: 'border: 8px solid #78350f; box-shadow: inset 0 0 0 4px #166534',
+            };
+
+            return byStyle[style] || `border: 3px solid ${primary}; outline: 1px solid ${secondary}40`;
+        },
+
+        get filteredThumbnailTemplates() {
+            const platform = this.thumbnailPlatforms.find((p) => p.slug === this.selectedThumbnailPlatform);
+            const isVertical = platform?.aspect === '9:16';
+            const isSquare = platform?.aspect === '1:1';
+
+            return this.thumbnailTemplates.filter((tpl) => {
+                if (isVertical) {
+                    return tpl.category === 'vertical' || tpl.category === 'profissional' || tpl.category === 'básico';
+                }
+                if (isSquare) {
+                    return tpl.category === 'quadrado' || tpl.category === 'profissional' || tpl.category === 'básico';
+                }
+
+                return tpl.category !== 'vertical' && tpl.category !== 'quadrado';
+            });
+        },
 
         get previewSlide() {
             if (this.previewPlaying && this.slides.length) {
@@ -246,9 +483,9 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 this.loadProjectCredits(),
                 this.loadPlatformDescriptions(),
                 this.loadStockLicenses(),
-                this.loadThumbnailCatalog(),
-                this.loadThumbnailSettings(),
             ]);
+            await this.loadThumbnailCatalog();
+            await this.loadThumbnailSettings();
             await this.loadVoices();
             await this.syncPublish();
             this.previewMixer = new PreviewAudioMixer();
@@ -318,6 +555,11 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         handleShortcut(e) {
+            const tag = e.target?.tagName?.toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) {
+                return;
+            }
+
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
                 this.saveSlide();
@@ -1805,14 +2047,104 @@ window.editorApp = function (projectId, projectMeta = {}) {
             await this.generateThumbnailFinal(false);
         },
 
+        switchThumbnailPlatform(slug) {
+            this.thumbnailSettingsByPlatform[this.selectedThumbnailPlatform] = { ...this.thumbnailSettings };
+            this.selectedThumbnailPlatform = slug;
+            const saved = this.thumbnailSettingsByPlatform[slug];
+            this.thumbnailSettings = {
+                ...this.thumbnailSettings,
+                ...(saved || {}),
+                platform_preset: slug,
+            };
+            this.thumbnailPreviewUrl = this.thumbnailPreviewUrls[slug] || null;
+            clearTimeout(this.thumbnailPreviewTimeout);
+            clearTimeout(this.thumbnailTextPreviewTimeout);
+            this.thumbnailTextEditing = false;
+            this.resetThumbnailPreviewScroll();
+        },
+
+        resetThumbnailPreviewScroll() {
+            this.thumbnailPreviewPanY = 0;
+            this.$nextTick(() => {
+                const el = this.$refs.thumbnailPreviewScroll;
+                if (el) {
+                    el.scrollTop = 0;
+                }
+            });
+        },
+
+        syncThumbnailPreviewPanFromScroll() {
+            const el = this.$refs.thumbnailPreviewScroll;
+            if (!el) {
+                return;
+            }
+            const max = el.scrollHeight - el.clientHeight;
+            if (max <= 0) {
+                this.thumbnailPreviewPanY = 0;
+                return;
+            }
+            this.thumbnailPreviewPanY = Math.round((el.scrollTop / max) * 100);
+        },
+
+        onThumbnailPreviewPanInput() {
+            const el = this.$refs.thumbnailPreviewScroll;
+            if (!el) {
+                return;
+            }
+            const max = el.scrollHeight - el.clientHeight;
+            if (max <= 0) {
+                return;
+            }
+            el.scrollTop = (this.thumbnailPreviewPanY / 100) * max;
+        },
+
+        /** Mescla settings do servidor sem sobrescrever texto que o usuário está editando. */
+        applyThumbnailSettingsPatch(patch, { includeText = false } = {}) {
+            if (!patch || typeof patch !== 'object') {
+                return;
+            }
+
+            const textKeys = ['title_text', 'subtitle_text'];
+
+            Object.keys(patch).forEach((key) => {
+                if (!includeText && textKeys.includes(key)) {
+                    return;
+                }
+                this.thumbnailSettings[key] = patch[key];
+            });
+        },
+
+        syncThumbnailPlatformCache() {
+            this.thumbnailSettingsByPlatform[this.selectedThumbnailPlatform] = { ...this.thumbnailSettings };
+        },
+
+        onThumbnailTextInput() {
+            this.thumbnailTextEditing = true;
+            clearTimeout(this.thumbnailTextPreviewTimeout);
+            this.thumbnailTextPreviewTimeout = setTimeout(() => {
+                this.thumbnailTextEditing = false;
+                this.saveAndPreviewThumbnail();
+            }, 1400);
+        },
+
+        flushThumbnailTextSave() {
+            clearTimeout(this.thumbnailTextPreviewTimeout);
+            this.thumbnailTextEditing = false;
+            this.saveAndPreviewThumbnail();
+        },
+
         async loadThumbnailCatalog() {
             try {
                 const { data } = await api.get('/thumbnail/templates');
                 this.thumbnailTemplates = data.templates || [];
-                this.thumbnailFonts = data.fonts || [];
-                if (data.defaults) {
-                    this.thumbnailSettings = { ...this.thumbnailSettings, ...data.defaults };
+                this.thumbnailPlatforms = data.platforms || [];
+                this.thumbnailFrames = data.frames || [];
+                this.thumbnailFrameCategories = data.frame_categories || {};
+                if (data.frame_library) {
+                    this.frameCustomCategories = data.frame_library.custom_categories || {};
                 }
+                this.thumbnailFonts = data.fonts || [];
+                await this.loadFrameLibraryDetails();
             } catch (_) {
                 /* opcional */
             }
@@ -1820,8 +2152,16 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
         async loadThumbnailSettings() {
             try {
-                const { data } = await api.get(`/projects/${this.projectId}/thumbnail`);
-                this.thumbnailSettings = { ...this.thumbnailSettings, ...data };
+                const { data } = await api.get(`/projects/${this.projectId}/thumbnail`, {
+                    params: { platform: this.selectedThumbnailPlatform },
+                });
+                this.thumbnailSettingsByPlatform = data.all || {};
+                if (data.platform) {
+                    this.selectedThumbnailPlatform = data.platform;
+                }
+                if (data.settings) {
+                    this.thumbnailSettings = { ...this.thumbnailSettings, ...data.settings };
+                }
             } catch (_) {
                 /* primeiro uso */
             }
@@ -1829,14 +2169,24 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
         scheduleThumbnailPreview() {
             clearTimeout(this.thumbnailPreviewTimeout);
-            this.thumbnailPreviewTimeout = setTimeout(() => this.saveAndPreviewThumbnail(), 600);
+            this.thumbnailPreviewTimeout = setTimeout(() => this.saveAndPreviewThumbnail(), 700);
         },
 
         async saveThumbnailSettings() {
             this.thumbnailSaving = true;
             try {
-                const { data } = await api.put(`/projects/${this.projectId}/thumbnail`, this.thumbnailSettings);
-                this.thumbnailSettings = { ...this.thumbnailSettings, ...data };
+                const slideIndex = this.resolveThumbnailSlideIndex();
+                const payload = {
+                    ...this.thumbnailSettings,
+                    platform_preset: this.selectedThumbnailPlatform,
+                    slide_index: slideIndex,
+                    slide_id: this.thumbnailSettings.image_source === 'slide'
+                        ? (this.slides[slideIndex]?.id ?? null)
+                        : null,
+                };
+                const { data } = await api.put(`/projects/${this.projectId}/thumbnail`, payload);
+                this.applyThumbnailSettingsPatch(data.settings);
+                this.syncThumbnailPlatformCache();
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao salvar thumbnail';
             } finally {
@@ -1844,29 +2194,345 @@ window.editorApp = function (projectId, projectMeta = {}) {
             }
         },
 
-        async saveAndPreviewThumbnail() {
-            await this.saveThumbnailSettings();
-            await this.generateThumbnailFinal(true);
+        async uploadThumbnailImage(event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+
+            const form = new FormData();
+            form.append('image', file);
+            form.append('platform_preset', this.selectedThumbnailPlatform);
+
+            try {
+                const { data } = await api.post(`/projects/${this.projectId}/thumbnail/upload`, form, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                });
+                if (data.settings) {
+                    this.applyThumbnailSettingsPatch(data.settings, { includeText: true });
+                }
+                this.syncThumbnailPlatformCache();
+                this.message = 'Imagem de capa importada';
+                await this.saveAndPreviewThumbnail();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao importar imagem';
+            } finally {
+                event.target.value = '';
+            }
         },
 
-        async generateThumbnailFinal(preview = false) {
+        onThumbnailImageSourceChange() {
+            if (this.thumbnailSettings.image_source !== 'upload') {
+                this.scheduleThumbnailPreview();
+            }
+        },
+
+        resolveThumbnailSlideIndex() {
+            const index = Number(this.thumbnailSettings.slide_index);
+            if (!Number.isInteger(index) || index < 0) {
+                return 0;
+            }
+
+            return Math.min(index, Math.max(0, this.slides.length - 1));
+        },
+
+        resolveThumbnailSlideId() {
+            const index = this.resolveThumbnailSlideIndex();
+            return this.slides[index]?.id ?? null;
+        },
+
+        onThumbnailSlideChange() {
+            this.thumbnailSettings.slide_index = this.resolveThumbnailSlideIndex();
+            this.thumbnailSettings.image_source = 'slide';
+            this.thumbnailSettings.custom_image_path = null;
+            this.syncThumbnailPlatformCache();
+            clearTimeout(this.thumbnailPreviewTimeout);
+            this.saveAndPreviewThumbnail();
+        },
+
+        buildThumbnailRenderPayload(preview = false) {
+            const slideIndex = this.resolveThumbnailSlideIndex();
+            const useSlide = this.thumbnailSettings.image_source === 'slide';
+
+            return {
+                platform_preset: this.selectedThumbnailPlatform,
+                preview,
+                template: this.thumbnailSettings.template,
+                image_source: this.thumbnailSettings.image_source,
+                custom_image_path: this.thumbnailSettings.custom_image_path,
+                slide_index: slideIndex,
+                slide_id: useSlide ? (this.slides[slideIndex]?.id ?? null) : null,
+                title_text: this.thumbnailSettings.title_text,
+                subtitle_text: this.thumbnailSettings.subtitle_text,
+                title_color: this.thumbnailSettings.title_color,
+                subtitle_color: this.thumbnailSettings.subtitle_color,
+                accent_color: this.thumbnailSettings.accent_color,
+                accent_opacity: this.thumbnailSettings.accent_opacity,
+                background_color: this.thumbnailSettings.background_color,
+                background_opacity: this.thumbnailSettings.background_opacity,
+                font_family: this.thumbnailSettings.font_family,
+                title_size: this.thumbnailSettings.title_size,
+                subtitle_size: this.thumbnailSettings.subtitle_size,
+                brightness: this.thumbnailSettings.brightness,
+                contrast: this.thumbnailSettings.contrast,
+                overlay_opacity: this.thumbnailSettings.overlay_opacity,
+                text_align: this.thumbnailSettings.text_align,
+                vertical_align: this.thumbnailSettings.vertical_align,
+                frame_slug: this.thumbnailSettings.frame_slug,
+                frame_color: this.thumbnailSettings.frame_color,
+                frame_secondary_color: this.thumbnailSettings.frame_secondary_color,
+                frame_width: this.thumbnailSettings.frame_width,
+                frame_opacity: this.thumbnailSettings.frame_opacity,
+                frame_inset: this.thumbnailSettings.frame_inset,
+            };
+        },
+
+        async saveAndPreviewThumbnail() {
+            await this.saveThumbnailSettings();
+            await this.generateThumbnailFinal(true, { skipSave: true });
+        },
+
+        async generateThumbnailFinal(preview = false, { skipSave = false } = {}) {
             try {
-                const { data } = await api.post(`/projects/${this.projectId}/thumbnail/generate`, {
-                    slide_index: this.thumbnailSettings.slide_index,
-                    preview,
-                });
+                if (!skipSave) {
+                    await this.saveThumbnailSettings();
+                }
+                const { data } = await api.post(
+                    `/projects/${this.projectId}/thumbnail/generate`,
+                    this.buildThumbnailRenderPayload(preview)
+                );
                 if (data.url) {
                     this.thumbnailPreviewUrl = data.url;
+                    this.thumbnailPreviewUrls[this.selectedThumbnailPlatform] = data.url;
                 }
-                this.message = preview ? 'Preview da thumbnail atualizado' : 'Thumbnail gerada';
+                if (!preview) {
+                    const platform = this.thumbnailPlatforms.find((p) => p.slug === this.selectedThumbnailPlatform);
+                    this.message = `Capa ${platform?.name || ''} gerada`;
+                }
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao gerar thumbnail';
             }
         },
 
+        async generateAllPlatformThumbnails() {
+            try {
+                await this.saveThumbnailSettings();
+                const { data } = await api.post(`/projects/${this.projectId}/thumbnail/generate`, {
+                    all_platforms: true,
+                });
+                (data.generated || []).forEach((item) => {
+                    this.thumbnailPreviewUrls[item.platform] = item.url;
+                });
+                this.thumbnailPreviewUrl = this.thumbnailPreviewUrls[this.selectedThumbnailPlatform] || this.thumbnailPreviewUrl;
+                this.message = `${data.count} capa(s) gerada(s) para as plataformas`;
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao gerar capas';
+            }
+        },
+
+        setThumbnailTextAlign(value) {
+            this.thumbnailSettings.text_align = value;
+            this.syncThumbnailPlatformCache();
+            this.scheduleThumbnailPreview();
+        },
+
+        setThumbnailVerticalAlign(value) {
+            this.thumbnailSettings.vertical_align = value;
+            this.syncThumbnailPlatformCache();
+            this.scheduleThumbnailPreview();
+        },
+
+        disableThumbnailAccent() {
+            this.thumbnailSettings.accent_opacity = 0;
+            this.syncThumbnailPlatformCache();
+            this.scheduleThumbnailPreview();
+        },
+
+        disableThumbnailBackground() {
+            this.thumbnailSettings.background_opacity = 0;
+            this.syncThumbnailPlatformCache();
+            this.scheduleThumbnailPreview();
+        },
+
+        enableThumbnailAccent() {
+            if ((this.thumbnailSettings.accent_opacity ?? 0) <= 0) {
+                this.thumbnailSettings.accent_opacity = 70;
+            }
+            this.syncThumbnailPlatformCache();
+            this.scheduleThumbnailPreview();
+        },
+
+        enableThumbnailBackground() {
+            if ((this.thumbnailSettings.background_opacity ?? 0) <= 0) {
+                this.thumbnailSettings.background_opacity = 45;
+            }
+            this.syncThumbnailPlatformCache();
+            this.scheduleThumbnailPreview();
+        },
+
         selectThumbnailTemplate(slug) {
             this.thumbnailSettings.template = slug;
+            this.syncThumbnailPlatformCache();
             this.scheduleThumbnailPreview();
+        },
+
+        selectThumbnailFrame(slug) {
+            this.thumbnailSettings.frame_slug = slug;
+            this.syncThumbnailPlatformCache();
+            const frame = this.thumbnailFrames.find((f) => f.slug === slug);
+            if (frame?.default_color) {
+                this.thumbnailSettings.frame_color = frame.default_color;
+            }
+            this.scheduleThumbnailPreview();
+        },
+
+        clearThumbnailFrame() {
+            this.thumbnailSettings.frame_slug = 'none';
+            this.scheduleThumbnailPreview();
+        },
+
+        applyFrameCatalog(catalog) {
+            if (!catalog) return;
+            this.thumbnailFrames = catalog.frames || [];
+            this.thumbnailFrameCategories = catalog.categories || {};
+            if (catalog.library) {
+                this.frameCustomCategories = catalog.library.custom_categories || {};
+            }
+        },
+
+        async loadFrameLibraryDetails() {
+            try {
+                const { data } = await api.get('/thumbnail/frames/library');
+                this.applyFrameCatalog(data.catalog);
+                this.frameLibraryHiddenFrames = data.hidden_frames || [];
+                this.frameLibraryHiddenCategories = data.hidden_categories || [];
+                this.frameCustomCategories = data.custom_categories || {};
+            } catch (_) {
+                /* opcional */
+            }
+        },
+
+        async toggleFrameManageMode() {
+            this.frameManageMode = !this.frameManageMode;
+            if (this.frameManageMode) {
+                await this.loadFrameLibraryDetails();
+            }
+        },
+
+        async createFrameCollection() {
+            const label = (this.newFrameCollectionName || '').trim();
+            if (!label) {
+                this.error = 'Informe o nome do conjunto de molduras';
+                return;
+            }
+            try {
+                const { data } = await api.post('/thumbnail/frames/categories', { label });
+                this.applyFrameCatalog(data.catalog);
+                this.newFrameCollectionName = '';
+                this.newCustomFrameCategory = data.slug;
+                this.message = `Conjunto «${label}» criado`;
+                await this.loadFrameLibraryDetails();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao criar conjunto';
+            }
+        },
+
+        async uploadCustomFrame(event) {
+            const file = event?.target?.files?.[0];
+            if (!file) return;
+
+            const name = (this.newCustomFrameName || '').trim() || file.name.replace(/\.[^.]+$/, '');
+            const form = new FormData();
+            form.append('image', file);
+            form.append('name', name);
+            form.append('category', this.newCustomFrameCategory || 'personalizado');
+
+            try {
+                const { data } = await api.post('/thumbnail/frames', form, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                });
+                this.applyFrameCatalog(data.catalog);
+                this.newCustomFrameName = '';
+                this.selectedFrameCategory = data.frame?.category || 'personalizado';
+                this.message = `Moldura «${name}» adicionada às suas molduras`;
+                await this.loadFrameLibraryDetails();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao importar moldura';
+            } finally {
+                if (event?.target) event.target.value = '';
+            }
+        },
+
+        async deleteThumbnailFrame(slug, event) {
+            event?.stopPropagation?.();
+            if (slug === 'none') return;
+            const frame = this.thumbnailFrames.find((f) => f.slug === slug);
+            const label = frame?.name || slug;
+            if (!confirm(`Remover moldura «${label}»?${frame?.is_custom ? '' : ' Ela sairá da sua lista (pode restaurar depois).'}`)) {
+                return;
+            }
+            try {
+                const { data } = await api.delete(`/thumbnail/frames/${encodeURIComponent(slug)}`);
+                this.applyFrameCatalog(data.catalog);
+                if (this.thumbnailSettings.frame_slug === slug) {
+                    this.thumbnailSettings.frame_slug = 'none';
+                    this.scheduleThumbnailPreview();
+                }
+                this.message = 'Moldura removida';
+                await this.loadFrameLibraryDetails();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao remover moldura';
+            }
+        },
+
+        async deleteFrameCategory(slug) {
+            const label = this.frameCategoryLabel(slug);
+            const isCustom = this.isCustomFrameCategory(slug);
+            const msg = isCustom
+                ? `Excluir permanentemente a pasta «${label}» e todas as molduras dentro dela?`
+                : `Ocultar o conjunto «${label}» e suas molduras? (você pode restaurar depois em Gerenciar molduras)`;
+
+            if (!confirm(msg)) {
+                return;
+            }
+            try {
+                const { data } = await api.delete(`/thumbnail/frames/categories/${encodeURIComponent(slug)}`);
+                this.applyFrameCatalog(data.catalog);
+                if (this.selectedFrameCategory === slug) {
+                    this.selectedFrameCategory = 'all';
+                }
+                if (this.newCustomFrameCategory === slug) {
+                    this.newCustomFrameCategory = 'personalizado';
+                }
+                this.message = isCustom ? 'Pasta removida' : 'Conjunto oculto';
+                await this.loadFrameLibraryDetails();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao remover conjunto';
+            }
+        },
+
+        async restoreHiddenFrame(slug) {
+            try {
+                const { data } = await api.post(`/thumbnail/frames/${encodeURIComponent(slug)}/restore`);
+                this.applyFrameCatalog(data.catalog);
+                this.message = 'Moldura restaurada';
+                await this.loadFrameLibraryDetails();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao restaurar moldura';
+            }
+        },
+
+        async restoreHiddenCategory(slug) {
+            try {
+                const { data } = await api.post(`/thumbnail/frames/categories/${encodeURIComponent(slug)}/restore`);
+                this.applyFrameCatalog(data.catalog);
+                this.message = 'Conjunto restaurado';
+                await this.loadFrameLibraryDetails();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao restaurar conjunto';
+            }
+        },
+
+        thumbnailPlatformHint() {
+            return this.thumbnailPlatforms.find((p) => p.slug === this.selectedThumbnailPlatform)?.hint || '';
         },
 
         async exportSubtitles() {

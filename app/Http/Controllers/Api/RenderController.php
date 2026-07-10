@@ -77,20 +77,24 @@ class RenderController extends Controller
     {
         $data = $request->validate([
             'slide_index' => ['nullable', 'integer', 'min:0'],
+            'platform_preset' => ['nullable', 'string'],
         ]);
 
         $project->load('slides');
-        $preset = ExportPreset::where('slug', 'thumbnail')->first()
-            ?? ExportPreset::where('slug', 'youtube_landscape')->firstOrFail();
+        $platform = $data['platform_preset'] ?? config('thumbnail_templates.default_platform');
+        $settings = $renderer->resolveSettings($project, $platform);
+        $slideIndex = $data['slide_index'] ?? $settings['slide_index'] ?? 0;
+        $slide = $project->slides[$slideIndex] ?? $project->slides->first();
+
+        if (! $slide && ($settings['image_source'] ?? 'slide') === 'slide') {
+            return response()->json(['message' => 'Selecione um slide ou envie uma imagem externa.'], 422);
+        }
+
+        $filename = $renderer->outputFilename($platform, false);
+        $path = $storage->thumbPath($project, $filename);
 
         try {
-            $slideIndex = $data['slide_index'] ?? $renderer->resolveSettings($project)['slide_index'] ?? 0;
-            $slide = $project->slides[$slideIndex] ?? $project->slides->first();
-            if (! $slide) {
-                throw new \RuntimeException('Projeto sem slides para gerar thumbnail.');
-            }
-            $path = $storage->thumbPath($project);
-            $renderer->render($project, $slide, $preset, $path);
+            $renderer->renderForPlatform($project, $platform, $slide, $path);
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

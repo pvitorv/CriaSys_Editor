@@ -739,60 +739,398 @@ O narrador continua a história com calma."
 
             {{-- Thumbnail --}}
             <div x-show="activeTab === 'thumbnail'" class="space-y-4">
+                {{-- Plataformas de entrega --}}
+                <div>
+                    <h3 class="text-sm font-medium text-zinc-300 mb-2">Plataforma de entrega</h3>
+                    <p class="text-[11px] text-zinc-500 mb-2">Cada plataforma tem formato e arquivo próprios — a capa acompanha o destino do vídeo.</p>
+                    <div class="flex flex-wrap gap-2">
+                        <template x-for="plat in thumbnailPlatforms" :key="plat.slug">
+                            <button
+                                type="button"
+                                @click="switchThumbnailPlatform(plat.slug)"
+                                class="text-xs px-3 py-2 rounded-lg border transition flex items-center gap-1.5"
+                                :class="selectedThumbnailPlatform === plat.slug ? 'border-violet-500 bg-violet-950/50 text-white' : 'border-zinc-700 bg-zinc-900/60 text-zinc-400 hover:border-zinc-600'"
+                            >
+                                <span x-text="plat.icon"></span>
+                                <span x-text="plat.name"></span>
+                                <span class="text-[10px] opacity-60" x-text="plat.aspect"></span>
+                            </button>
+                        </template>
+                    </div>
+                    <p class="text-[10px] text-zinc-600 mt-2" x-text="thumbnailPlatformHint()"></p>
+                </div>
+
                 <div class="flex flex-wrap items-start gap-6">
-                    <div class="flex-1 min-w-[280px] space-y-4">
+                    <div class="flex-1 min-w-[280px] space-y-4 min-w-0">
+                        {{-- Fonte da imagem --}}
+                        <div class="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3 space-y-3">
+                            <h3 class="text-sm font-medium text-zinc-300">Imagem de fundo</h3>
+                            <div class="flex flex-wrap gap-2">
+                                <button type="button" @click="thumbnailSettings.image_source = 'slide'; onThumbnailImageSourceChange()" class="text-xs px-3 py-1.5 rounded-lg" :class="thumbnailSettings.image_source === 'slide' ? 'bg-violet-700 text-white' : 'bg-zinc-800 text-zinc-400'">Do slide</button>
+                                <button type="button" @click="thumbnailSettings.image_source = 'upload'" class="text-xs px-3 py-1.5 rounded-lg" :class="thumbnailSettings.image_source === 'upload' ? 'bg-violet-700 text-white' : 'bg-zinc-800 text-zinc-400'">Arquivo do PC</button>
+                                <button type="button" @click="thumbnailSettings.image_source = 'solid'; onThumbnailImageSourceChange()" class="text-xs px-3 py-1.5 rounded-lg" :class="thumbnailSettings.image_source === 'solid' ? 'bg-violet-700 text-white' : 'bg-zinc-800 text-zinc-400'">Só cor sólida</button>
+                            </div>
+                            <div x-show="thumbnailSettings.image_source === 'slide'" class="grid grid-cols-1 gap-2">
+                                <label class="text-xs text-zinc-400">
+                                    Slide de origem
+                                    <select x-model.number="thumbnailSettings.slide_index" @change="onThumbnailSlideChange()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                                        <template x-for="(slide, idx) in slides" :key="'th-slide-' + slide.id">
+                                            <option :value="idx" x-text="'Slide ' + (idx + 1) + (slide.video_path ? ' (vídeo)' : slide.image_url ? ' (imagem)' : '')"></option>
+                                        </template>
+                                    </select>
+                                    <p class="text-[10px] text-zinc-600 mt-1">A capa usa o vídeo ou imagem deste slide — igual ao preview do editor.</p>
+                                </label>
+                            </div>
+                            <div x-show="thumbnailSettings.image_source === 'upload'" class="space-y-2">
+                                <label class="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-zinc-700 hover:border-violet-600 p-6 cursor-pointer transition">
+                                    <span class="text-2xl">📁</span>
+                                    <span class="text-xs text-zinc-400 text-center">Clique para importar JPG, PNG ou WebP do seu computador</span>
+                                    <span class="text-[10px] text-zinc-600">Ideal quando a capa não vem do vídeo/slides</span>
+                                    <input type="file" accept="image/jpeg,image/png,image/webp" @change="uploadThumbnailImage($event)" class="hidden">
+                                </label>
+                                <p x-show="thumbnailSettings.custom_image_path" class="text-[10px] text-emerald-400">✓ Imagem externa carregada para esta plataforma</p>
+                            </div>
+                        </div>
+
                         <div>
-                            <h3 class="text-sm font-medium text-zinc-300 mb-2">Modelos</h3>
+                            <h3 class="text-sm font-medium text-zinc-300 mb-2">Modelos profissionais</h3>
                             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                                <template x-for="tpl in thumbnailTemplates" :key="tpl.slug">
+                                <template x-for="tpl in filteredThumbnailTemplates" :key="tpl.slug">
                                     <button
                                         type="button"
                                         @click="selectThumbnailTemplate(tpl.slug)"
-                                        class="rounded-lg border p-3 text-left transition"
-                                        :class="thumbnailSettings.template === tpl.slug ? 'border-violet-500 bg-violet-950/40' : 'border-zinc-700 bg-zinc-900/60 hover:border-zinc-600'"
+                                        class="rounded-lg border p-3 text-left transition relative overflow-hidden"
+                                        :class="thumbnailSettings.template === tpl.slug ? 'border-violet-500 bg-violet-950/40 ring-1 ring-violet-500/50' : 'border-zinc-700 bg-zinc-900/60 hover:border-zinc-600'"
                                     >
-                                        <span class="text-xs font-medium text-zinc-200" x-text="tpl.name"></span>
-                                        <p class="text-[10px] text-zinc-500 mt-1 line-clamp-2" x-text="tpl.description"></p>
+                                        <span class="text-[9px] uppercase tracking-wide text-violet-400/80" x-text="tpl.category"></span>
+                                        <span class="text-xs font-semibold text-zinc-100 block mt-0.5" x-text="tpl.name"></span>
+                                        <p class="text-[10px] text-zinc-500 mt-1 line-clamp-2 leading-snug" x-text="tpl.description"></p>
                                     </button>
                                 </template>
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-2 gap-3">
-                            <label class="text-xs text-zinc-400">
-                                Slide base
-                                <select x-model.number="thumbnailSettings.slide_index" @change="scheduleThumbnailPreview()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
-                                    <template x-for="(slide, idx) in slides" :key="'th-slide-' + slide.id">
-                                        <option :value="idx" x-text="'Slide ' + (idx + 1)"></option>
+                        {{-- Molduras — separado dos modelos --}}
+                        <div class="rounded-xl border border-amber-900/40 bg-amber-950/10 p-4 space-y-3">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                    <h3 class="text-sm font-semibold text-amber-100">Molduras</h3>
+                                    <p class="text-[10px] text-zinc-500 mt-0.5">
+                                        <span x-text="filteredThumbnailFrames.length"></span> opções — combine com qualquer modelo acima
+                                    </p>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        x-show="thumbnailSettings.frame_slug && thumbnailSettings.frame_slug !== 'none'"
+                                        @click="clearThumbnailFrame()"
+                                        class="text-[10px] px-2 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-white"
+                                    >
+                                        Remover moldura
+                                    </button>
+                                    <button
+                                        type="button"
+                                        @click="toggleFrameManageMode()"
+                                        class="text-[10px] px-2 py-1 rounded"
+                                        :class="frameManageMode ? 'bg-amber-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-white'"
+                                    >
+                                        <span x-text="frameManageMode ? 'Concluir gestão' : 'Gerenciar molduras'"></span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {{-- Minhas molduras — upload e conjuntos --}}
+                            <div class="rounded-lg border border-emerald-900/40 bg-emerald-950/20 p-3 space-y-3">
+                                <div>
+                                    <h4 class="text-xs font-semibold text-emerald-200">Minhas molduras</h4>
+                                    <p class="text-[10px] text-zinc-500 mt-0.5">Importe PNG/WebP com transparência (bordas, balões, efeitos que você criou)</p>
+                                </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <label class="text-xs text-zinc-400">
+                                        Nome da moldura
+                                        <input type="text" x-model="newCustomFrameName" placeholder="Ex: Borda roxa Ei Nerd" class="w-full mt-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm">
+                                    </label>
+                                    <label class="text-xs text-zinc-400">
+                                        Conjunto / pasta
+                                        <select x-model="newCustomFrameCategory" class="w-full mt-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm">
+                                            <option value="personalizado">Minhas molduras</option>
+                                            <template x-for="(meta, slug) in frameCustomCategories" :key="'ccat-' + slug">
+                                                <option :value="slug" x-text="meta.label || slug"></option>
+                                            </template>
+                                        </select>
+                                    </label>
+                                </div>
+                                <label class="block text-xs text-zinc-400">
+                                    Arquivo (PNG recomendado, 1280×720 ou maior)
+                                    <input type="file" accept="image/png,image/webp,image/jpeg" @change="uploadCustomFrame($event)" class="w-full mt-1 text-sm text-zinc-400 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-emerald-800 file:text-emerald-100">
+                                </label>
+                                <div class="flex flex-wrap gap-2 items-end pt-1 border-t border-zinc-800/80">
+                                    <label class="text-xs text-zinc-400 flex-1 min-w-[140px]">
+                                        Novo conjunto
+                                        <input type="text" x-model="newFrameCollectionName" placeholder="Ex: Pack Ei Nerd 2026" class="w-full mt-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm">
+                                    </label>
+                                    <button type="button" @click="createFrameCollection()" class="text-xs px-3 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-white shrink-0">Criar conjunto</button>
+                                </div>
+
+                                {{-- Pastas / conjuntos do usuário — remover --}}
+                                <div x-show="Object.keys(frameCustomCategories).length" class="pt-2 border-t border-zinc-800/80 space-y-2">
+                                    <p class="text-[10px] text-zinc-500 font-medium">Suas pastas — clique para filtrar ou remover</p>
+                                    <template x-for="(meta, slug) in frameCustomCategories" :key="'manage-cat-' + slug">
+                                        <div x-show="isCustomFrameCategory(slug)" class="flex items-center justify-between gap-2 rounded-lg bg-zinc-900/80 border border-zinc-800 px-2 py-1.5">
+                                            <button
+                                                type="button"
+                                                @click="selectedFrameCategory = slug; thumbnailFrameSearch = ''"
+                                                class="text-xs text-zinc-200 hover:text-emerald-300 truncate text-left flex-1"
+                                                x-text="meta.label || slug"
+                                            ></button>
+                                            <button
+                                                type="button"
+                                                @click="deleteFrameCategory(slug)"
+                                                class="text-[10px] px-2 py-1 rounded bg-red-950/70 text-red-300 hover:bg-red-900/70 shrink-0"
+                                                title="Excluir pasta e molduras"
+                                            >
+                                                Remover pasta
+                                            </button>
+                                        </div>
                                     </template>
-                                </select>
-                            </label>
+                                </div>
+                            </div>
+
+                            <div x-show="frameManageMode && canDeleteFrameCategory(selectedFrameCategory)" class="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    @click="deleteFrameCategory(selectedFrameCategory)"
+                                    class="text-[10px] px-2 py-1 rounded bg-red-950/60 text-red-300 hover:bg-red-900/60"
+                                >
+                                    <span x-text="isCustomFrameCategory(selectedFrameCategory) ? 'Excluir pasta' : 'Ocultar conjunto'"></span>
+                                    «<span x-text="frameCategoryLabel(selectedFrameCategory)"></span>»
+                                </button>
+                            </div>
+
+                            <div x-show="frameManageMode && (frameLibraryHiddenFrames.length || frameLibraryHiddenCategories.length)" class="rounded-lg border border-zinc-700 bg-zinc-900/60 p-3 space-y-2">
+                                <p class="text-[10px] text-zinc-400 font-medium">Ocultas — clique para restaurar</p>
+                                <div class="flex flex-wrap gap-1.5" x-show="frameLibraryHiddenFrames.length">
+                                    <template x-for="hf in frameLibraryHiddenFrames" :key="'hf-' + hf.slug">
+                                        <button type="button" @click="restoreHiddenFrame(hf.slug)" class="text-[10px] px-2 py-1 rounded-full bg-zinc-800 text-zinc-300 hover:bg-emerald-900/50" x-text="'↩ ' + hf.name"></button>
+                                    </template>
+                                </div>
+                                <div class="flex flex-wrap gap-1.5" x-show="frameLibraryHiddenCategories.length">
+                                    <template x-for="hc in frameLibraryHiddenCategories" :key="'hc-' + hc.slug">
+                                        <button type="button" @click="restoreHiddenCategory(hc.slug)" class="text-[10px] px-2 py-1 rounded-full bg-zinc-800 text-amber-200 hover:bg-amber-900/40" x-text="'↩ ' + hc.label"></button>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <input
+                                type="search"
+                                x-model="thumbnailFrameSearch"
+                                placeholder="Buscar moldura ou canal (ex: Ei Nerd, Código Fonte)..."
+                                class="w-full text-xs px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-200 placeholder-zinc-500 focus:border-amber-600 focus:outline-none"
+                            >
+
+                            <div class="flex flex-wrap gap-1.5">
+                                <span class="text-[10px] text-zinc-500 self-center mr-1">Canais:</span>
+                                <button type="button" @click="selectedFrameCategory = 'youtube_br'; thumbnailFrameSearch = 'Ei Nerd'" class="text-[10px] px-2 py-1 rounded-full bg-zinc-800 text-zinc-300 hover:bg-violet-900/50 hover:text-violet-200">Ei Nerd</button>
+                                <button type="button" @click="selectedFrameCategory = 'youtube_br'; thumbnailFrameSearch = 'Nerd de Negócios'" class="text-[10px] px-2 py-1 rounded-full bg-zinc-800 text-zinc-300 hover:bg-blue-900/50 hover:text-blue-200">Nerd de Negócios</button>
+                                <button type="button" @click="selectedFrameCategory = 'youtube_br'; thumbnailFrameSearch = 'Código Fonte'" class="text-[10px] px-2 py-1 rounded-full bg-zinc-800 text-zinc-300 hover:bg-orange-900/50 hover:text-orange-200">Código Fonte TV</button>
+                                <button type="button" @click="selectedFrameCategory = 'youtube_br'; thumbnailFrameSearch = 'Mano Devyn'" class="text-[10px] px-2 py-1 rounded-full bg-zinc-800 text-zinc-300 hover:bg-red-950/50 hover:text-red-300">Mano Devyn</button>
+                                <button type="button" @click="selectedFrameCategory = 'youtube_br'; thumbnailFrameSearch = 'Marcilio'" class="text-[10px] px-2 py-1 rounded-full bg-zinc-800 text-zinc-300 hover:bg-sky-900/50 hover:text-sky-200">Prof. Marcilio</button>
+                                <button type="button" @click="selectedFrameCategory = 'youtube_br'; thumbnailFrameSearch = ''" class="text-[10px] px-2 py-1 rounded-full bg-amber-900/40 text-amber-200">Todos BR</button>
+                            </div>
+
+                            <div class="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto overscroll-contain">
+                                <button
+                                    type="button"
+                                    @click="selectedFrameCategory = 'all'"
+                                    class="text-[10px] px-2 py-1 rounded-full"
+                                    :class="selectedFrameCategory === 'all' ? 'bg-amber-700 text-white' : 'bg-zinc-800 text-zinc-400'"
+                                >Todas</button>
+                                <template x-for="(label, key) in thumbnailFrameCategories" :key="'fcat-' + key">
+                                    <button
+                                        type="button"
+                                        @click="selectedFrameCategory = key"
+                                        class="text-[10px] px-2 py-1 rounded-full"
+                                        :class="selectedFrameCategory === key ? 'bg-amber-700 text-white' : 'bg-zinc-800 text-zinc-400'"
+                                        x-text="label"
+                                    ></button>
+                                </template>
+                            </div>
+
+                            <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2 max-h-96 overflow-y-auto overscroll-contain pr-1">
+                                <template x-for="frame in filteredThumbnailFrames" :key="frame.slug">
+                                    <div class="relative group">
+                                        <button
+                                            type="button"
+                                            @click="selectThumbnailFrame(frame.slug)"
+                                            class="w-full group flex flex-col items-center gap-1.5 p-2 rounded-lg border transition text-center"
+                                            :class="thumbnailSettings.frame_slug === frame.slug ? 'border-amber-500 bg-amber-950/50 ring-1 ring-amber-500/60' : 'border-zinc-700/80 bg-zinc-900/80 hover:border-zinc-600'"
+                                            :title="frame.name"
+                                        >
+                                            <div
+                                                class="w-full aspect-[4/3] rounded bg-zinc-950/80 bg-cover bg-center"
+                                                :style="framePreviewStyle(frame)"
+                                            ></div>
+                                            <span class="text-[9px] text-zinc-300 leading-tight line-clamp-2 w-full" x-text="frame.name"></span>
+                                            <span x-show="frame.is_custom" class="text-[8px] text-emerald-400">sua moldura</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            x-show="frameManageMode && frame.can_delete && frame.slug !== 'none'"
+                                            @click="deleteThumbnailFrame(frame.slug, $event)"
+                                            class="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600/90 text-white text-xs leading-none hover:bg-red-500 z-10"
+                                            title="Remover moldura"
+                                        >×</button>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <div x-show="thumbnailSettings.frame_slug && thumbnailSettings.frame_slug !== 'none'" class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-zinc-800/80">
+                                <label class="text-xs text-zinc-400">
+                                    Cor moldura
+                                    <input type="color" x-model="thumbnailSettings.frame_color" @input="scheduleThumbnailPreview()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                                </label>
+                                <label class="text-xs text-zinc-400">
+                                    Cor secundária
+                                    <input type="color" x-model="thumbnailSettings.frame_secondary_color" @input="scheduleThumbnailPreview()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                                </label>
+                                <label class="text-xs text-zinc-400">
+                                    Espessura
+                                    <input type="range" min="4" max="100" x-model.number="thumbnailSettings.frame_width" @input="scheduleThumbnailPreview()" class="w-full mt-2">
+                                    <span class="text-[10px] text-zinc-500 tabular-nums" x-text="thumbnailSettings.frame_width"></span>
+                                </label>
+                                <label class="text-xs text-zinc-400">
+                                    Recuo (inset)
+                                    <input type="range" min="0" max="80" x-model.number="thumbnailSettings.frame_inset" @input="scheduleThumbnailPreview()" class="w-full mt-2">
+                                    <span class="text-[10px] text-zinc-500 tabular-nums" x-text="thumbnailSettings.frame_inset + 'px'"></span>
+                                </label>
+                                <label class="text-xs text-zinc-400 sm:col-span-2">
+                                    Opacidade moldura
+                                    <input type="range" min="0" max="100" x-model.number="thumbnailSettings.frame_opacity" @input="scheduleThumbnailPreview()" class="w-full mt-2">
+                                    <span class="text-[10px] text-zinc-500 tabular-nums" x-text="thumbnailSettings.frame_opacity + '%'"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
                             <label class="text-xs text-zinc-400">
                                 Fonte
                                 <select x-model="thumbnailSettings.font_family" @change="scheduleThumbnailPreview()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
-                                    <template x-for="font in thumbnailFonts" :key="font.slug">
-                                        <option :value="font.slug" x-text="font.label"></option>
+                                    <template x-for="group in thumbnailFontGroups" :key="'fg-' + group.name">
+                                        <optgroup :label="group.name">
+                                            <template x-for="font in group.fonts" :key="font.slug">
+                                                <option :value="font.slug" x-text="font.label"></option>
+                                            </template>
+                                        </optgroup>
                                     </template>
                                 </select>
                             </label>
+
+                            <div class="text-xs text-zinc-400">
+                                <span class="block mb-1">Alinhamento do texto</span>
+                                <div class="rounded-lg border border-zinc-800 bg-zinc-950/50 p-2 space-y-2 mt-1">
+                                    <div>
+                                        <p class="text-[10px] text-zinc-500 mb-1">Horizontal</p>
+                                        <div class="flex gap-1">
+                                            <button type="button" @click="setThumbnailTextAlign('left')" class="flex-1 text-[11px] py-1.5 rounded border" :class="thumbnailSettings.text_align === 'left' ? 'border-violet-500 bg-violet-950/50 text-white' : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'">◧ Esq.</button>
+                                            <button type="button" @click="setThumbnailTextAlign('center')" class="flex-1 text-[11px] py-1.5 rounded border" :class="thumbnailSettings.text_align === 'center' ? 'border-violet-500 bg-violet-950/50 text-white' : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'">▣ Centro</button>
+                                            <button type="button" @click="setThumbnailTextAlign('right')" class="flex-1 text-[11px] py-1.5 rounded border" :class="thumbnailSettings.text_align === 'right' ? 'border-violet-500 bg-violet-950/50 text-white' : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'">◨ Dir.</button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <p class="text-[10px] text-zinc-500 mb-1">Vertical</p>
+                                        <div class="flex gap-1">
+                                            <button type="button" @click="setThumbnailVerticalAlign('top')" class="flex-1 text-[11px] py-1.5 rounded border" :class="thumbnailSettings.vertical_align === 'top' ? 'border-violet-500 bg-violet-950/50 text-white' : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'">▴ Topo</button>
+                                            <button type="button" @click="setThumbnailVerticalAlign('center')" class="flex-1 text-[11px] py-1.5 rounded border" :class="thumbnailSettings.vertical_align === 'center' ? 'border-violet-500 bg-violet-950/50 text-white' : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'">▣ Meio</button>
+                                            <button type="button" @click="setThumbnailVerticalAlign('bottom')" class="flex-1 text-[11px] py-1.5 rounded border" :class="thumbnailSettings.vertical_align === 'bottom' ? 'border-violet-500 bg-violet-950/50 text-white' : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'">▾ Base</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="grid grid-cols-2 gap-3">
                             <label class="text-xs text-zinc-400">
                                 Título (opcional)
-                                <input x-model="thumbnailSettings.title_text" @input="scheduleThumbnailPreview()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm" placeholder="Usa título do slide se vazio">
+                                <input
+                                    type="text"
+                                    x-model="thumbnailSettings.title_text"
+                                    @input="onThumbnailTextInput()"
+                                    @blur="flushThumbnailTextSave()"
+                                    @keydown.space.stop
+                                    class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm"
+                                    placeholder="Usa texto do slide se vazio"
+                                    autocomplete="off"
+                                    spellcheck="true"
+                                >
                             </label>
                             <label class="text-xs text-zinc-400">
                                 Subtítulo (opcional)
-                                <input x-model="thumbnailSettings.subtitle_text" @input="scheduleThumbnailPreview()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                                <input
+                                    type="text"
+                                    x-model="thumbnailSettings.subtitle_text"
+                                    @input="onThumbnailTextInput()"
+                                    @blur="flushThumbnailTextSave()"
+                                    @keydown.space.stop
+                                    class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm"
+                                    autocomplete="off"
+                                    spellcheck="true"
+                                >
                             </label>
                         </div>
 
-                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div class="grid grid-cols-2 gap-3">
                             <label class="text-xs text-zinc-400">Cor título<input type="color" x-model="thumbnailSettings.title_color" @input="scheduleThumbnailPreview()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer"></label>
                             <label class="text-xs text-zinc-400">Cor subtítulo<input type="color" x-model="thumbnailSettings.subtitle_color" @input="scheduleThumbnailPreview()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer"></label>
-                            <label class="text-xs text-zinc-400">Destaque<input type="color" x-model="thumbnailSettings.accent_color" @input="scheduleThumbnailPreview()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer"></label>
-                            <label class="text-xs text-zinc-400">Fundo<input type="color" x-model="thumbnailSettings.background_color" @input="scheduleThumbnailPreview()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer"></label>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {{-- Destaque --}}
+                            <div class="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 space-y-2">
+                                <div class="flex items-center justify-between gap-2">
+                                    <p class="text-xs font-medium text-zinc-300">Destaque</p>
+                                    <button
+                                        type="button"
+                                        @click="thumbnailSettings.accent_opacity > 0 ? disableThumbnailAccent() : enableThumbnailAccent()"
+                                        class="text-[10px] px-2 py-1 rounded border"
+                                        :class="thumbnailSettings.accent_opacity > 0 ? 'border-zinc-600 text-zinc-400' : 'border-violet-500 bg-violet-950/40 text-violet-200'"
+                                        x-text="thumbnailSettings.accent_opacity > 0 ? 'Nenhum' : 'Ativar'"
+                                    ></button>
+                                </div>
+                                <label class="text-xs text-zinc-400 block" x-show="thumbnailSettings.accent_opacity > 0">
+                                    Cor
+                                    <input type="color" x-model="thumbnailSettings.accent_color" @input="enableThumbnailAccent(); scheduleThumbnailPreview()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                                </label>
+                                <label class="text-xs text-zinc-400 block" x-show="thumbnailSettings.accent_opacity > 0">
+                                    Transparência
+                                    <input type="range" min="0" max="100" x-model.number="thumbnailSettings.accent_opacity" @input="scheduleThumbnailPreview()" class="w-full mt-2 accent-red-500">
+                                    <span class="text-[10px] text-zinc-500 tabular-nums" x-text="thumbnailSettings.accent_opacity + '%'"></span>
+                                </label>
+                                <p x-show="thumbnailSettings.accent_opacity <= 0" class="text-[10px] text-zinc-600">Sem faixa de destaque na capa.</p>
+                            </div>
+
+                            {{-- Fundo --}}
+                            <div class="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 space-y-2">
+                                <div class="flex items-center justify-between gap-2">
+                                    <p class="text-xs font-medium text-zinc-300">Fundo</p>
+                                    <button
+                                        type="button"
+                                        @click="thumbnailSettings.background_opacity > 0 ? disableThumbnailBackground() : enableThumbnailBackground()"
+                                        class="text-[10px] px-2 py-1 rounded border"
+                                        :class="thumbnailSettings.background_opacity > 0 ? 'border-zinc-600 text-zinc-400' : 'border-violet-500 bg-violet-950/40 text-violet-200'"
+                                        x-text="thumbnailSettings.background_opacity > 0 ? 'Nenhum' : 'Ativar'"
+                                    ></button>
+                                </div>
+                                <label class="text-xs text-zinc-400 block" x-show="thumbnailSettings.background_opacity > 0">
+                                    Cor
+                                    <input type="color" x-model="thumbnailSettings.background_color" @input="enableThumbnailBackground(); scheduleThumbnailPreview()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                                </label>
+                                <label class="text-xs text-zinc-400 block" x-show="thumbnailSettings.background_opacity > 0">
+                                    Transparência
+                                    <input type="range" min="0" max="100" x-model.number="thumbnailSettings.background_opacity" @input="scheduleThumbnailPreview()" class="w-full mt-2 accent-zinc-400">
+                                    <span class="text-[10px] text-zinc-500 tabular-nums" x-text="thumbnailSettings.background_opacity + '%'"></span>
+                                </label>
+                                <p x-show="thumbnailSettings.background_opacity <= 0" class="text-[10px] text-zinc-600">Sem camada de fundo sobre a imagem.</p>
+                            </div>
                         </div>
 
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -805,36 +1143,72 @@ O narrador continua a história com calma."
                                 <input type="number" min="14" max="72" x-model.number="thumbnailSettings.subtitle_size" @input="scheduleThumbnailPreview()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
                             </label>
                             <label class="text-xs text-zinc-400">
-                                Clarear / escurecer (%)
+                                Clarear / escurecer
                                 <input type="range" min="-100" max="100" x-model.number="thumbnailSettings.brightness" @input="scheduleThumbnailPreview()" class="w-full mt-2">
                                 <span class="text-[10px] text-zinc-500 tabular-nums" x-text="thumbnailSettings.brightness + '%'"></span>
                             </label>
                             <label class="text-xs text-zinc-400">
-                                Contraste (%)
+                                Contraste
                                 <input type="range" min="-100" max="100" x-model.number="thumbnailSettings.contrast" @input="scheduleThumbnailPreview()" class="w-full mt-2">
                                 <span class="text-[10px] text-zinc-500 tabular-nums" x-text="thumbnailSettings.contrast + '%'"></span>
                             </label>
                         </div>
 
                         <label class="text-xs text-zinc-400 block">
-                            Overlay escuro (%)
+                            Overlay escuro
                             <input type="range" min="0" max="100" x-model.number="thumbnailSettings.overlay_opacity" @input="scheduleThumbnailPreview()" class="w-full mt-2">
                             <span class="text-[10px] text-zinc-500 tabular-nums" x-text="thumbnailSettings.overlay_opacity + '%'"></span>
                         </label>
 
                         <div class="flex flex-wrap gap-2">
                             <button type="button" @click="saveAndPreviewThumbnail()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Atualizar preview</button>
-                            <button type="button" @click="generateThumbnailFinal(false)" class="px-4 py-2 rounded-lg bg-violet-700 hover:bg-violet-600 text-sm">Gerar thumbnail final</button>
+                            <button type="button" @click="generateThumbnailFinal(false)" class="px-4 py-2 rounded-lg bg-violet-700 hover:bg-violet-600 text-sm">Gerar capa desta plataforma</button>
+                            <button type="button" @click="generateAllPlatformThumbnails()" class="px-4 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-sm">Gerar todas as plataformas</button>
                         </div>
                     </div>
 
-                    <div class="w-full sm:w-[360px] shrink-0">
-                        <p class="text-xs text-zinc-500 mb-2">Preview 16:9</p>
-                        <div class="aspect-video rounded-lg border border-zinc-700 bg-zinc-950 overflow-hidden">
-                            <img x-show="thumbnailPreviewUrl" :src="thumbnailPreviewUrl" alt="Preview thumbnail" class="w-full h-full object-cover">
-                            <div x-show="!thumbnailPreviewUrl" class="w-full h-full flex items-center justify-center text-sm text-zinc-600 p-4 text-center">
-                                Ajuste as opções e clique em Atualizar preview
+                    {{-- Preview sticky — rolagem vertical independente --}}
+                    <div class="w-full sm:w-[min(100%,340px)] shrink-0 mx-auto lg:mx-0 lg:sticky lg:top-4 lg:self-start z-10">
+                        <div class="rounded-xl border border-zinc-700/80 bg-zinc-900/95 backdrop-blur-sm p-3 shadow-lg shadow-black/20">
+                            <div class="flex items-center justify-between gap-2 mb-2">
+                                <p class="text-xs text-zinc-400">Preview da plataforma selecionada</p>
+                                <span class="text-[10px] text-zinc-600 tabular-nums" x-text="selectedThumbnailPlatform"></span>
                             </div>
+
+                            <label x-show="thumbnailPreviewUrl" class="text-[10px] text-zinc-500 block mb-2">
+                                Rolagem vertical do preview
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    x-model.number="thumbnailPreviewPanY"
+                                    @input="onThumbnailPreviewPanInput()"
+                                    class="w-full mt-1 accent-violet-500"
+                                >
+                                <span class="text-[9px] text-zinc-600">Use a barra, o controle ou a roda do mouse sobre a capa</span>
+                            </label>
+
+                            <div
+                                class="rounded-lg border border-zinc-700 bg-zinc-950 overflow-y-auto overflow-x-hidden overscroll-contain max-h-[min(75vh,780px)] scroll-smooth"
+                                x-ref="thumbnailPreviewScroll"
+                                @scroll="syncThumbnailPreviewPanFromScroll()"
+                            >
+                                <img
+                                    x-show="thumbnailPreviewUrl"
+                                    :src="thumbnailPreviewUrl"
+                                    alt="Preview thumbnail"
+                                    class="w-full h-auto block select-none rounded"
+                                    draggable="false"
+                                    @load="syncThumbnailPreviewPanFromScroll()"
+                                >
+                                <div x-show="!thumbnailPreviewUrl" class="w-full aspect-video min-h-[160px] flex items-center justify-center text-sm text-zinc-600 p-4 text-center">
+                                    Escolha plataforma, modelo e clique em Atualizar preview
+                                </div>
+                            </div>
+
+                            <p class="text-[9px] text-zinc-600 mt-2 leading-snug">
+                                O preview acompanha você ao rolar as opções. Use a barra acima ou a rolagem desta caixa para ver a capa inteira.
+                            </p>
                         </div>
                     </div>
                 </div>
