@@ -2041,10 +2041,12 @@ export function imageStudioMethods() {
         async imageStudioRemoveBackground(event) {
             const file = event?.target?.files?.[0];
             if (!file) return;
-            if (!this.imageStudioEngine?.canvas) await this.initImageStudio();
+
+            this.imageStudioBgRemoving = true;
+            this.message = 'Removendo fundo com IA…';
+
             try {
-                this.imageStudioBgRemoving = true;
-                this.message = 'Removendo fundo…';
+                if (!this.imageStudioEngine?.canvas) await this.initImageStudio();
                 const url = await this.imageStudioEngine.removeBackgroundFromBlob(file);
                 await this.imageStudioEngine.addImageFromUrl(url, 'Sem fundo');
                 this.refreshImageStudioLayers();
@@ -2063,9 +2065,11 @@ export function imageStudioMethods() {
                 this.error = 'Selecione uma imagem no canvas (clique nela primeiro)';
                 return;
             }
+
+            this.imageStudioBgRemoving = true;
+            this.message = 'Removendo fundo com IA…';
+
             try {
-                this.imageStudioBgRemoving = true;
-                this.message = 'Removendo fundo da imagem selecionada…';
                 const dataUrl = obj.toDataURL({ format: 'png', multiplier: 1 });
                 const res = await fetch(dataUrl);
                 const blob = await res.blob();

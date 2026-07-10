@@ -64,6 +64,11 @@ window.editorApp = function (projectId, projectMeta = {}) {
         previewTransitioning: false,
         previewTransitionKind: 'fade',
         previewPlayToken: 0,
+        previewIgnoreVideoPause: false,
+        previewPlayStartedPerf: null,
+        previewPlayStartedAtSec: 0,
+        previewSlideStartedPerf: null,
+        previewSyncRaf: null,
         mediaQuery: '',
         mediaSource: 'all',
         mediaType: 'image',
@@ -106,9 +111,18 @@ window.editorApp = function (projectId, projectMeta = {}) {
         saveTimeout: null,
         descriptionSaveTimeout: null,
         dragFromIndex: null,
+        dragOverIndex: null,
+        dragJustDropped: false,
+        audioDragPayload: null,
+        audioDropHover: null,
+        audioDragMime: 'application/x-criasys-audio',
+        timelinePointerDrag: null,
+        timelineSnapStep: 0.5,
         burnSubtitles: false,
         timelineZoom: 18,
         timelineZoomManual: false,
+        timelineExpanded: false,
+        timelineZoomBeforeExpand: null,
         topPanelHeight: 0,
         timelineWidthRatio: 0.7,
         timelinePlayheadSec: 0,
@@ -413,7 +427,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
         get previewModeLabel() {
             if (!this.slides.length) return 'Roteiro / narração';
             if (this.previewPlaying) {
-                return `Slide ${this.previewIndex + 1}/${this.slides.length}`;
+                return `Slide ${this.previewIndex + 1}/${this.slides.length} · ${this.formatTimelineTime(this.timelinePlayheadSec)}`;
             }
             return '';
         },
@@ -439,7 +453,16 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
         get timelineTrackWidthPx() {
             const gaps = Math.max(0, this.slides.length - 1) * 8;
-            const content = this.timelineTotalSeconds * this.timelineZoom + gaps + 16;
+            const clipsWidth = this.slides.reduce(
+                (sum, s) => sum + this.timelineClipWidth(s),
+                0,
+            ) + gaps + 16;
+            const timeWidth = this.timelineTotalSeconds * this.timelineZoom + gaps + 16;
+            const content = Math.max(clipsWidth, timeWidth);
+
+            if (this.timelineExpanded) {
+                return content;
+            }
 
             return Math.max(content, this.timelineViewportWidthPx());
         },
@@ -502,8 +525,33 @@ window.editorApp = function (projectId, projectMeta = {}) {
             }, 3000);
 
             document.addEventListener('keydown', (e) => this.handleShortcut(e));
+            this._boundTimelinePointerMove = (e) => this.handleTimelinePointerMove(e);
+            this._boundTimelinePointerUp = (e) => this.handleTimelinePointerUp(e);
             this.syncTimelineZoomToViewport();
             this.initTopPanelHeightSync();
+            this.initTimelineResizeObserver();
+        },
+
+        initTimelineResizeObserver() {
+            if (typeof ResizeObserver === 'undefined') {
+                return;
+            }
+
+            this._timelineRo?.disconnect();
+            this._timelineRo = new ResizeObserver(() => {
+                if (this.timelineExpanded) {
+                    this.syncTimelineFitAll();
+                } else if (!this.timelineZoomManual) {
+                    this.syncTimelineZoomToViewport();
+                }
+            });
+
+            this.$nextTick(() => {
+                const el = this.$refs.timelineScroll;
+                if (el) {
+                    this._timelineRo.observe(el);
+                }
+            });
         },
 
         syncTopPanelHeight() {
@@ -556,13 +604,107 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         resetTimelineZoom() {
+            if (this.timelineExpanded) {
+                this.timelineExpanded = false;
+                this.timelineZoomBeforeExpand = null;
+            }
             this.timelineZoomManual = false;
             this.syncTimelineZoomToViewport();
         },
 
+        timelineClipsRowWidthPx(zoom = null) {
+            const z = zoom ?? this.timelineZoom;
+            if (!this.slides.length) {
+                return 16;
+            }
+
+            const gaps = Math.max(0, this.slides.length - 1) * 8;
+            let width = 16;
+            for (const slide of this.slides) {
+                const dur = parseFloat(slide.duration_seconds || 5);
+                width += Math.max(80, dur * z) + 8;
+            }
+
+            return width - 8;
+        },
+
+        syncTimelineFitAll() {
+            if (!this.timelineExpanded || !this.slides.length) {
+                return;
+            }
+
+            this.$nextTick(() => {
+                const scroller = this.$refs.timelineScroll;
+                if (!scroller) {
+                    return;
+                }
+
+                const viewport = Math.max(200, scroller.clientWidth - 32);
+                let lo = 4;
+                let hi = 72;
+
+                for (let i = 0; i < 28; i++) {
+                    const mid = (lo + hi) / 2;
+                    if (this.timelineClipsRowWidthPx(mid) <= viewport) {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+
+                this.timelineZoom = Math.max(4, Math.round(lo * 10) / 10);
+                this.timelineZoomManual = true;
+                scroller.scrollLeft = 0;
+                scroller.scrollTop = 0;
+            });
+        },
+
+        toggleTimelineExpanded() {
+            if (this.timelineExpanded) {
+                this.timelineExpanded = false;
+                if (this.timelineZoomBeforeExpand != null) {
+                    this.timelineZoom = this.timelineZoomBeforeExpand;
+                }
+                this.timelineZoomBeforeExpand = null;
+                this.timelineZoomManual = false;
+                this.syncTimelineZoomToViewport();
+                return;
+            }
+
+            this.timelineZoomBeforeExpand = this.timelineZoom;
+            this.timelineExpanded = true;
+            this.syncTimelineFitAll();
+        },
+
+        afterSlidesLayoutChanged() {
+            if (this.timelineExpanded) {
+                this.syncTimelineFitAll();
+            } else if (!this.timelineZoomManual) {
+                this.syncTimelineZoomToViewport();
+            }
+        },
+
         handleShortcut(e) {
             const tag = e.target?.tagName?.toLowerCase();
-            if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) {
+            if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || e.target?.isContentEditable) {
+                return;
+            }
+
+            if (e.code === 'Space' || e.key === ' ') {
+                if (this.canPlayPreview && this.slides.length) {
+                    e.preventDefault();
+                    if (this.previewPlaying) {
+                        this.stopSlideshow();
+                    } else {
+                        this.playSlideshow();
+                    }
+                }
+                return;
+            }
+
+            if (this.slides.length && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                e.preventDefault();
+                this.seekTimelineBy(e.key === 'ArrowLeft' ? -1 : 1);
                 return;
             }
 
@@ -580,16 +722,71 @@ window.editorApp = function (projectId, projectMeta = {}) {
             }
         },
 
+        seekTimelineBy(deltaSec) {
+            const wasPlaying = this.previewPlaying;
+            if (wasPlaying) {
+                this.syncTimelinePlayheadFromPreview();
+                this.cleanupPreviewPlayback();
+                this.previewPlaying = false;
+                this.previewPlayStartedPerf = null;
+            }
+
+            const next = Math.max(
+                0,
+                Math.min(this.timelineTotalSeconds, this.timelinePlayheadSec + deltaSec),
+            );
+            this.timelinePlayheadSec = Math.round(next * 100) / 100;
+            this.seekPreviewToTimelineSec(this.timelinePlayheadSec);
+            this.scrollTimelineToPlayhead('smooth');
+
+            if (wasPlaying) {
+                this.previewPlaying = true;
+                this.previewPlayStartedAtSec = this.timelinePlayheadSec;
+                this.previewPlayStartedPerf = performance.now();
+                const { offsetInSlide } = this.timelineSecToSlideLocation(this.timelinePlayheadSec);
+                this.schedulePreviewAdvance(offsetInSlide);
+                this.startPreviewAudioMix();
+                this.startPreviewTimelineSync();
+            }
+        },
+
         dragStart(index) {
             this.dragFromIndex = index;
+            this.dragOverIndex = index;
+        },
+
+        dragEnterSlide(index) {
+            if (this.dragFromIndex === null) {
+                return;
+            }
+            this.dragOverIndex = index;
+        },
+
+        dragEndSlide() {
+            this.dragFromIndex = null;
+            this.dragOverIndex = null;
         },
 
         dropSlide(toIndex) {
-            if (this.dragFromIndex === null || this.dragFromIndex === toIndex) return;
+            if (this.dragFromIndex === null || this.dragFromIndex === toIndex) {
+                this.dragEndSlide();
+                return;
+            }
             const moved = this.slides.splice(this.dragFromIndex, 1)[0];
             this.slides.splice(toIndex, 0, moved);
-            this.dragFromIndex = null;
+            this.dragJustDropped = true;
+            setTimeout(() => {
+                this.dragJustDropped = false;
+            }, 200);
+            this.dragEndSlide();
             this.persistSlideOrder();
+        },
+
+        timelineSlideClick(slide) {
+            if (this.dragJustDropped) {
+                return;
+            }
+            this.selectSlide(slide);
         },
 
         async persistSlideOrder() {
@@ -599,6 +796,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 });
                 this.slides = data.map(s => this.enrichSlide(s));
                 this.syncSelection();
+                this.afterSlidesLayoutChanged();
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao reordenar slides';
                 await this.loadSlides();
@@ -891,20 +1089,41 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
         playSlideshow() {
             if (!this.canPlayPreview) return;
-            this.stopSlideshow();
-            this.previewPlaying = true;
-            this.previewIndex = 0;
-            this.previewPlayToken++;
-            this.previewTransitioning = false;
-            if (this.slides.length) {
-                this.scrollTimelineToSlide(0);
-                this.schedulePreviewAdvance();
+
+            let startSec = Math.max(0, parseFloat(this.timelinePlayheadSec) || 0);
+            const total = this.timelineTotalSeconds;
+            if (total > 0 && startSec >= total - 0.05) {
+                startSec = 0;
             }
+
+            this.cleanupPreviewPlayback();
+
+            this.previewPlaying = true;
+            this.previewTransitioning = false;
+            this.timelinePlayheadSec = startSec;
+            this.previewPlayStartedAtSec = startSec;
+            this.previewPlayStartedPerf = performance.now();
+
+            if (this.slides.length) {
+                if (startSec > 0.01) {
+                    const { index, offsetInSlide } = this.timelineSecToSlideLocation(startSec);
+                    this.previewIndex = index;
+                    this.timelinePlayheadSec = Math.round(startSec * 100) / 100;
+                    this.seekPreviewToTimelineSec(startSec);
+                    this.schedulePreviewAdvance(offsetInSlide);
+                } else {
+                    this.previewIndex = 0;
+                    this.resetPreviewSlideClock(0);
+                    this.scrollTimelineToPlayhead('smooth');
+                    this.schedulePreviewAdvance(0);
+                }
+            }
+
             this.startPreviewAudioMix();
+            this.startPreviewTimelineSync();
         },
 
-        stopSlideshow() {
-            this.previewPlaying = false;
+        cleanupPreviewPlayback() {
             if (this.previewMixer) {
                 this.previewMixer.stop();
             }
@@ -912,21 +1131,263 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 clearTimeout(this.previewTimer);
                 this.previewTimer = null;
             }
+            this.stopPreviewTimelineSync();
             this.previewTransitioning = false;
+        },
+
+        stopSlideshow() {
+            this.syncTimelinePlayheadFromPreview();
+            this.cleanupPreviewPlayback();
+            this.previewPlaying = false;
+            this.previewPlayStartedPerf = null;
+            this.previewSlideStartedPerf = null;
+
+            if (this.slides.length) {
+                const { index } = this.timelineSecToSlideLocation(this.timelinePlayheadSec);
+                this.previewIndex = index;
+            }
+
+            const video = this.$refs.previewVideo;
+            if (video && !video.paused) {
+                video.pause();
+            }
+
+            this.$nextTick(() => {
+                const slide = this.slides[this.previewIndex];
+                const videoEl = this.$refs.previewVideo;
+                if (videoEl && slide?.video_url) {
+                    const slideStart = this.timelineSlideStartSec(this.previewIndex);
+                    const offset = Math.max(0, this.timelinePlayheadSec - slideStart);
+                    const dur = parseFloat(slide.duration_seconds || 5);
+                    videoEl.currentTime = Math.min(offset, dur);
+                }
+                this.scrollTimelineToPlayhead('smooth');
+            });
+        },
+
+        resetPreviewSlideClock(offsetInSlideSec = 0) {
+            this.previewSlideStartedPerf = performance.now() - (Math.max(0, offsetInSlideSec) * 1000);
+        },
+
+        getPreviewElapsedSec() {
+            if (!this.previewPlaying || !this.slides.length) {
+                return Math.max(0, parseFloat(this.timelinePlayheadSec) || 0);
+            }
+
+            const slide = this.slides[this.previewIndex];
+            if (!slide) {
+                return Math.max(0, parseFloat(this.timelinePlayheadSec) || 0);
+            }
+
+            const slideStart = this.timelineSlideStartSec(this.previewIndex);
+            const dur = this.slideDurationSec(slide);
+
+            if (this.previewTransitioning) {
+                return Math.min(this.timelineTotalSeconds, slideStart + dur);
+            }
+
+            const slideElapsed = this.previewSlideStartedPerf != null
+                ? (performance.now() - this.previewSlideStartedPerf) / 1000
+                : 0;
+
+            return Math.min(
+                this.timelineTotalSeconds,
+                slideStart + Math.min(Math.max(0, slideElapsed), dur),
+            );
+        },
+
+        syncTimelinePlayheadFromPreview() {
+            this.timelinePlayheadSec = Math.round(this.getPreviewElapsedSec() * 100) / 100;
+        },
+
+        timelineSlideStartSec(index) {
+            let sec = 0;
+            for (let i = 0; i < index && i < this.slides.length; i++) {
+                sec += parseFloat(this.slides[i].duration_seconds || 5);
+            }
+
+            return sec;
+        },
+
+        timelineSecToSlideLocation(sec) {
+            const total = this.timelineTotalSeconds;
+            const clamped = Math.max(0, Math.min(total, parseFloat(sec) || 0));
+            let acc = 0;
+
+            for (let i = 0; i < this.slides.length; i++) {
+                const dur = parseFloat(this.slides[i].duration_seconds || 5);
+                const end = acc + dur;
+                if (clamped < end || i === this.slides.length - 1) {
+                    return { index: i, offsetInSlide: Math.max(0, clamped - acc) };
+                }
+                acc = end;
+            }
+
+            return { index: 0, offsetInSlide: 0 };
+        },
+
+        seekPreviewToTimelineSec(sec) {
+            const { index, offsetInSlide } = this.timelineSecToSlideLocation(sec);
+            this.previewIndex = index;
+            this.timelinePlayheadSec = Math.round(sec * 100) / 100;
+
+            if (this.previewPlaying) {
+                this.resetPreviewSlideClock(offsetInSlide);
+            }
+
+            this.$nextTick(() => {
+                const slide = this.slides[index];
+                const video = this.$refs.previewVideo;
+                if (video && slide?.video_url) {
+                    const apply = () => {
+                        const dur = parseFloat(slide.duration_seconds || 5);
+                        video.currentTime = Math.min(offsetInSlide, dur);
+                        if (this.previewPlaying) {
+                            video.play().catch(() => {});
+                        }
+                    };
+
+                    if (video.readyState >= 1) {
+                        apply();
+                    } else {
+                        video.addEventListener('loadedmetadata', apply, { once: true });
+                    }
+                }
+
+                this.scrollTimelineToPlayhead('auto');
+            });
+        },
+
+        startPreviewTimelineSync() {
+            this.stopPreviewTimelineSync();
+
+            const tick = () => {
+                if (!this.previewPlaying) {
+                    return;
+                }
+
+                this.syncTimelinePlayheadFromPreview();
+                this.scrollTimelineToPlayhead('auto');
+                this.previewSyncRaf = requestAnimationFrame(tick);
+            };
+
+            this.previewSyncRaf = requestAnimationFrame(tick);
+        },
+
+        stopPreviewTimelineSync() {
+            if (this.previewSyncRaf) {
+                cancelAnimationFrame(this.previewSyncRaf);
+                this.previewSyncRaf = null;
+            }
+        },
+
+        scrollTimelineToPlayhead(behavior = 'auto') {
+            if (this.timelineExpanded) {
+                return;
+            }
+
+            const scroller = this.$refs.timelineScroll;
+            if (!scroller) {
+                return;
+            }
+
+            const playheadPx = this.timelineSecondsToPx(this.timelinePlayheadSec);
+            const viewW = scroller.clientWidth || 400;
+            const margin = Math.min(80, viewW * 0.15);
+            const scrollL = scroller.scrollLeft;
+
+            if (playheadPx < scrollL + margin) {
+                scroller.scrollTo({ left: Math.max(0, playheadPx - margin), behavior });
+            } else if (playheadPx > scrollL + viewW - margin) {
+                scroller.scrollTo({ left: playheadPx - viewW + margin, behavior });
+            }
+        },
+
+        onPreviewVideoPause(event) {
+            if (!this.previewPlaying || this.previewIgnoreVideoPause) {
+                return;
+            }
+
+            const video = this.$refs.previewVideo;
+            if (!video || event?.target !== video) {
+                return;
+            }
+
+            if (video.ended) {
+                return;
+            }
+
+            this.stopSlideshow();
+        },
+
+        slideDurationSec(slide) {
+            const dur = parseFloat(slide?.duration_seconds);
+
+            return Number.isFinite(dur) && dur > 0 ? dur : 5;
+        },
+
+        schedulePreviewAdvance(offsetInSlide = 0) {
+            if (!this.previewPlaying) {
+                return;
+            }
+
+            const slide = this.slides[this.previewIndex];
+            if (!slide) {
+                this.finishPreviewPlayback();
+                return;
+            }
+
+            const offset = Math.max(0, parseFloat(offsetInSlide) || 0);
+            this.resetPreviewSlideClock(offset);
+            const dur = this.slideDurationSec(slide);
+            const remainingMs = Math.max(100, (dur - offset) * 1000);
+            this.previewTimer = setTimeout(() => this.advancePreviewSlide(), remainingMs);
+        },
+
+        finishPreviewPlayback() {
+            this.timelinePlayheadSec = this.timelineTotalSeconds;
+            this.stopSlideshow();
+        },
+
+        advancePreviewSlide() {
+            if (!this.previewPlaying || !this.slides.length) {
+                return;
+            }
+
+            if (this.previewIndex >= this.slides.length - 1) {
+                this.finishPreviewPlayback();
+                return;
+            }
+
+            const slide = this.slides[this.previewIndex];
+            const trans = slide?.transition_type || 'fade';
+
+            const goToNextSlide = () => {
+                this.previewIndex += 1;
+                this.previewTransitioning = false;
+                this.previewIgnoreVideoPause = false;
+                this.schedulePreviewAdvance(0);
+            };
+
+            if (trans === 'cut') {
+                this.previewIgnoreVideoPause = true;
+                goToNextSlide();
+                this.$nextTick(() => {
+                    this.previewIgnoreVideoPause = false;
+                });
+                return;
+            }
+
+            this.previewTransitionKind = trans === 'slide' ? 'slide' : 'fade';
+            this.previewTransitioning = true;
+            this.previewIgnoreVideoPause = true;
+            setTimeout(goToNextSlide, 500);
         },
 
         startPreviewAudioMix() {
             if (!this.previewMixer) {
                 this.previewMixer = new PreviewAudioMixer();
             }
-
-            const musicTracks = this.audioTracks
-                .filter((t) => t?.file_path && t?.audio_url)
-                .map((t) => ({
-                    audio_url: t.audio_url,
-                    volume: t.volume ?? 0.35,
-                    start_at: t.start_at ?? 0,
-                }));
 
             const soundEffects = this.soundEffects
                 .filter((fx) => fx?.file_path && fx?.audio_url)
@@ -938,14 +1399,77 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
             this.previewMixer.play({
                 narrationUrl: this.narration?.audio_url || null,
-                musicTracks,
+                musicTracks: this.buildMusicTracksForPreview(),
                 soundEffects,
-                onEnd: () => {
-                    if (this.previewPlaying && !this.slides.length) {
-                        this.stopSlideshow();
-                    }
-                },
+                totalDuration: this.timelineTotalSeconds,
+                startOffsetSec: this.previewPlayStartedAtSec || 0,
             });
+        },
+
+        buildMusicTracksForPreview() {
+            return this.audioTracks
+                .filter((t) => t?.file_path)
+                .map((t) => ({
+                    volume: t.volume ?? 0.35,
+                    loop_enabled: t.loop_enabled !== false,
+                    segments: this.musicTrackSegments(t),
+                }));
+        },
+
+        musicTrackSegments(track) {
+            const segments = [];
+
+            if (track?.file_path) {
+                segments.push({
+                    start_at: parseFloat(track.start_at) || 0,
+                    duration: this.timelineEffectiveDuration(track, track.source_duration || 30),
+                    audio_url: track.audio_url,
+                    label: track.label || 'Trilha',
+                });
+            }
+
+            (track?.clips || []).forEach((clip, i) => {
+                if (!clip?.file_path) {
+                    return;
+                }
+                segments.push({
+                    start_at: parseFloat(clip.start_at) || 0,
+                    duration: this.timelineEffectiveDuration(clip, clip.source_duration || 30),
+                    audio_url: this.musicClipAudioUrl(clip),
+                    label: clip.label || `Parte ${i + 2}`,
+                });
+            });
+
+            return segments.sort((a, b) => a.start_at - b.start_at);
+        },
+
+        musicClipAudioUrl(clip) {
+            if (clip?.audio_url) {
+                return clip.audio_url;
+            }
+            if (clip?.file_path) {
+                return this.fileUrl('assets', clip.file_path.split(/[/\\]/).pop());
+            }
+
+            return null;
+        },
+
+        musicTrackCoverageEnd(track) {
+            const segments = this.musicTrackSegments(track);
+            if (!segments.length) {
+                return 0;
+            }
+
+            return Math.max(...segments.map((s) => s.start_at + s.duration));
+        },
+
+        musicTrackNeedsLoop(track) {
+            if (track.loop_enabled === false) {
+                return false;
+            }
+            const start = parseFloat(track.start_at) || 0;
+
+            return this.musicTrackCoverageEnd(track) < this.timelineTotalSeconds - start - 0.05;
         },
 
         previewTextStyle() {
@@ -962,41 +1486,6 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 return this.slideVerticalAlignClass(slide);
             }
             return 'justify-center';
-        },
-
-        schedulePreviewAdvance() {
-            if (!this.previewPlaying) return;
-            const slide = this.slides[this.previewIndex];
-            if (!slide) {
-                this.stopSlideshow();
-                return;
-            }
-            const ms = Math.max(500, (slide.duration_seconds || 5) * 1000);
-            this.previewTimer = setTimeout(() => this.advancePreviewSlide(), ms);
-        },
-
-        advancePreviewSlide() {
-            if (!this.previewPlaying || !this.slides.length) return;
-            const slide = this.slides[this.previewIndex];
-            const trans = slide?.transition_type || 'fade';
-
-            if (trans === 'cut') {
-                this.previewIndex = (this.previewIndex + 1) % this.slides.length;
-                this.previewPlayToken++;
-                this.scrollTimelineToSlide(this.previewIndex);
-                this.schedulePreviewAdvance();
-                return;
-            }
-
-            this.previewTransitionKind = trans === 'slide' ? 'slide' : 'fade';
-            this.previewTransitioning = true;
-            setTimeout(() => {
-                this.previewIndex = (this.previewIndex + 1) % this.slides.length;
-                this.previewPlayToken++;
-                this.previewTransitioning = false;
-                this.scrollTimelineToSlide(this.previewIndex);
-                this.schedulePreviewAdvance();
-            }, 500);
         },
 
         copyPlatformDescription() {
@@ -1049,8 +1538,8 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.activeTab = 'biblioteca';
         },
 
-        openLibraryForSfx(startAt = 0) {
-            this.mediaSfxStartAt = startAt;
+        openLibraryForSfx(startAt = null) {
+            this.mediaSfxStartAt = startAt ?? Math.round(this.timelinePlayheadSec * 10) / 10;
             this.setMediaLibraryMode('sfx');
             this.activeTab = 'biblioteca';
         },
@@ -1076,6 +1565,8 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 trim_out: null,
                 source_duration: null,
                 ducking_enabled: slot === 0,
+                loop_enabled: true,
+                clips: [],
                 file_path: null,
                 audio_url: null,
                 label: `Trilha ${slot + 1}`,
@@ -1090,6 +1581,17 @@ window.editorApp = function (projectId, projectMeta = {}) {
             track.trim_in = parseFloat(track.trim_in) || 0;
             track.trim_out = track.trim_out != null ? parseFloat(track.trim_out) : null;
             track.source_duration = track.source_duration != null ? parseFloat(track.source_duration) : null;
+            track.loop_enabled = track.loop_enabled !== false;
+            track.clips = Array.isArray(track.clips) ? track.clips.map((clip) => ({
+                ...clip,
+                trim_in: parseFloat(clip.trim_in) || 0,
+                trim_out: clip.trim_out != null ? parseFloat(clip.trim_out) : null,
+                source_duration: clip.source_duration != null ? parseFloat(clip.source_duration) : null,
+                start_at: parseFloat(clip.start_at) || 0,
+                audio_url: clip.file_path
+                    ? this.fileUrl('assets', clip.file_path.split(/[/\\]/).pop())
+                    : null,
+            })) : [];
 
             return track;
         },
@@ -1124,7 +1626,9 @@ window.editorApp = function (projectId, projectMeta = {}) {
                         trim_out: track.trim_out,
                         source_duration: track.source_duration,
                         ducking_enabled: track.ducking_enabled,
-                    }
+                        loop_enabled: track.loop_enabled !== false,
+                        clips: track.clips || [],
+                    },
                 );
                 this.audioTracks[slot] = this.enrichAudioTrack({ ...track, ...data });
                 if (slot === 0) this.audioTrack = this.audioTracks[0];
@@ -1177,7 +1681,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
         async uploadSoundEffect(event) {
             const file = event.target.files[0];
             if (!file) return;
-            const startAt = parseFloat(prompt('Início do efeito (segundos):', '0') || '0') || 0;
+            const startAt = Math.round(this.timelinePlayheadSec * 10) / 10;
             try {
                 const asset = await this.uploadAsset(file, 'audio', false);
                 const { data } = await api.post(`/projects/${this.projectId}/sound-effects`, {
@@ -1199,7 +1703,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.slides = data.map(s => this.enrichSlide(s));
             this.syncSelection();
             this.buildFullScriptFromSlides();
-            this.syncTimelineZoomToViewport();
+            this.afterSlidesLayoutChanged();
         },
 
         enrichSlide(slide) {
@@ -1334,10 +1838,18 @@ window.editorApp = function (projectId, projectMeta = {}) {
             return Math.max(36, this.timelineZoom * 1.5);
         },
 
+        selectTimelineSfx(fx) {
+            if (!fx) {
+                return;
+            }
+
+            this.selectedSoundEffectId = fx.id;
+            this.timelineSelectedClip = { kind: 'sfx', id: fx.id };
+            this.timelineSelectedClipLabel = fx.label || 'Efeito';
+        },
+
         selectSoundEffect(fx) {
-            this.selectedSoundEffectId = fx?.id ?? null;
-            this.timelineSelectedClip = fx ? { kind: 'sfx', id: fx.id } : null;
-            this.timelineSelectedClipLabel = fx?.label || 'Efeito';
+            this.selectTimelineSfx(fx);
             this.activeTab = 'audio';
         },
 
@@ -1370,13 +1882,27 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         timelineMusicClipWidth(track) {
-            return Math.max(24, this.timelineEffectiveDuration(track, this.timelineTotalSeconds) * this.timelineZoom);
+            const start = parseFloat(track?.start_at) || 0;
+            const span = Math.max(0, this.timelineTotalSeconds - start);
+
+            return Math.max(24, span * this.timelineZoom);
+        },
+
+        timelineMusicSegmentWidth(segment) {
+            return Math.max(16, (segment.duration || 30) * this.timelineZoom);
+        },
+
+        timelineSfxSegmentWidth(fx) {
+            const dur = this.timelineEffectiveDuration(
+                fx,
+                fx?.clip_duration || fx?.source_duration || 2,
+            );
+
+            return Math.max(16, dur * this.timelineZoom);
         },
 
         timelineFxDisplayWidth(fx) {
-            const dur = this.timelineEffectiveDuration(fx, fx?.clip_duration || 2);
-
-            return Math.max(36, Math.min(160, dur * this.timelineZoom));
+            return this.timelineSfxSegmentWidth(fx);
         },
 
         timelineNarrationWidthPx() {
@@ -1476,6 +2002,449 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.activeTab = 'audio';
         },
 
+        startAudioDrag(payload, event) {
+            this.audioDragPayload = payload;
+            if (event?.dataTransfer) {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData(this.audioDragMime, JSON.stringify(payload));
+            }
+        },
+
+        endAudioDrag() {
+            this.audioDragPayload = null;
+            this.audioDropHover = null;
+        },
+
+        parseAudioDragPayload(event) {
+            if (this.audioDragPayload) {
+                return this.audioDragPayload;
+            }
+
+            try {
+                const raw = event.dataTransfer?.getData(this.audioDragMime)
+                    || event.dataTransfer?.getData('text/plain');
+                if (raw) {
+                    return JSON.parse(raw);
+                }
+            } catch (_) {
+                //
+            }
+
+            return null;
+        },
+
+        timelineSecFromDropEvent(event) {
+            const lane = event?.currentTarget?.dataset?.timelineLane
+                ? event.currentTarget
+                : null;
+
+            if (lane) {
+                return this.timelineSecFromLanePointer(event, lane);
+            }
+
+            const area = this.$refs.timelineTrackArea;
+            const scroller = this.$refs.timelineScroll;
+            if (!area || !scroller) {
+                return 0;
+            }
+
+            const rect = area.getBoundingClientRect();
+            const x = event.clientX - rect.left + scroller.scrollLeft;
+            const sec = Math.max(0, Math.min(this.timelineTotalSeconds, this.timelinePxToSeconds(x)));
+
+            return this.snapTimelineSec(sec, event?.shiftKey);
+        },
+
+        snapTimelineSec(sec, fine = false) {
+            const step = fine ? 0.1 : this.timelineSnapStep;
+
+            return Math.round(Math.max(0, sec) / step) * step;
+        },
+
+        timelineLaneContentOffset(lane) {
+            const scroller = this.$refs.timelineScroll;
+            if (!lane || !scroller) {
+                return 0;
+            }
+
+            let offset = 0;
+            let node = lane;
+
+            while (node && node !== scroller) {
+                offset += node.offsetLeft || 0;
+                node = node.parentElement;
+            }
+
+            return offset;
+        },
+
+        timelineSecFromLanePointer(event, lane) {
+            const scroller = this.$refs.timelineScroll;
+            if (!lane || !scroller) {
+                return 0;
+            }
+
+            const scrollerRect = scroller.getBoundingClientRect();
+            const contentX = event.clientX - scrollerRect.left + scroller.scrollLeft
+                - this.timelineLaneContentOffset(lane);
+            const sec = this.timelinePxToSeconds(Math.max(0, contentX));
+
+            return this.snapTimelineSec(
+                Math.max(0, Math.min(this.timelineTotalSeconds, sec)),
+                event?.shiftKey,
+            );
+        },
+
+        getAudioSegmentStartAt(payload) {
+            if (payload?.type === 'music-segment') {
+                const seg = this.musicTrackSegments(this.audioTracks[payload.slot])?.[payload.segmentIndex];
+
+                return seg?.start_at ?? 0;
+            }
+
+            if (payload?.type === 'sfx') {
+                return this.soundEffects.find((f) => f.id === payload.fxId)?.start_at ?? 0;
+            }
+
+            return 0;
+        },
+
+        timelinePointerDragActive(slot = null, segmentIndex = null, fxId = null) {
+            const drag = this.timelinePointerDrag;
+            if (!drag) {
+                return false;
+            }
+
+            if (drag.payload?.type === 'music-segment') {
+                return drag.payload.slot === slot && drag.payload.segmentIndex === segmentIndex;
+            }
+
+            if (drag.payload?.type === 'sfx') {
+                return fxId != null && drag.payload.fxId === fxId;
+            }
+
+            return false;
+        },
+
+        timelinePointerDragSec(slot, segmentIndex) {
+            if (this.timelinePointerDragActive(slot, segmentIndex)) {
+                return this.timelinePointerDrag.hoverSec;
+            }
+
+            return this.musicTrackSegments(this.audioTracks[slot])?.[segmentIndex]?.start_at ?? 0;
+        },
+
+        timelinePointerDragFxSec(fxId) {
+            if (this.timelinePointerDragActive(null, null, fxId)) {
+                return this.timelinePointerDrag.hoverSec;
+            }
+
+            return this.soundEffects.find((f) => f.id === fxId)?.start_at ?? 0;
+        },
+
+        startTimelinePointerDrag(event, payload) {
+            if (event.button !== 0) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const lane = event.currentTarget.closest('[data-timeline-lane]');
+            if (!lane) {
+                return;
+            }
+
+            const laneKey = lane.dataset.timelineLane;
+            const pointerSec = this.timelineSecFromLanePointer(event, lane);
+            const startAt = this.getAudioSegmentStartAt(payload);
+
+            this.timelinePointerDrag = {
+                payload,
+                laneKey,
+                clickOffsetSec: pointerSec - startAt,
+                hoverSec: startAt,
+                moved: false,
+            };
+
+            this.audioDropHover = { lane: laneKey, sec: startAt };
+            document.body.style.cursor = 'grabbing';
+            document.addEventListener('mousemove', this._boundTimelinePointerMove);
+            document.addEventListener('mouseup', this._boundTimelinePointerUp);
+        },
+
+        handleTimelinePointerMove(event) {
+            const drag = this.timelinePointerDrag;
+            if (!drag) {
+                return;
+            }
+
+            drag.moved = true;
+
+            const under = document.elementFromPoint(event.clientX, event.clientY);
+            const lane = under?.closest?.('[data-timeline-lane]')
+                || this.$refs.timelineScroll?.querySelector(`[data-timeline-lane="${drag.laneKey}"]`);
+
+            if (!lane) {
+                return;
+            }
+
+            const laneKey = lane.dataset.timelineLane;
+            if (drag.payload?.type === 'music-segment' && !laneKey.startsWith('music:')) {
+                return;
+            }
+
+            if (drag.payload?.type === 'sfx' && laneKey !== 'sfx') {
+                return;
+            }
+
+            drag.laneKey = laneKey;
+
+            const pointerSec = this.timelineSecFromLanePointer(event, lane);
+            const nextSec = Math.max(
+                0,
+                Math.min(this.timelineTotalSeconds, pointerSec - drag.clickOffsetSec),
+            );
+
+            drag.hoverSec = this.snapTimelineSec(nextSec, event.shiftKey);
+            this.audioDropHover = { lane: drag.laneKey, sec: drag.hoverSec };
+        },
+
+        async handleTimelinePointerUp(event) {
+            const drag = this.timelinePointerDrag;
+            document.removeEventListener('mousemove', this._boundTimelinePointerMove);
+            document.removeEventListener('mouseup', this._boundTimelinePointerUp);
+            document.body.style.cursor = '';
+
+            if (!drag) {
+                return;
+            }
+
+            if (!drag.moved) {
+                this.timelinePointerDrag = null;
+                this.audioDropHover = null;
+                return;
+            }
+
+            const lane = this.$refs.timelineScroll?.querySelector(`[data-timeline-lane="${drag.laneKey}"]`);
+            let sec = drag.hoverSec;
+
+            if (lane) {
+                const pointerSec = this.timelineSecFromLanePointer(event, lane);
+                sec = this.snapTimelineSec(
+                    Math.max(0, Math.min(this.timelineTotalSeconds, pointerSec - drag.clickOffsetSec)),
+                    event.shiftKey,
+                );
+            }
+
+            this.timelinePointerDrag = null;
+            this.audioDropHover = null;
+
+            await this.applyAudioTimelineDrop(drag.payload, drag.laneKey, sec);
+        },
+
+        timelineAudioDragOver(event, laneKey) {
+            event.preventDefault();
+            if (event.dataTransfer) {
+                event.dataTransfer.dropEffect = 'move';
+            }
+
+            const lane = event.currentTarget;
+            this.audioDropHover = {
+                lane: laneKey,
+                sec: this.timelineSecFromLanePointer(event, lane),
+            };
+        },
+
+        timelineAudioDragLeave(event, laneKey) {
+            if (this.audioDropHover?.lane === laneKey) {
+                this.audioDropHover = null;
+            }
+        },
+
+        async timelineAudioDrop(event, laneKey) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const lane = event.currentTarget;
+            const sec = this.timelineSecFromLanePointer(event, lane);
+            const payload = this.parseAudioDragPayload(event);
+            this.audioDropHover = null;
+            this.audioDragPayload = null;
+
+            if (!payload) {
+                return;
+            }
+
+            await this.applyAudioTimelineDrop(payload, laneKey, sec);
+        },
+
+        async applyAudioTimelineDrop(payload, laneKey, sec) {
+            const [laneKind, laneSlot] = laneKey.split(':');
+            const musicSlot = laneKind === 'music' ? parseInt(laneSlot, 10) : null;
+
+            try {
+                if (payload.type === 'library-music') {
+                    if (laneKind !== 'music' || Number.isNaN(musicSlot)) {
+                        this.error = 'Solte trilhas nas faixas âmbar (Trilha 1–3).';
+                        return;
+                    }
+                    const item = payload.item ?? this.mediaResults[payload.itemIndex];
+                    if (!item) {
+                        return;
+                    }
+                    await this.importMedia(item, {
+                        track_slot: musicSlot,
+                        start_at: sec,
+                        place_at: true,
+                    });
+                    return;
+                }
+
+                if (payload.type === 'library-sfx') {
+                    if (laneKind !== 'sfx') {
+                        this.error = 'Solte efeitos na faixa FX (rosa).';
+                        return;
+                    }
+                    const item = payload.item ?? this.mediaResults[payload.itemIndex];
+                    if (!item) {
+                        return;
+                    }
+                    await this.importMedia(item, { start_at: sec, place_at: true });
+                    return;
+                }
+
+                if (payload.type === 'music-segment') {
+                    if (laneKind !== 'music' || Number.isNaN(musicSlot)) {
+                        this.error = 'Solte trilhas nas faixas âmbar (Trilha 1–3).';
+                        return;
+                    }
+                    await this.moveMusicSegmentToLane(payload.slot, payload.segmentIndex, musicSlot, sec);
+                    return;
+                }
+
+                if (payload.type === 'sfx') {
+                    if (laneKind !== 'sfx') {
+                        this.error = 'Solte efeitos na faixa FX (rosa).';
+                        return;
+                    }
+                    await this.moveSoundEffectToTime(payload.fxId, sec);
+                }
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao posicionar áudio na timeline';
+            }
+        },
+
+        async moveMusicSegmentToLane(fromSlot, segmentIndex, toSlot, sec) {
+            const source = this.audioTracks[fromSlot];
+            if (!source?.file_path) {
+                return;
+            }
+
+            const segments = this.musicTrackSegments(source);
+            const seg = segments[segmentIndex];
+            if (!seg) {
+                return;
+            }
+
+            if (fromSlot === toSlot) {
+                if (segmentIndex === 0) {
+                    source.start_at = sec;
+                } else {
+                    const clip = source.clips?.[segmentIndex - 1];
+                    if (clip) {
+                        clip.start_at = sec;
+                    }
+                }
+                await this.saveMusicTrack(fromSlot);
+                this.message = `${seg.label} em ${this.formatTimelineTime(sec)}`;
+                return;
+            }
+
+            const target = this.audioTracks[toSlot];
+            const clipPayload = {
+                asset_id: segmentIndex === 0 ? source.asset_id : source.clips?.[segmentIndex - 1]?.asset_id,
+                file_path: segmentIndex === 0 ? source.file_path : source.clips?.[segmentIndex - 1]?.file_path,
+                source_duration: seg.duration,
+                start_at: sec,
+                label: seg.label,
+            };
+
+            if (!target?.file_path) {
+                const { data } = await api.post(`/projects/${this.projectId}/audio-tracks`, {
+                    asset_id: clipPayload.asset_id,
+                    file_path: clipPayload.file_path,
+                    track_slot: toSlot,
+                    source_duration: clipPayload.source_duration,
+                    start_at: sec,
+                    volume: source.volume ?? 0.35,
+                    ducking_enabled: toSlot === 0,
+                    loop_enabled: source.loop_enabled !== false,
+                });
+                this.audioTracks[toSlot] = this.enrichAudioTrack(data);
+            } else {
+                target.clips = [...(target.clips || []), clipPayload];
+                await this.saveMusicTrack(toSlot);
+            }
+
+            if (segmentIndex > 0) {
+                source.clips = (source.clips || []).filter((_, i) => i !== segmentIndex - 1);
+                await this.saveMusicTrack(fromSlot);
+            }
+
+            this.message = `${seg.label} movido para ${this.audioTracks[toSlot]?.label} em ${this.formatTimelineTime(sec)}`;
+        },
+
+        async moveSoundEffectToTime(fxId, sec) {
+            const fx = this.soundEffects.find((e) => e.id === fxId);
+            if (!fx) {
+                return;
+            }
+
+            fx.start_at = sec;
+            await this.saveSoundEffect(fx);
+            this.timelineSelectedClip = { kind: 'sfx', id: fx.id };
+            this.timelineSelectedClipLabel = fx.label || 'Efeito';
+            this.message = `${fx.label || 'Efeito'} em ${this.formatTimelineTime(sec)}`;
+        },
+
+        musicSegmentDragPayload(slot, segmentIndex) {
+            const segments = this.musicTrackSegments(this.audioTracks[slot]);
+
+            return {
+                type: 'music-segment',
+                slot,
+                segmentIndex,
+                label: segments[segmentIndex]?.label || 'Trilha',
+            };
+        },
+
+        sfxDragPayload(fx) {
+            return {
+                type: 'sfx',
+                fxId: fx.id,
+                label: fx.label || 'Efeito',
+            };
+        },
+
+        libraryMusicDragPayload(item, itemIndex) {
+            return {
+                type: 'library-music',
+                itemIndex,
+                item,
+                label: item.title || 'Trilha',
+            };
+        },
+
+        librarySfxDragPayload(item, itemIndex) {
+            return {
+                type: 'library-sfx',
+                itemIndex,
+                item,
+                label: item.title || 'Efeito',
+            };
+        },
+
         timelineOffsetPx(index) {
             let offset = 0;
             for (let i = 0; i < index; i++) {
@@ -1498,6 +2467,10 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         adjustTimelineZoom(delta) {
+            if (this.timelineExpanded) {
+                this.timelineExpanded = false;
+                this.timelineZoomBeforeExpand = null;
+            }
             this.timelineZoomManual = true;
             this.timelineZoom = Math.min(72, Math.max(6, this.timelineZoom + delta));
         },
@@ -1763,6 +2736,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             if (!file) return;
             const slot = this.selectedMusicSlot ?? 0;
             const track = this.audioTracks[slot] ?? this.emptyMusicSlot(slot);
+            const append = !!track.file_path;
 
             try {
                 const asset = await this.uploadAsset(file, 'audio', false);
@@ -1773,10 +2747,15 @@ window.editorApp = function (projectId, projectMeta = {}) {
                     volume: track.volume ?? 0.35,
                     start_at: track.start_at ?? 0,
                     ducking_enabled: track.ducking_enabled ?? true,
+                    loop_enabled: track.loop_enabled !== false,
+                    append,
+                    label: file.name.replace(/\.[^.]+$/, ''),
                 });
                 this.audioTracks[slot] = this.enrichAudioTrack(data);
                 if (slot === 0) this.audioTrack = this.audioTracks[0];
-                this.message = `${this.audioTracks[slot].label} importada`;
+                this.message = append
+                    ? `Trilha adicionada em sequência na ${this.audioTracks[slot].label}`
+                    : `${this.audioTracks[slot].label} importada`;
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao importar áudio';
             }
@@ -1853,7 +2832,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             }
         },
 
-        async importMedia(item) {
+        async importMedia(item, options = {}) {
             const isMusic = item.type === 'audio' || this.mediaType === 'music';
             const isSfx = item.type === 'sfx' || this.mediaType === 'sfx';
 
@@ -1870,14 +2849,17 @@ window.editorApp = function (projectId, projectMeta = {}) {
             };
 
             if (isMusic) {
-                payload.track_slot = this.selectedMusicSlot ?? 0;
+                payload.track_slot = options.track_slot ?? this.selectedMusicSlot ?? 0;
+                if (options.start_at != null) {
+                    payload.start_at = options.start_at;
+                    payload.place_at = options.place_at !== false;
+                }
             }
 
             if (isSfx) {
-                const startAt = parseFloat(
-                    prompt('Início do efeito na timeline (segundos):', String(this.mediaSfxStartAt ?? 0))
-                ) || 0;
+                const startAt = options.start_at ?? this.mediaSfxStartAt ?? Math.round(this.timelinePlayheadSec * 10) / 10;
                 payload.start_at = startAt;
+                payload.place_at = options.place_at !== false;
                 payload.label = item.title || 'Efeito';
             }
 
@@ -1918,13 +2900,26 @@ window.editorApp = function (projectId, projectMeta = {}) {
                     this.message = data.publish?.message || 'Mídia inserida — créditos atualizados na exportação';
                 } else if (data.audio_track) {
                     const slot = data.audio_track.track_slot ?? 0;
+                    const hadTrack = !!this.audioTracks[slot]?.file_path;
                     this.audioTracks[slot] = this.enrichAudioTrack(data.audio_track);
                     if (slot === 0) this.audioTrack = this.audioTracks[0];
-                    this.message = data.publish?.message || `${this.audioTracks[slot].label} importada — licença registrada`;
+                    if (options.start_at != null) {
+                        this.message = data.publish?.message
+                            || `Trilha em ${this.formatTimelineTime(options.start_at)} · ${this.audioTracks[slot].label}`;
+                    } else {
+                        this.message = data.publish?.message || (hadTrack
+                            ? `Trilha encadeada na ${this.audioTracks[slot].label} — licença registrada`
+                            : `${this.audioTracks[slot].label} importada — licença registrada`);
+                    }
                     this.activeTab = 'audio';
                 } else if (data.sound_effect) {
                     this.soundEffects.push(this.enrichSoundEffect(data.sound_effect));
-                    this.message = data.publish?.message || `Efeito "${data.sound_effect.label}" adicionado — crédito na descrição`;
+                    if (options.start_at != null) {
+                        this.message = data.publish?.message
+                            || `Efeito em ${this.formatTimelineTime(options.start_at)} — crédito na descrição`;
+                    } else {
+                        this.message = data.publish?.message || `Efeito "${data.sound_effect.label}" adicionado — crédito na descrição`;
+                    }
                     this.activeTab = 'audio';
                 }
 

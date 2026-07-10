@@ -145,12 +145,15 @@ class FfmpegRenderService
 
         if (! $narrationPath && $musicPath) {
             $volume = $musicTrack->volume ?? 0.5;
-            $result = Process::timeout(600)->run([
-                $ffmpeg, '-y', '-i', $videoPath, '-i', $musicPath,
-                '-filter_complex', "[1:a]atrim=0:{$durationArg},volume={$volume},afade=t=in:st=0:d=2,afade=t=out:st=".max(0, $videoDuration - 2).":d=2[a]",
+            $loopArgs = ($musicTrack->loop_enabled ?? true) ? ['-stream_loop', '-1'] : [];
+            $result = Process::timeout(600)->run(array_merge([
+                $ffmpeg, '-y', '-i', $videoPath,
+            ], $loopArgs, [
+                '-i', $musicPath,
+                '-filter_complex', "[1:a]atrim=0:{$durationArg},asetpts=PTS-STARTPTS,volume={$volume},afade=t=in:st=0:d=2,afade=t=out:st=".max(0, $videoDuration - 2).":d=2[a]",
                 '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac',
                 '-t', $durationArg, $outputPath,
-            ]);
+            ]));
             $this->assertFfmpegSuccess($result, 'mix trilha');
 
             return;
@@ -158,23 +161,25 @@ class FfmpegRenderService
 
         $musicVolume = $musicTrack->volume ?? 0.3;
         $ducking = $musicTrack->ducking_enabled ?? true;
+        $loopArgs = ($musicTrack->loop_enabled ?? true) ? ['-stream_loop', '-1'] : [];
 
         if ($ducking) {
-            $filter = "[2:a]atrim=0:{$durationArg},volume={$musicVolume},afade=t=in:st=0:d=2[music];[1:a]atrim=0:{$durationArg}[nar];[nar][music]sidechaincompress=threshold=0.03:ratio=8:attack=200:release=800[ducked];[nar][ducked]amix=inputs=2:duration=longest:dropout_transition=2[aout]";
+            $filter = "[2:a]atrim=0:{$durationArg},asetpts=PTS-STARTPTS,volume={$musicVolume},afade=t=in:st=0:d=2[music];[1:a]atrim=0:{$durationArg}[nar];[nar][music]sidechaincompress=threshold=0.03:ratio=8:attack=200:release=800[ducked];[nar][ducked]amix=inputs=2:duration=longest:dropout_transition=2[aout]";
         } else {
-            $filter = "[2:a]atrim=0:{$durationArg},volume={$musicVolume}[music];[1:a]atrim=0:{$durationArg}[nar];[nar][music]amix=inputs=2:duration=longest:dropout_transition=2[aout]";
+            $filter = "[2:a]atrim=0:{$durationArg},asetpts=PTS-STARTPTS,volume={$musicVolume}[music];[1:a]atrim=0:{$durationArg}[nar];[nar][music]amix=inputs=2:duration=longest:dropout_transition=2[aout]";
         }
 
-        $result = Process::timeout(600)->run([
+        $result = Process::timeout(600)->run(array_merge([
             $ffmpeg, '-y',
             '-i', $videoPath,
             '-i', $narrationPath,
+        ], $loopArgs, [
             '-i', $musicPath,
             '-filter_complex', $filter,
             '-map', '0:v', '-map', '[aout]',
             '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
             '-t', $durationArg, $outputPath,
-        ]);
+        ]));
 
         $this->assertFfmpegSuccess($result, 'mix narração + trilha com ducking');
     }

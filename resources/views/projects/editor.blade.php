@@ -111,13 +111,15 @@
                     >
                         <template x-if="previewSlide?.video_url">
                             <video
-                                :key="'pv-' + previewSlide?.id + '-' + previewPlayToken"
+                                :key="'pv-' + previewSlide?.id"
                                 :src="previewSlide.video_url"
                                 class="absolute inset-0 w-full h-full object-cover opacity-90"
                                 autoplay
                                 muted
                                 playsinline
+                                controls
                                 x-ref="previewVideo"
+                                @pause="onPreviewVideoPause()"
                             ></video>
                         </template>
                         <template x-if="previewSlide && !previewSlide?.video_url && previewSlide?.image_url">
@@ -250,6 +252,15 @@
                 <button type="button" @click="resetTimelineZoom()" class="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400" title="Ajustar à largura da tela">Ajustar</button>
                 <button
                     type="button"
+                    x-show="slides.length"
+                    @click="toggleTimelineExpanded()"
+                    class="text-[10px] px-2 py-1 rounded"
+                    :class="timelineExpanded ? 'bg-violet-700 text-white hover:bg-violet-600' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-400'"
+                    :title="timelineExpanded ? 'Voltar ao modo com rolagem' : 'Ver toda a timeline sem barras de rolagem'"
+                    x-text="timelineExpanded ? '⛶ Recolher' : '⛶ Expandir'"
+                ></button>
+                <button
+                    type="button"
                     x-show="slides.length > 1"
                     @click="previewPlaying ? stopSlideshow() : playSlideshow()"
                     class="ml-2 text-xs px-3 py-1.5 rounded-lg"
@@ -263,7 +274,13 @@
             Adicione slides para montar a linha do tempo.
         </div>
 
-        <div x-show="slides.length" x-ref="timelineScroll" class="overflow-x-auto overflow-y-auto px-4 py-4 w-full" style="max-height: min(380px, 32vh);">
+        <div
+            x-show="slides.length"
+            x-ref="timelineScroll"
+            class="px-4 py-4 w-full"
+            :class="timelineExpanded ? 'overflow-hidden' : 'overflow-x-auto overflow-y-auto'"
+            :style="timelineExpanded ? '' : 'max-height: min(380px, 32vh);'"
+        >
             {{-- Ferramentas: playhead e cortes --}}
             <div class="flex flex-wrap items-center gap-2 mb-3 pb-2 border-b border-zinc-800/80">
                 <span class="text-[10px] text-zinc-500 uppercase tracking-wide">Marcador</span>
@@ -279,7 +296,12 @@
                 <span x-show="timelineSelectedClip" class="text-[10px] text-zinc-500 ml-auto">Selecionado: <span class="text-zinc-300" x-text="timelineSelectedClipLabel || timelineSelectedClip?.kind"></span></span>
             </div>
 
-            <div class="relative" :style="'width: ' + timelineTrackWidthPx + 'px; min-width: ' + timelineViewportWidthPx() + 'px'" x-ref="timelineTrackArea" @click="setPlayheadFromTimelineEvent($event)">
+            <div
+                class="relative"
+                :style="'width: ' + timelineTrackWidthPx + 'px; min-width: ' + (timelineExpanded ? '100%' : timelineViewportWidthPx() + 'px')"
+                x-ref="timelineTrackArea"
+                @click="setPlayheadFromTimelineEvent($event)"
+            >
                 {{-- Régua superior --}}
                 <div class="relative h-5 mb-2 border-b border-zinc-700/80 pointer-events-none">
                     <template x-for="tick in timelineTicks" :key="'tick-top-' + tick.sec">
@@ -302,20 +324,29 @@
                 <div class="flex gap-2 items-stretch relative min-h-[88px]">
                     <template x-for="(slide, index) in slides" :key="'tl-' + slide.id">
                         <div
-                            draggable="true"
-                            @dragstart="dragStart(index)"
-                            @dragover.prevent
+                            @dragenter.prevent="dragEnterSlide(index)"
+                            @dragover.prevent="dragEnterSlide(index)"
                             @drop.prevent="dropSlide(index)"
-                            @click="selectSlide(slide)"
-                            class="flex-shrink-0 rounded-lg border-2 overflow-hidden cursor-grab active:cursor-grabbing transition-all flex flex-col group"
+                            @click="timelineSlideClick(slide)"
+                            class="flex-shrink-0 rounded-lg border-2 overflow-hidden transition-all flex flex-col group"
                             :class="{
                                 'border-violet-400 ring-2 ring-violet-500/30 bg-violet-950/40': selectedSlide?.id === slide.id,
                                 'border-zinc-600 bg-zinc-800/90 hover:border-zinc-500': selectedSlide?.id !== slide.id,
                                 'border-emerald-500/90 ring-2 ring-emerald-500/25': previewPlaying && previewIndex === index,
+                                'border-amber-400/80 ring-2 ring-amber-500/20 scale-[1.02]': dragOverIndex === index && dragFromIndex !== null && dragFromIndex !== index,
                             }"
                             :style="'width: ' + timelineClipWidth(slide) + 'px'"
-                            :title="slidePreviewText(slide, index) + ' · ' + formatTimelineTime(slide.duration_seconds)"
+                            :title="slidePreviewText(slide, index) + ' · ' + formatTimelineTime(slide.duration_seconds) + ' — arraste ⋮⋮ para reordenar'"
                         >
+                            <div
+                                draggable="true"
+                                @dragstart.stop="dragStart(index)"
+                                @dragend.stop="dragEndSlide()"
+                                class="h-5 bg-zinc-950/90 border-b border-zinc-700/60 flex items-center justify-center cursor-grab active:cursor-grabbing shrink-0 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
+                                title="Arrastar para reordenar"
+                            >
+                                <span class="text-[10px] select-none tracking-widest">⋮⋮</span>
+                            </div>
                             <div class="h-11 bg-zinc-950 relative shrink-0 border-b border-zinc-700/50">
                                 <template x-if="slide.image_url">
                                     <img :src="slide.image_url" alt="" class="absolute inset-0 w-full h-full object-cover opacity-75">
@@ -344,6 +375,7 @@
                         <p class="text-[10px] text-zinc-500 uppercase tracking-wide">Áudio</p>
                         <button type="button" @click="openAudioTab()" class="text-[10px] text-violet-400 hover:text-violet-300">Editar trilhas & efeitos →</button>
                     </div>
+                    <p class="text-[9px] text-zinc-600 mb-2">Arraste clipes na faixa com o mouse (precisão 0,5s · segure <kbd class="px-0.5 rounded bg-zinc-800">Shift</kbd> para 0,1s). Solte da biblioteca na faixa desejada.</p>
 
                     <div class="flex items-center gap-2 h-6" @click.stop>
                         <span class="w-[4.5rem] shrink-0 text-[9px] text-emerald-500/90 truncate">Narração</span>
@@ -361,35 +393,96 @@
                     <template x-for="(track, slot) in audioTracks" :key="'tl-audio-' + slot">
                         <div class="flex items-center gap-2 h-6" @click.stop>
                             <span class="w-[4.5rem] shrink-0 text-[9px] text-amber-500/90 truncate" x-text="track.label"></span>
-                            <div class="relative h-5 rounded border border-zinc-800 bg-zinc-950/60" :style="'width: ' + Math.max(timelineTrackWidthPx, 120) + 'px'">
+                            <div
+                                class="relative h-7 rounded border border-zinc-800 bg-zinc-950/60 transition-colors"
+                                :data-timeline-lane="'music:' + slot"
+                                :class="audioDropHover?.lane === ('music:' + slot) || timelinePointerDrag?.laneKey === ('music:' + slot) ? 'ring-1 ring-amber-400/70 bg-amber-950/30' : ''"
+                                :style="'width: ' + Math.max(timelineTrackWidthPx, 120) + 'px'"
+                                @dragover.prevent="timelineAudioDragOver($event, 'music:' + slot)"
+                                @dragleave="timelineAudioDragLeave($event, 'music:' + slot)"
+                                @drop.prevent="timelineAudioDrop($event, 'music:' + slot)"
+                            >
                                 <div
-                                    x-show="track.file_path"
-                                    @click.stop="selectTimelineMusic(slot)"
-                                    class="absolute inset-y-0 rounded border cursor-pointer hover:brightness-110"
-                                    :class="timelineSelectedClip?.kind === 'music' && timelineSelectedClip?.slot === slot ? 'bg-amber-800/55 border-amber-400 ring-1 ring-amber-400' : 'bg-amber-900/35 border-amber-700/40'"
-                                    :style="'left: ' + timelineSecondsToPx(track.start_at) + 'px; width: ' + timelineMusicClipWidth(track) + 'px'"
-                                    :title="track.label + ' · vol ' + Math.round((track.volume ?? 0.35) * 100) + '% · clique para cortar'"
+                                    x-show="audioDropHover?.lane === ('music:' + slot)"
+                                    class="absolute -top-5 z-40 text-[10px] font-medium tabular-nums text-amber-100 bg-amber-900/95 border border-amber-600/60 px-1.5 py-0.5 rounded pointer-events-none whitespace-nowrap"
+                                    :style="'left: ' + Math.max(0, timelineSecondsToPx(audioDropHover?.sec || 0) - 18) + 'px'"
+                                    x-text="formatTimelineTime(audioDropHover?.sec || 0)"
                                 ></div>
+                                <div
+                                    x-show="audioDropHover?.lane === ('music:' + slot)"
+                                    class="absolute top-0 bottom-0 w-0.5 bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.9)] z-30 pointer-events-none"
+                                    :style="'left: ' + timelineSecondsToPx(audioDropHover?.sec || 0) + 'px'"
+                                >
+                                    <div class="absolute -top-1 -left-1 w-2 h-2 bg-amber-300 rotate-45"></div>
+                                </div>
+                                <div
+                                    x-show="track.file_path && musicTrackNeedsLoop(track)"
+                                    class="absolute inset-y-0 rounded border border-amber-700/20 pointer-events-none"
+                                    :style="'left: ' + timelineSecondsToPx(track.start_at || 0) + 'px; width: ' + timelineMusicClipWidth(track) + 'px; background: repeating-linear-gradient(90deg, rgba(245,158,11,0.08) 0, rgba(245,158,11,0.08) 8px, rgba(245,158,11,0.02) 8px, rgba(245,158,11,0.02) 16px)'"
+                                    title="Repetição automática até o fim dos slides"
+                                ></div>
+                                <template x-for="(seg, segIdx) in musicTrackSegments(track)" :key="'tl-mseg-' + slot + '-' + segIdx">
+                                    <div
+                                        @mousedown.stop="startTimelinePointerDrag($event, musicSegmentDragPayload(slot, segIdx))"
+                                        @click.stop="selectTimelineMusic(slot)"
+                                        class="absolute inset-y-0 rounded border cursor-grab active:cursor-grabbing hover:brightness-110 select-none"
+                                        :class="{
+                                            'bg-amber-800/55 border-amber-400 ring-2 ring-amber-300 z-40 opacity-95': timelinePointerDragActive(slot, segIdx),
+                                            'bg-amber-800/55 border-amber-400 ring-1 ring-amber-400 z-[1]': !timelinePointerDragActive(slot, segIdx) && timelineSelectedClip?.kind === 'music' && timelineSelectedClip?.slot === slot,
+                                            'bg-amber-900/35 border-amber-700/40 z-[1]': !timelinePointerDragActive(slot, segIdx) && !(timelineSelectedClip?.kind === 'music' && timelineSelectedClip?.slot === slot),
+                                        }"
+                                        :style="'left: ' + timelineSecondsToPx(timelinePointerDragSec(slot, segIdx)) + 'px; width: ' + timelineMusicSegmentWidth(seg) + 'px'"
+                                        :title="(seg.label || track.label) + ' · ' + formatTimelineTime(timelinePointerDragSec(slot, segIdx)) + ' — arraste horizontalmente'"
+                                    >
+                                        <span class="absolute inset-0 flex items-center px-1 text-[8px] text-amber-100/90 truncate pointer-events-none" x-text="formatTimelineTime(timelinePointerDragSec(slot, segIdx))"></span>
+                                    </div>
+                                </template>
                             </div>
                         </div>
                     </template>
 
                     <div class="flex items-start gap-2 min-h-[26px]" @click.stop>
                         <span class="w-[4.5rem] shrink-0 text-[9px] text-rose-400/90 pt-1">Efeitos</span>
-                        <div class="relative h-6 rounded border border-zinc-800 bg-zinc-950/60" :style="'width: ' + Math.max(timelineTrackWidthPx, 120) + 'px'">
-                            <template x-for="fx in soundEffects" :key="'tl-fx-' + fx.id">
-                                <button
-                                    type="button"
-                                    class="absolute top-0 h-5 rounded px-1 truncate text-left border hover:brightness-110"
-                                    :class="timelineSelectedClip?.kind === 'sfx' && timelineSelectedClip?.id === fx.id ? 'bg-rose-800/70 border-rose-400 ring-1 ring-rose-400 text-rose-50' : 'bg-rose-900/50 border-rose-600/50 text-rose-100'"
-                                    :style="'left: ' + timelineSecondsToPx(fx.start_at) + 'px; width: ' + timelineFxDisplayWidth(fx) + 'px'"
-                                    :title="(fx.label || 'Efeito') + ' · ' + formatTimelineTime(fx.start_at)"
-                                    @click.stop="selectSoundEffect(fx)"
-                                    x-text="fx.label || 'FX'"
-                                ></button>
+                        <div
+                            data-timeline-lane="sfx"
+                            class="relative h-7 rounded border border-zinc-800 bg-zinc-950/60 transition-colors"
+                            :class="audioDropHover?.lane === 'sfx' || timelinePointerDrag?.laneKey === 'sfx' ? 'ring-1 ring-rose-400/70 bg-rose-950/30' : ''"
+                            :style="'width: ' + Math.max(timelineTrackWidthPx, 120) + 'px'"
+                            @dragover.prevent="timelineAudioDragOver($event, 'sfx')"
+                            @dragleave="timelineAudioDragLeave($event, 'sfx')"
+                            @drop.prevent="timelineAudioDrop($event, 'sfx')"
+                        >
+                            <div
+                                x-show="audioDropHover?.lane === 'sfx'"
+                                class="absolute -top-5 z-40 text-[10px] font-medium tabular-nums text-rose-100 bg-rose-900/95 border border-rose-600/60 px-1.5 py-0.5 rounded pointer-events-none whitespace-nowrap"
+                                :style="'left: ' + Math.max(0, timelineSecondsToPx(audioDropHover?.sec || 0) - 18) + 'px'"
+                                x-text="formatTimelineTime(audioDropHover?.sec || 0)"
+                            ></div>
+                            <div
+                                x-show="audioDropHover?.lane === 'sfx'"
+                                class="absolute top-0 bottom-0 w-0.5 bg-rose-300 shadow-[0_0_8px_rgba(253,164,175,0.9)] z-30 pointer-events-none"
+                                :style="'left: ' + timelineSecondsToPx(audioDropHover?.sec || 0) + 'px'"
+                            >
+                                <div class="absolute -top-1 -left-1 w-2 h-2 bg-rose-300 rotate-45"></div>
+                            </div>
+                            <template x-for="(fx, fxIdx) in soundEffects" :key="'tl-fx-' + fx.id">
+                                <div
+                                    @mousedown.stop="startTimelinePointerDrag($event, sfxDragPayload(fx))"
+                                    @click.stop="selectTimelineSfx(fx)"
+                                    class="absolute inset-y-0 rounded border cursor-grab active:cursor-grabbing hover:brightness-110 select-none"
+                                    :class="{
+                                        'bg-rose-800/55 border-rose-400 ring-2 ring-rose-300 z-40 opacity-95': timelinePointerDragActive(null, null, fx.id),
+                                        'bg-rose-800/55 border-rose-400 ring-1 ring-rose-400 z-[1]': !timelinePointerDragActive(null, null, fx.id) && timelineSelectedClip?.kind === 'sfx' && timelineSelectedClip?.id === fx.id,
+                                        'bg-rose-900/35 border-rose-600/40 z-[1]': !timelinePointerDragActive(null, null, fx.id) && !(timelineSelectedClip?.kind === 'sfx' && timelineSelectedClip?.id === fx.id),
+                                    }"
+                                    :style="'left: ' + timelineSecondsToPx(timelinePointerDragFxSec(fx.id)) + 'px; width: ' + timelineSfxSegmentWidth(fx) + 'px'"
+                                    :title="(fx.label || 'Efeito') + ' · ' + formatTimelineTime(timelinePointerDragFxSec(fx.id)) + ' — arraste horizontalmente (Shift = 0,1s)'"
+                                >
+                                    <span class="absolute inset-0 flex items-center px-1 text-[8px] text-rose-100/90 truncate pointer-events-none" x-text="formatTimelineTime(timelinePointerDragFxSec(fx.id))"></span>
+                                </div>
                             </template>
                             <span x-show="!soundEffects.length" class="absolute inset-0 flex items-center justify-center text-[9px] text-zinc-600 pointer-events-none">
-                                clique em Trilhas & FX para adicionar
+                                solte efeitos aqui ou use Trilhas & FX
                             </span>
                         </div>
                     </div>
@@ -533,7 +626,8 @@ O narrador continua a história com calma."
             <div x-show="activeTab === 'audio'" class="space-y-5">
                 <div>
                     <h3 class="text-sm font-medium text-white mb-1">Trilhas sonoras (até 3)</h3>
-                    <p class="text-[11px] text-zinc-500 mb-3">Mix de trilhas com volume e início independentes. Ducking abaixa a trilha durante a narração (trilha 1).</p>
+                    <p class="text-[11px] text-zinc-500 mb-3">Mix de trilhas com volume e início independentes. Trilhas curtas repetem automaticamente até cobrir todos os slides. <strong class="text-zinc-400">Arraste</strong> segmentos abaixo para a timeline na faixa e segundo desejados.</p>
+                    <p class="text-[10px] text-zinc-600 mb-3">Atalhos: <kbd class="px-1 py-0.5 rounded bg-zinc-800 border border-zinc-700">Espaço</kbd> play/pause · <kbd class="px-1 py-0.5 rounded bg-zinc-800 border border-zinc-700">←</kbd><kbd class="px-1 py-0.5 rounded bg-zinc-800 border border-zinc-700">→</kbd> ±1s na timeline</p>
                     <button type="button" @click="openLibraryForMusic(selectedMusicSlot ?? 0)" class="mb-3 text-xs px-3 py-1.5 rounded-lg bg-amber-900/40 border border-amber-700/40 text-amber-200 hover:bg-amber-900/60">
                         🔍 Buscar trilha na biblioteca
                     </button>
@@ -541,7 +635,7 @@ O narrador continua a história com calma."
                         <template x-for="(track, slot) in audioTracks" :key="'music-' + slot">
                             <div class="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 space-y-2">
                                 <div class="flex items-center justify-between gap-2">
-                                    <span class="text-xs font-medium text-zinc-200" x-text="track.label"></span>
+                                    <button type="button" @click="selectedMusicSlot = slot" class="text-xs font-medium text-zinc-200 hover:text-amber-200" :class="selectedMusicSlot === slot ? 'text-amber-300' : ''" x-text="track.label"></button>
                                     <span x-show="track.file_path" class="text-[10px] text-emerald-400">ativa</span>
                                     <button x-show="track.id" type="button" @click="removeMusicTrack(slot)" class="text-[10px] text-red-400 hover:text-red-300">Remover</button>
                                 </div>
@@ -554,18 +648,43 @@ O narrador continua a história com calma."
                                         <label class="text-[10px] text-zinc-500">Início (s)</label>
                                         <input type="number" min="0" step="0.1" x-model.number="track.start_at" @change="saveMusicTrack(slot)" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs">
                                     </div>
+                                    <div class="flex items-end">
+                                        <label class="flex items-center gap-1 text-[10px] text-zinc-400">
+                                            <input type="checkbox" x-model="track.loop_enabled" @change="saveMusicTrack(slot)">
+                                            Repetir até fim
+                                        </label>
+                                    </div>
                                     <div x-show="slot === 0" class="flex items-end">
                                         <label class="flex items-center gap-1 text-[10px] text-zinc-400">
                                             <input type="checkbox" x-model="track.ducking_enabled" @change="saveMusicTrack(slot)">
                                             Ducking
                                         </label>
                                     </div>
-                                    <div class="flex items-end">
+                                    <div class="flex items-end gap-2 col-span-2 sm:col-span-4">
                                         <label class="text-[10px] text-violet-400 cursor-pointer hover:text-violet-300">
                                             <input type="file" accept="audio/*" class="hidden" @change="selectedMusicSlot = slot; uploadAudio($event)">
                                             Importar MP3/WAV
                                         </label>
+                                        <button x-show="track.file_path" type="button" @click="selectedMusicSlot = slot; openLibraryForMusic(slot)" class="text-[10px] text-amber-400 hover:text-amber-300">+ Encadear trilha</button>
                                     </div>
+                                </div>
+                                <div x-show="track.file_path && musicTrackSegments(track).length" class="space-y-1">
+                                    <p class="text-[10px] text-zinc-500">Segmentos na timeline (<span x-text="formatTimelineTime(timelineTotalSeconds)"></span> total dos slides)</p>
+                                    <template x-for="(seg, segIdx) in musicTrackSegments(track)" :key="'mseg-' + slot + '-' + segIdx">
+                                        <div
+                                            draggable="true"
+                                            @dragstart.stop="startAudioDrag(musicSegmentDragPayload(slot, segIdx), $event)"
+                                            @dragend.stop="endAudioDrag()"
+                                            class="flex items-center gap-2 text-[10px] text-zinc-400 rounded px-1 py-0.5 cursor-grab active:cursor-grabbing hover:bg-amber-950/40 border border-transparent hover:border-amber-800/50"
+                                            :title="'Arraste para a timeline · ' + formatTimelineTime(seg.start_at)"
+                                        >
+                                            <span class="text-amber-500/80 select-none">⋮⋮</span>
+                                            <span class="text-amber-500/80" x-text="segIdx + 1 + '.'"></span>
+                                            <span class="truncate flex-1" x-text="seg.label"></span>
+                                            <span class="tabular-nums text-zinc-500" x-text="formatTimelineTime(seg.start_at) + ' · ' + formatTimelineTime(seg.duration)"></span>
+                                        </div>
+                                    </template>
+                                    <p x-show="musicTrackNeedsLoop(track)" class="text-[10px] text-amber-500/80">↻ Repete automaticamente após o último segmento</p>
                                 </div>
                                 <audio x-show="track.audio_url" :src="track.audio_url" controls class="w-full h-8 mt-1" preload="metadata"></audio>
                             </div>
@@ -575,9 +694,9 @@ O narrador continua a história com calma."
 
                 <div class="border-t border-zinc-800 pt-4">
                     <h3 class="text-sm font-medium text-white mb-1">Efeitos sonoros</h3>
-                    <p class="text-[11px] text-zinc-500 mb-3">Posicione efeitos em qualquer segundo da linha do tempo do preview.</p>
+                    <p class="text-[11px] text-zinc-500 mb-3">Posicione efeitos na faixa FX da timeline. <strong class="text-zinc-400">Arraste</strong> o bloco na timeline (0,5s · segure <kbd class="px-0.5 rounded bg-zinc-800 border border-zinc-700">Shift</kbd> para 0,1s) ou solte da biblioteca no segundo desejado.</p>
                     <div class="flex flex-wrap gap-2 mb-3">
-                        <button type="button" @click="openLibraryForSfx(0)" class="text-xs px-3 py-1.5 rounded-lg bg-rose-900/40 border border-rose-700/40 text-rose-200 hover:bg-rose-900/60">
+                        <button type="button" @click="openLibraryForSfx(timelinePlayheadSec)" class="text-xs px-3 py-1.5 rounded-lg bg-rose-900/40 border border-rose-700/40 text-rose-200 hover:bg-rose-900/60">
                             🔍 Buscar efeito na biblioteca
                         </button>
                         <label class="text-xs px-3 py-1.5 rounded-lg bg-violet-700 hover:bg-violet-600 cursor-pointer">
@@ -594,6 +713,17 @@ O narrador continua a história com calma."
                                 class="rounded-lg border bg-zinc-950/50 p-3"
                                 :class="selectedSoundEffectId === fx.id ? 'border-rose-500/60 ring-1 ring-rose-500/30' : 'border-zinc-800'"
                             >
+                                <div
+                                    draggable="true"
+                                    @dragstart.stop="startAudioDrag(sfxDragPayload(fx), $event)"
+                                    @dragend.stop="endAudioDrag()"
+                                    class="flex items-center gap-2 mb-2 px-1 py-1 rounded cursor-grab active:cursor-grabbing hover:bg-rose-950/30 border border-transparent hover:border-rose-800/40"
+                                    :title="'Arraste para a faixa FX · ' + formatTimelineTime(fx.start_at)"
+                                >
+                                    <span class="text-rose-400/80 select-none text-[10px]">⋮⋮</span>
+                                    <span class="text-xs font-medium text-zinc-200 truncate flex-1" x-text="fx.label || 'Efeito'"></span>
+                                    <span class="text-[10px] text-zinc-500 tabular-nums" x-text="formatTimelineTime(fx.start_at) + ' · ' + formatTimelineTime(timelineEffectiveDuration(fx, fx.clip_duration || fx.source_duration || 2))"></span>
+                                </div>
                                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
                                     <div class="col-span-2 sm:col-span-1">
                                         <label class="text-[10px] text-zinc-500">Nome</label>
@@ -691,8 +821,8 @@ O narrador continua a história com calma."
                 <p x-show="mediaErrors.length && !mediaResults.length" class="text-xs text-yellow-400" x-text="mediaErrors.join(' ')"></p>
                 <p x-show="mediaResults.length && (mediaType === 'image')" class="text-xs text-emerald-400">Clique na imagem para inserir no slide — ou use <strong>Image Studio</strong> para editar a arte.</p>
                 <p x-show="mediaResults.length && mediaType === 'video'" class="text-xs text-emerald-400">Clique no vídeo para inserir como B-roll no slide selecionado.</p>
-                <p x-show="mediaResults.length && mediaType === 'music'" class="text-xs text-amber-400">Ouça o preview e clique em Inserir — vai para a trilha selecionada com licença registrada.</p>
-                <p x-show="mediaResults.length && mediaType === 'sfx'" class="text-xs text-rose-400">Ouça e clique em Inserir — posicione na timeline (segundos).</p>
+                <p x-show="mediaResults.length && mediaType === 'music'" class="text-xs text-amber-400">Ouça o preview — clique em Inserir ou <strong>arraste ⋮⋮</strong> para a faixa desejada na timeline.</p>
+                <p x-show="mediaResults.length && mediaType === 'sfx'" class="text-xs text-rose-400">Ouça e clique em Inserir ou <strong>arraste ⋮⋮</strong> para a faixa FX na timeline.</p>
 
                 <div x-show="publishAuto && projectCreditsCount" class="rounded border border-emerald-800/40 bg-emerald-950/30 p-2">
                     <p class="text-xs text-emerald-300">
@@ -701,11 +831,23 @@ O narrador continua a história com calma."
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-72 overflow-y-auto">
-                    <template x-for="item in mediaResults" :key="item.source + '-' + item.id">
+                    <template x-for="(item, itemIndex) in mediaResults" :key="item.source + '-' + item.id">
                         <div class="rounded-lg border border-zinc-700 bg-zinc-800/80 overflow-hidden group">
                             <template x-if="item.type === 'audio' || item.type === 'sfx'">
                                 <div class="p-3 space-y-2">
-                                    <div class="flex items-start justify-between gap-2">
+                                    <div
+                                        x-show="mediaType === 'music' || mediaType === 'sfx'"
+                                        draggable="true"
+                                        @dragstart.stop="startAudioDrag(mediaType === 'music' ? libraryMusicDragPayload(item, itemIndex) : librarySfxDragPayload(item, itemIndex), $event)"
+                                        @dragend.stop="endAudioDrag()"
+                                        class="flex items-center gap-2 px-1 py-1 -mx-1 rounded cursor-grab active:cursor-grabbing hover:bg-zinc-700/50 border border-transparent hover:border-violet-700/40"
+                                        :title="mediaType === 'music' ? 'Arraste para uma faixa de trilha na timeline' : 'Arraste para a faixa FX na timeline'"
+                                    >
+                                        <span class="text-violet-400/80 select-none text-[10px]">⋮⋮</span>
+                                        <p class="text-xs font-medium text-zinc-200 line-clamp-2 flex-1" x-text="item.title || item.author || 'Áudio'"></p>
+                                        <span class="text-[9px] uppercase shrink-0 px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-400" x-text="item.source"></span>
+                                    </div>
+                                    <div x-show="mediaType !== 'music' && mediaType !== 'sfx'" class="flex items-start justify-between gap-2">
                                         <p class="text-xs font-medium text-zinc-200 line-clamp-2" x-text="item.title || item.author || 'Áudio'"></p>
                                         <span class="text-[9px] uppercase shrink-0 px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-400" x-text="item.source"></span>
                                     </div>
@@ -829,13 +971,26 @@ O narrador continua a história com calma."
                                 + Imagem
                                 <input type="file" accept="image/*" @change="imageStudioUploadImage($event)" class="hidden">
                             </label>
-                            <label class="text-xs px-2 py-1 rounded bg-emerald-900/60 hover:bg-emerald-800 cursor-pointer" :class="imageStudioBgRemoving ? 'opacity-50 pointer-events-none' : ''">
-                                ✂ Remover fundo (arquivo)
+                            <label class="text-xs px-2 py-1 rounded bg-emerald-900/60 hover:bg-emerald-800 cursor-pointer inline-flex items-center gap-1.5 min-w-[11rem]" :class="imageStudioBgRemoving ? 'opacity-70 pointer-events-none' : ''">
+                                <span x-show="!imageStudioBgRemoving">✂ Remover fundo (arquivo)</span>
+                                <span x-show="imageStudioBgRemoving" x-cloak class="inline-flex items-center gap-1.5 text-emerald-100">
+                                    <svg class="h-3.5 w-3.5 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Processando…
+                                </span>
                                 <input type="file" accept="image/*" @change="imageStudioRemoveBackground($event)" class="hidden" :disabled="imageStudioBgRemoving">
                             </label>
-                            <button type="button" @click="imageStudioRemoveBgFromSelection()" :disabled="imageStudioBgRemoving || imageStudioSelectedObject?.type !== 'image'" class="text-xs px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 disabled:opacity-40" title="Remove fundo da imagem já selecionada no canvas">
+                            <button type="button" @click="imageStudioRemoveBgFromSelection()" :disabled="imageStudioBgRemoving || imageStudioSelectedObject?.type !== 'image'" class="text-xs px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 disabled:opacity-40 inline-flex items-center gap-1.5 min-w-[12rem] justify-center" title="Remove fundo da imagem já selecionada no canvas">
                                 <span x-show="!imageStudioBgRemoving">✂ Remover fundo da seleção</span>
-                                <span x-show="imageStudioBgRemoving">Processando…</span>
+                                <span x-show="imageStudioBgRemoving" x-cloak class="inline-flex items-center gap-1.5">
+                                    <svg class="h-3.5 w-3.5 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Processando…
+                                </span>
                             </button>
                             <label class="text-xs px-2 py-1 rounded bg-zinc-800 flex items-center gap-1 cursor-pointer">
                                 <input type="checkbox" x-model="imageStudioShowFormatGuides" @change="onImageStudioFormatGuidesChange()" class="rounded"> Sangrias / contorno
@@ -862,7 +1017,26 @@ O narrador continua a história com calma."
                         </div>
                         <p class="text-[10px] text-violet-400" x-show="imageStudioCurrentPreset" x-text="'Formato ativo: ' + (imageStudioCurrentPreset?.name || '') + ' — ' + (imageStudioCurrentPreset?.width || 0) + '×' + (imageStudioCurrentPreset?.height || 0) + 'px (contorno violeta = corte · amarelo = sangria)'"></p>
 
-                        <div class="rounded-xl border border-zinc-700 bg-zinc-950 p-4 overflow-auto max-h-[70vh] flex justify-center items-start" x-ref="imageStudioCanvasWrap">
+                        <div class="rounded-xl border border-zinc-700 bg-zinc-950 p-4 overflow-auto max-h-[70vh] flex justify-center items-start relative" x-ref="imageStudioCanvasWrap">
+                            <div
+                                x-show="imageStudioBgRemoving"
+                                x-cloak
+                                class="absolute inset-0 z-50 flex items-center justify-center rounded-xl bg-zinc-950/85 backdrop-blur-[2px]"
+                                role="status"
+                                aria-live="polite"
+                                aria-busy="true"
+                            >
+                                <div class="flex flex-col items-center gap-3 px-6 py-5 rounded-xl border border-emerald-700/50 bg-zinc-900/95 shadow-xl max-w-xs text-center">
+                                    <svg class="h-11 w-11 animate-spin text-emerald-400" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+                                        <path class="opacity-95" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <div>
+                                        <p class="text-sm font-medium text-white">Removendo fundo com IA…</p>
+                                        <p class="text-[11px] text-zinc-400 mt-1">Isso costuma levar de 2 a 5 segundos. Não feche esta aba.</p>
+                                    </div>
+                                </div>
+                            </div>
                             <div x-ref="imageStudioCanvasScaler" class="relative shadow-2xl shadow-black/40 ring-2 ring-violet-500/40 inline-block bg-zinc-900">
                                 <canvas x-ref="imageStudioCanvas" class="block"></canvas>
                                 <img
@@ -1047,9 +1221,15 @@ O narrador continua a história com calma."
                             </template>
                             <template x-if="imageStudioSelectedObject?.type === 'image'">
                                 <div class="space-y-2 pt-2 border-t border-zinc-800">
-                                    <button type="button" @click="imageStudioRemoveBgFromSelection()" :disabled="imageStudioBgRemoving" class="w-full text-[10px] py-1.5 rounded bg-emerald-900/60 hover:bg-emerald-800 disabled:opacity-40">
+                                    <button type="button" @click="imageStudioRemoveBgFromSelection()" :disabled="imageStudioBgRemoving" class="w-full text-[10px] py-1.5 rounded bg-emerald-900/60 hover:bg-emerald-800 disabled:opacity-40 inline-flex items-center justify-center gap-1.5">
                                         <span x-show="!imageStudioBgRemoving">✂ Remover fundo desta imagem</span>
-                                        <span x-show="imageStudioBgRemoving">Removendo fundo…</span>
+                                        <span x-show="imageStudioBgRemoving" x-cloak class="inline-flex items-center gap-1.5">
+                                            <svg class="h-3.5 w-3.5 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Processando…
+                                        </span>
                                     </button>
                                     <p class="text-[10px] text-violet-400 font-medium">Filtros</p>
                                     <label class="text-[10px] text-zinc-400 block">Brilho<input type="range" min="0" max="100" x-model.number="imageStudioFilters.brightness" @input="imageStudioApplyFilters()" class="w-full mt-1"></label>

@@ -463,6 +463,7 @@ class MediaLibraryController extends Controller
             'slide_id' => ['nullable', 'integer'],
             'track_slot' => ['nullable', 'integer', 'min:0', 'max:2'],
             'start_at' => ['nullable', 'numeric', 'min:0'],
+            'place_at' => ['nullable', 'boolean'],
             'label' => ['nullable', 'string', 'max:120'],
         ]);
 
@@ -530,15 +531,50 @@ class MediaLibraryController extends Controller
 
         if ($target === 'audio_track') {
             $slot = (int) ($data['track_slot'] ?? 0);
-            $track = $project->audioTracks()->updateOrCreate(
-                ['type' => 'music', 'track_slot' => $slot],
-                [
+            $duration = ! empty($item['duration_seconds']) ? (float) $item['duration_seconds'] : null;
+            $label = $item['title'] ?? 'Trilha';
+            $placeAt = (bool) ($data['place_at'] ?? false);
+            $startAt = isset($data['start_at']) ? (float) $data['start_at'] : null;
+
+            $existing = $project->audioTracks()
+                ->where('type', 'music')
+                ->where('track_slot', $slot)
+                ->first();
+
+            if ($existing?->file_path && ! $placeAt) {
+                $clips = $existing->appendClip([
                     'asset_id' => $asset->id,
                     'file_path' => $asset->file_path,
-                    'volume' => 0.35,
-                    'ducking_enabled' => $slot === 0,
-                ]
-            );
+                    'source_duration' => $duration,
+                    'label' => $label,
+                ]);
+                $existing->update(['clips' => $clips]);
+                $track = $existing->fresh();
+            } elseif ($existing?->file_path && $placeAt) {
+                $clips = $existing->clips ?? [];
+                $clips[] = [
+                    'asset_id' => $asset->id,
+                    'file_path' => $asset->file_path,
+                    'source_duration' => $duration,
+                    'start_at' => $startAt ?? $existing->coverageEndSec(),
+                    'label' => $label,
+                ];
+                $existing->update(['clips' => $clips]);
+                $track = $existing->fresh();
+            } else {
+                $track = $project->audioTracks()->updateOrCreate(
+                    ['type' => 'music', 'track_slot' => $slot],
+                    [
+                        'asset_id' => $asset->id,
+                        'file_path' => $asset->file_path,
+                        'source_duration' => $duration,
+                        'volume' => 0.35,
+                        'start_at' => $startAt ?? 0,
+                        'ducking_enabled' => $slot === 0,
+                        'loop_enabled' => true,
+                    ]
+                );
+            }
 
             return response()->json(array_merge($payload, ['audio_track' => $track->fresh()]), 201);
         }

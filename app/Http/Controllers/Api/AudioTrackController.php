@@ -30,6 +30,9 @@ class AudioTrackController extends Controller
             'trim_out' => ['nullable', 'numeric', 'min:0'],
             'source_duration' => ['nullable', 'numeric', 'min:0'],
             'ducking_enabled' => ['nullable', 'boolean'],
+            'loop_enabled' => ['nullable', 'boolean'],
+            'append' => ['nullable', 'boolean'],
+            'label' => ['nullable', 'string', 'max:120'],
         ]);
 
         $type = $data['type'] ?? 'music';
@@ -37,6 +40,25 @@ class AudioTrackController extends Controller
 
         if ($type === 'music' && ($slot < 0 || $slot > 2)) {
             return response()->json(['message' => 'Trilha inválida — use slot 0, 1 ou 2.'], 422);
+        }
+
+        $existing = $project->audioTracks()
+            ->where('type', $type)
+            ->where('track_slot', $slot)
+            ->first();
+
+        if ($existing?->file_path && ($data['append'] ?? false)) {
+            $clips = $existing->appendClip([
+                'asset_id' => $data['asset_id'] ?? null,
+                'file_path' => $data['file_path'] ?? null,
+                'source_duration' => $data['source_duration'] ?? null,
+                'trim_in' => $data['trim_in'] ?? 0,
+                'trim_out' => $data['trim_out'] ?? null,
+                'label' => $data['label'] ?? 'Trilha',
+            ]);
+            $existing->update(['clips' => $clips]);
+
+            return response()->json($existing->fresh('asset'), 201);
         }
 
         $track = $project->audioTracks()->updateOrCreate(
@@ -50,6 +72,8 @@ class AudioTrackController extends Controller
                 'trim_out' => $data['trim_out'] ?? null,
                 'source_duration' => $data['source_duration'] ?? null,
                 'ducking_enabled' => $data['ducking_enabled'] ?? true,
+                'loop_enabled' => $data['loop_enabled'] ?? true,
+                'clips' => null,
             ]
         );
 
@@ -67,6 +91,8 @@ class AudioTrackController extends Controller
             'trim_out' => ['nullable', 'numeric', 'min:0'],
             'source_duration' => ['nullable', 'numeric', 'min:0'],
             'ducking_enabled' => ['nullable', 'boolean'],
+            'loop_enabled' => ['nullable', 'boolean'],
+            'clips' => ['nullable', 'array'],
             'file_path' => ['nullable', 'string'],
             'asset_id' => ['nullable', 'exists:assets,id'],
         ]);
