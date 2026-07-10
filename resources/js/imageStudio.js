@@ -756,6 +756,42 @@ export function imageStudioMethods() {
             }
             const url = item.preview_url || item.download_url;
             await this.imageStudioEngine?.addImageFromUrl(url, item.title || 'Biblioteca');
+            this.refreshImageStudioLayers();
+        },
+
+        async imageStudioImportFromLibraryItem(item) {
+            if (!this.imageStudioReady) {
+                this.switchTab('image_studio');
+                await this.$nextTick();
+                if (!this.imageStudioReady) {
+                    await this.initImageStudio();
+                }
+            } else {
+                this.switchTab('image_studio');
+            }
+            try {
+                await this.imageStudioImportFromLibrary(item);
+                this.message = 'Imagem adicionada ao Image Studio';
+            } catch (e) {
+                this.error = e.message || 'Erro ao importar para o Image Studio';
+            }
+        },
+
+        async imageStudioImportFromAsset(asset) {
+            if (!asset?.id) {
+                return;
+            }
+            const url = `/api/projects/${this.projectId}/assets/${asset.id}`;
+            if (!this.imageStudioReady) {
+                this.switchTab('image_studio');
+                await this.$nextTick();
+                if (!this.imageStudioReady) {
+                    await this.initImageStudio();
+                }
+            }
+            await this.imageStudioEngine?.addImageFromUrl(url, asset.item_title || 'Asset');
+            this.refreshImageStudioLayers();
+            this.message = 'Asset adicionado ao canvas';
         },
     };
 }

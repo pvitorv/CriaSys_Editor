@@ -684,7 +684,7 @@ O narrador continua a história com calma."
                 </div>
 
                 <p x-show="mediaErrors.length && !mediaResults.length" class="text-xs text-yellow-400" x-text="mediaErrors.join(' ')"></p>
-                <p x-show="mediaResults.length && (mediaType === 'image')" class="text-xs text-emerald-400">Clique na imagem para inserir no slide selecionado.</p>
+                <p x-show="mediaResults.length && (mediaType === 'image')" class="text-xs text-emerald-400">Clique na imagem para inserir no slide — ou use <strong>Image Studio</strong> para editar a arte.</p>
                 <p x-show="mediaResults.length && mediaType === 'video'" class="text-xs text-emerald-400">Clique no vídeo para inserir como B-roll no slide selecionado.</p>
                 <p x-show="mediaResults.length && mediaType === 'music'" class="text-xs text-amber-400">Ouça o preview e clique em Inserir — vai para a trilha selecionada com licença registrada.</p>
                 <p x-show="mediaResults.length && mediaType === 'sfx'" class="text-xs text-rose-400">Ouça e clique em Inserir — posicione na timeline (segundos).</p>
@@ -715,21 +715,30 @@ O narrador continua a história com calma."
                                 </div>
                             </template>
                             <template x-if="item.type !== 'audio' && item.type !== 'sfx'">
-                                <div class="relative cursor-pointer" @click="importMedia(item)">
-                                    <template x-if="item.type === 'video'">
-                                        <div class="relative h-24">
-                                            <img :src="item.preview_url" :alt="item.author || 'Vídeo'" class="w-full h-24 object-cover" loading="lazy">
-                                            <span class="absolute inset-0 flex items-center justify-center text-2xl text-white/90">▶</span>
-                                            <span x-show="item.duration_seconds" class="absolute bottom-1 right-1 text-[10px] bg-black/80 px-1 rounded" x-text="item.duration_seconds + 's'"></span>
-                                        </div>
-                                    </template>
-                                    <template x-if="item.type !== 'video'">
-                                        <img :src="item.preview_url" :alt="item.title || 'Imagem'" class="w-full h-24 object-cover" loading="lazy">
-                                    </template>
-                                    <span class="absolute bottom-0 left-0 right-0 bg-black/70 text-[10px] px-1 py-0.5 truncate" x-text="item.source"></span>
-                                    <p x-show="item.attribution_text" class="absolute top-0 left-0 right-0 bg-black/80 text-[9px] px-1 py-0.5 line-clamp-2 leading-tight opacity-0 group-hover:opacity-100 transition-opacity" x-text="item.attribution_text"></p>
-                                    <span x-show="item.requires_attribution || item.attribution_text" class="absolute top-1 right-1 text-[10px] bg-yellow-600/80 px-1 rounded" title="Crédito ao autor">©</span>
-                                    <div class="absolute inset-0 bg-violet-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs font-medium">Inserir</div>
+                                <div class="relative group/visual">
+                                    <div class="relative cursor-pointer" @click="importMedia(item)">
+                                        <template x-if="item.type === 'video'">
+                                            <div class="relative h-24">
+                                                <img :src="item.preview_url" :alt="item.author || 'Vídeo'" class="w-full h-24 object-cover" loading="lazy">
+                                                <span class="absolute inset-0 flex items-center justify-center text-2xl text-white/90">▶</span>
+                                                <span x-show="item.duration_seconds" class="absolute bottom-1 right-1 text-[10px] bg-black/80 px-1 rounded" x-text="item.duration_seconds + 's'"></span>
+                                            </div>
+                                        </template>
+                                        <template x-if="item.type !== 'video'">
+                                            <img :src="item.preview_url" :alt="item.title || 'Imagem'" class="w-full h-24 object-cover" loading="lazy">
+                                        </template>
+                                        <span class="absolute bottom-0 left-0 right-0 bg-black/70 text-[10px] px-1 py-0.5 truncate" x-text="item.source"></span>
+                                        <p x-show="item.attribution_text" class="absolute top-0 left-0 right-0 bg-black/80 text-[9px] px-1 py-0.5 line-clamp-2 leading-tight opacity-0 group-hover/visual:opacity-100 transition-opacity" x-text="item.attribution_text"></p>
+                                        <span x-show="item.requires_attribution || item.attribution_text" class="absolute top-1 right-1 text-[10px] bg-yellow-600/80 px-1 rounded" title="Crédito ao autor">©</span>
+                                        <div class="absolute inset-0 bg-violet-900/60 opacity-0 group-hover/visual:opacity-100 flex items-center justify-center text-xs font-medium">Inserir no slide</div>
+                                    </div>
+                                    <button
+                                        x-show="item.type !== 'video'"
+                                        type="button"
+                                        @click.stop="imageStudioImportFromLibraryItem(item)"
+                                        class="absolute top-1 left-1 z-10 text-[10px] px-1.5 py-0.5 rounded bg-violet-700/90 hover:bg-violet-600 text-white opacity-0 group-hover/visual:opacity-100 transition-opacity"
+                                        title="Abrir no Image Studio"
+                                    >🎨 Studio</button>
                                 </div>
                             </template>
                         </div>
