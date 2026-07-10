@@ -1,10 +1,11 @@
 ================================================================================
                     CRIASYS_EDITOR — DOCUMENTO MESTRE DO PROJETO
 ================================================================================
-Versão: 1.1
-Data: 08/07/2026
+Versão: 1.2
+Data: 09/07/2026
 Autor do conceito: Vitor
 Uso: Briefing completo para desenvolvimento com agente de IA (Cursor Agent)
+Nota v1.2: Branch 015 — bibliotecas de trilhas/efeitos, créditos automáticos, busca visual PT→EN (09/07/2026)
 Nota v1.1: Adicionada autenticação multi-usuário com admin UserDev (branch 004)
 ================================================================================
 1. VISÃO GERAL

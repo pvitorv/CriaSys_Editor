@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\ProjectStockLicenseController;
 use App\Http\Controllers\Api\ProjectTemplateController;
 use App\Http\Controllers\Api\RenderController;
 use App\Http\Controllers\Api\SlideController;
+use App\Http\Controllers\Api\SoundEffectController;
 use App\Http\Controllers\Api\TtsController;
 use Illuminate\Support\Facades\Route;
 
@@ -25,6 +26,7 @@ Route::post('projects/{project}/archive', [ProjectController::class, 'archive'])
 
 Route::get('projects/{project}/slides', [SlideController::class, 'index']);
 Route::post('projects/{project}/slides', [SlideController::class, 'store']);
+Route::post('projects/{project}/slides/recalculate-durations', [SlideController::class, 'recalculateDurations']);
 Route::post('projects/{project}/slides/apply-script', [SlideController::class, 'applyScript']);
 Route::post('projects/{project}/slides/parse-script', [SlideController::class, 'parseScript']);
 Route::put('projects/{project}/slides/reorder', [SlideController::class, 'reorder']);
@@ -35,6 +37,8 @@ Route::post('projects/{project}/assets/upload', [AssetController::class, 'upload
 Route::get('projects/{project}/assets/{asset}', [AssetController::class, 'serve'])->name('api.projects.assets');
 Route::get('projects/{project}/files/{type}/{filename}', [AssetController::class, 'serveFile'])->name('api.projects.files');
 
+Route::get('media/providers', [MediaLibraryController::class, 'providers']);
+Route::get('media/suggest-query', [MediaLibraryController::class, 'suggestQuery']);
 Route::get('media/search', [MediaLibraryController::class, 'search']);
 Route::post('projects/{project}/media/import', [MediaLibraryController::class, 'import']);
 
@@ -42,6 +46,11 @@ Route::get('projects/{project}/audio-tracks', [AudioTrackController::class, 'ind
 Route::post('projects/{project}/audio-tracks', [AudioTrackController::class, 'store']);
 Route::put('projects/{project}/audio-tracks/{audioTrack}', [AudioTrackController::class, 'update']);
 Route::delete('projects/{project}/audio-tracks/{audioTrack}', [AudioTrackController::class, 'destroy']);
+
+Route::get('projects/{project}/sound-effects', [SoundEffectController::class, 'index']);
+Route::post('projects/{project}/sound-effects', [SoundEffectController::class, 'store']);
+Route::put('projects/{project}/sound-effects/{soundEffect}', [SoundEffectController::class, 'update']);
+Route::delete('projects/{project}/sound-effects/{soundEffect}', [SoundEffectController::class, 'destroy']);
 
 Route::get('projects/{project}/platform-descriptions', [ExportController::class, 'platformDescriptions']);
 Route::post('projects/{project}/platform-descriptions', [ExportController::class, 'savePlatformDescriptions']);

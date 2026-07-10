@@ -30,7 +30,7 @@ git push -u origin 014
 ```
 
 ## Branch atual de trabalho
-- **`014`** — timeline profissional do editor (próxima entrega)
+- **`015`** — bibliotecas áudio/SFX + timeline (ver `HANDOFF_015.md`)
 
 ## Como rodar
 ```bash

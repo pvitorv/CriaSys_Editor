@@ -88,7 +88,8 @@ class MediaAttribution
         $page = $hit['pageURL'] ?? 'https://pixabay.com';
         $label = match ($type) {
             'video' => 'Video',
-            'audio' => 'Media',
+            'audio', 'music' => 'Music',
+            'sfx' => 'Sound effect',
             default => 'Image',
         };
 
@@ -119,8 +120,33 @@ class MediaAttribution
     public static function forMixkitMusic(string $title, string $url = 'https://mixkit.co/free-stock-music/'): array
     {
         return [
-            'attribution_text' => "Music: {$title} — Mixkit — {$url}",
+            'attribution_text' => "Music: \"{$title}\" — Mixkit (free license) — {$url}",
             'requires_attribution' => false,
+        ];
+    }
+
+    public static function forMixkitSfx(string $title, string $url = 'https://mixkit.co/free-sound-effects/'): array
+    {
+        return [
+            'attribution_text' => "Sound effect: \"{$title}\" — Mixkit (free license) — {$url}",
+            'requires_attribution' => false,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $hit
+     */
+    public static function forFreesound(array $hit, string $type = 'audio'): array
+    {
+        $name = $hit['name'] ?? 'Sound';
+        $user = $hit['username'] ?? 'Unknown';
+        $url = $hit['url'] ?? 'https://freesound.org';
+        $license = $hit['license'] ?? 'Creative Commons';
+        $label = $type === 'sfx' ? 'Sound effect' : 'Audio';
+
+        return [
+            'attribution_text' => "{$label}: \"{$name}\" by {$user} on Freesound ({$license}) — {$url}",
+            'requires_attribution' => true,
         ];
     }
 
@@ -168,9 +194,17 @@ class MediaAttribution
                 'user' => $item['author'] ?? 'Unknown',
                 'pageURL' => $item['original_url'] ?? null,
             ], $type),
-            'mixkit' => $type === 'audio'
-                ? self::forMixkitMusic($item['title'] ?? 'Mixkit Music', $item['original_url'] ?? null)
-                : self::forMixkitVideo($item),
+            'mixkit' => match ($type) {
+                'sfx' => self::forMixkitSfx($item['title'] ?? 'Mixkit SFX', $item['original_url'] ?? null),
+                'audio' => self::forMixkitMusic($item['title'] ?? 'Mixkit Music', $item['original_url'] ?? null),
+                default => self::forMixkitVideo($item),
+            },
+            'freesound' => self::forFreesound([
+                'name' => $item['title'] ?? 'Freesound',
+                'username' => $item['author'] ?? 'Unknown',
+                'url' => $item['original_url'] ?? null,
+                'license' => $item['license_type'] ?? null,
+            ], $type),
             default => ['attribution_text' => null, 'requires_attribution' => false],
         };
     }

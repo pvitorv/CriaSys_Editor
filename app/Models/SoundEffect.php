@@ -5,26 +5,22 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class AudioTrack extends Model
+class SoundEffect extends Model
 {
     protected $fillable = [
         'project_id',
-        'type',
-        'track_slot',
+        'label',
         'asset_id',
         'file_path',
-        'volume',
         'start_at',
-        'ducking_enabled',
+        'volume',
     ];
 
     protected function casts(): array
     {
         return [
-            'volume' => 'float',
             'start_at' => 'float',
-            'track_slot' => 'integer',
-            'ducking_enabled' => 'boolean',
+            'volume' => 'float',
         ];
     }
 

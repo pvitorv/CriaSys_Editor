@@ -56,7 +56,7 @@
                             <span class="text-xs text-zinc-600 select-none" title="Arrastar">⋮⋮</span>
                             <span class="text-xs text-zinc-500 w-5" x-text="index + 1"></span>
                             <div class="flex-1 min-w-0">
-                                <p class="text-sm truncate" x-text="slide.title || 'Slide sem título'"></p>
+                                <p class="text-sm truncate" x-text="slidePreviewText(slide, index)"></p>
                                 <p class="text-xs text-zinc-500">
                                     <span x-text="slide.duration_seconds + 's'"></span>
                                     <span x-show="slide.video_path" class="text-violet-400 ml-1">▶ vídeo</span>
@@ -74,21 +74,22 @@
             <div class="p-3 border-b border-zinc-800 flex items-center justify-between gap-2">
                 <h2 class="font-medium text-sm">Preview</h2>
                 <div class="flex items-center gap-2">
-                    <span x-show="previewPlaying" class="text-[10px] text-violet-400">
-                        Slide <span x-text="previewIndex + 1"></span>/<span x-text="slides.length"></span>
+                    <span x-show="previewPlaying" class="text-[10px] text-violet-400" x-text="previewModeLabel"></span>
+                    <span x-show="previewPlaying && slides.length" class="text-[10px] text-zinc-500">
                         · <span x-text="(previewSlide?.duration_seconds || 0) + 's'"></span>
                     </span>
+                    <span x-show="narration?.audio_url && !previewPlaying" class="text-[10px] text-emerald-400">narração pronta</span>
                     <button
-                        x-show="slides.length > 1"
+                        x-show="canPlayPreview"
                         @click="previewPlaying ? stopSlideshow() : playSlideshow()"
                         class="text-xs px-2 py-1 rounded"
                         :class="previewPlaying ? 'bg-red-900/60 text-red-300' : 'bg-violet-700 text-white hover:bg-violet-600'"
-                        x-text="previewPlaying ? 'Parar' : '▶ Reproduzir slideshow'"
+                        x-text="previewPlaying ? 'Parar' : (slides.length ? '▶ Reproduzir' : '▶ Preview roteiro')"
                     ></button>
                 </div>
             </div>
             <div class="flex-1 flex items-center justify-center p-4 overflow-hidden">
-                <div class="w-full aspect-video bg-zinc-950 rounded-lg border border-zinc-800 relative overflow-hidden">
+                <div class="w-full aspect-video bg-black rounded-lg border border-zinc-800 relative overflow-hidden">
                     <div
                         class="absolute inset-0 transition-all duration-500"
                         :class="{
@@ -109,17 +110,20 @@
                                 x-ref="previewVideo"
                             ></video>
                         </template>
-                        <template x-if="!previewSlide?.video_url && previewSlide?.image_url">
+                        <template x-if="previewSlide && !previewSlide?.video_url && previewSlide?.image_url">
                             <img :src="previewSlide.image_url" class="absolute inset-0 w-full h-full object-cover opacity-80">
                         </template>
-                        <div class="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-center p-6">
-                            <h3
-                                class="font-bold mb-2"
-                                :style="'color:' + (previewSlide?.text_style?.title_color || '#fff') + ';font-size:' + Math.min(previewSlide?.text_style?.title_size || 32, 32) + 'px'"
-                                x-text="previewSlide?.title || 'Selecione um slide'"
-                            ></h3>
-                            <p class="text-lg text-zinc-300 mb-2" x-text="previewSlide?.subtitle || ''"></p>
-                            <p class="text-sm text-zinc-400" x-text="previewSlide?.body_text || ''"></p>
+                        <div
+                            class="absolute inset-0 flex flex-col items-center text-center p-6"
+                            :class="previewVerticalAlignClass()"
+                            :style="previewSlide?.video_url || previewSlide?.image_url ? 'background: rgba(0,0,0,0.45)' : 'background: #000'"
+                        >
+                            <p
+                                class="font-medium leading-relaxed whitespace-pre-line max-w-prose"
+                                :style="previewTextStyle()"
+                                x-text="previewDisplayText || (canPlayPreview ? '' : 'Cole o roteiro ou adicione slides')"
+                            ></p>
+                            <p x-show="!previewDisplayText && !slides.length" class="text-xs text-zinc-500 mt-4">Tela preta — texto e narração aparecem aqui</p>
                         </div>
                     </div>
                 </div>
@@ -130,44 +134,60 @@
         <div class="col-span-4 flex flex-col min-h-0 rounded-xl border border-zinc-800 bg-zinc-900 overflow-y-auto">
             <div class="p-3 border-b border-zinc-800 flex justify-between items-center">
                 <h2 class="font-medium text-sm">Propriedades</h2>
-                <button x-show="selectedSlide" @click="searchFromSlideTitle()" class="text-xs text-violet-400 hover:text-violet-300">Buscar imagem pelo título</button>
+                <button x-show="selectedSlide" @click="searchFromSlideBody()" class="text-xs text-violet-400 hover:text-violet-300">Buscar imagem pelo texto</button>
             </div>
             <div class="p-4 space-y-3" x-show="selectedSlide">
                 <div>
-                    <label class="text-xs text-zinc-400">Título</label>
-                    <input type="text" x-model="selectedSlide.title" @input="scheduleSave()" placeholder="Título do slide" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
-                </div>
-                <div>
-                    <label class="text-xs text-zinc-400">Subtítulo</label>
-                    <input type="text" x-model="selectedSlide.subtitle" @input="scheduleSave()" placeholder="Subtítulo opcional" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
-                </div>
-                <div>
                     <label class="text-xs text-zinc-400">Corpo</label>
-                    <textarea x-model="selectedSlide.body_text" @input="scheduleSave()" rows="3" placeholder="Texto visível no slide" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm"></textarea>
+                    <textarea x-model="selectedSlide.body_text" @input="scheduleSave()" rows="5" placeholder="Texto visível no slide" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm"></textarea>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
                     <div>
                         <label class="text-xs text-zinc-400">Duração (s)</label>
-                        <input type="number" step="0.1" min="0.5" x-model.number="selectedSlide.duration_seconds" @input="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                        <input type="number" step="0.1" min="0.5" x-model.number="selectedSlide.duration_seconds" @input="onManualDurationChange()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
                     </div>
                     <div>
-                        <label class="text-xs text-zinc-400">Transição</label>
-                        <select x-model="selectedSlide.transition_type" @change="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
-                            <option value="fade">Fade</option>
-                            <option value="cut">Corte</option>
-                            <option value="slide">Slide</option>
+                        <label class="text-xs text-zinc-400">Modo de tempo</label>
+                        <select x-model="selectedSlide.duration_mode" @change="onDurationModeChange()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                            <option value="narration">Narração (3–15s)</option>
+                            <option value="video" :disabled="!selectedSlide?.video_path">Vídeo (corrido)</option>
+                            <option value="manual">Manual</option>
                         </select>
                     </div>
                 </div>
+                <p class="text-[10px] text-zinc-500 -mt-1">
+                    <span x-show="selectedSlide?.duration_mode === 'narration'">Tempo proporcional às palavras/linhas de cada slide (mín. 3s, máx. 15s).</span>
+                    <span x-show="selectedSlide?.duration_mode === 'video'">Usa a duração real do vídeo B-roll — narração corre junto.</span>
+                    <span x-show="selectedSlide?.duration_mode === 'manual'">Você define o tempo manualmente acima.</span>
+                </p>
+                <div class="flex flex-wrap gap-2 -mt-1">
+                    <button type="button" @click="recalculateNarrationDurations()" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">Recalcular tempos (narração)</button>
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">Transição</label>
+                    <select x-model="selectedSlide.transition_type" @change="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                        <option value="fade">Fade</option>
+                        <option value="cut">Corte</option>
+                        <option value="slide">Slide</option>
+                    </select>
+                </div>
                 <div class="grid grid-cols-2 gap-2">
                     <div>
-                        <label class="text-xs text-zinc-400">Cor do título</label>
-                        <input type="color" x-model="selectedSlide.text_style.title_color" @input="scheduleSave()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                        <label class="text-xs text-zinc-400">Cor do texto</label>
+                        <input type="color" x-model="selectedSlide.text_style.body_color" @input="syncBodyTextStyle()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
                     </div>
                     <div>
-                        <label class="text-xs text-zinc-400">Tamanho título</label>
-                        <input type="number" min="12" max="96" x-model.number="selectedSlide.text_style.title_size" @input="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                        <label class="text-xs text-zinc-400">Tamanho do texto</label>
+                        <input type="number" min="12" max="96" x-model.number="selectedSlide.text_style.body_size" @input="syncBodyTextStyle()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
                     </div>
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">Posição na tela</label>
+                    <select x-model="selectedSlide.text_style.vertical_align" @change="scheduleSave()" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm">
+                        <option value="top">Alto</option>
+                        <option value="center">Centro</option>
+                        <option value="bottom">Baixo</option>
+                    </select>
                 </div>
                 <div>
                     <label class="text-xs text-zinc-400">Imagem de fundo</label>
@@ -179,7 +199,7 @@
                     <button x-show="selectedSlide?.video_path" type="button" @click="clearSlideVideo()" class="mt-1 text-xs text-red-400 hover:text-red-300">Remover vídeo do slide</button>
                 </div>
                 <div class="flex flex-wrap gap-2 pt-1">
-                    <button type="button" @click="copyTitleToNarration()" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">Título → narração</button>
+                    <button type="button" @click="copyBodyToNarration()" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">Corpo → narração</button>
                     <button type="button" @click="saveSlide()" class="text-xs px-2 py-1 rounded bg-violet-700 hover:bg-violet-600">Salvar propriedades</button>
                 </div>
             </div>
@@ -200,6 +220,15 @@
                 </p>
             </div>
             <div class="flex items-center gap-2">
+                <button
+                    type="button"
+                    @click="openAudioTab()"
+                    class="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                    title="Trilhas sonoras e efeitos especiais"
+                >
+                    🎵 Trilhas & FX
+                    <span x-show="audioModulesCount" class="text-violet-400" x-text="'(' + audioModulesCount + ')'"></span>
+                </button>
                 <button type="button" @click="adjustTimelineZoom(-4)" class="w-7 h-7 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm" title="Diminuir zoom">−</button>
                 <span class="text-[10px] text-zinc-500 w-14 text-center tabular-nums" x-text="timelineZoom + ' px/s'"></span>
                 <button type="button" @click="adjustTimelineZoom(4)" class="w-7 h-7 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm" title="Aumentar zoom">+</button>
@@ -218,7 +247,7 @@
             Adicione slides para montar a linha do tempo.
         </div>
 
-        <div x-show="slides.length" x-ref="timelineScroll" class="overflow-x-auto overflow-y-hidden px-4 py-4" style="max-height: 160px;">
+        <div x-show="slides.length" x-ref="timelineScroll" class="overflow-x-auto overflow-y-auto px-4 py-4" style="max-height: 300px;">
             <div class="relative" :style="'width: ' + timelineTrackWidthPx + 'px; min-width: 100%'">
                 {{-- Régua de tempo --}}
                 <div class="relative h-5 mb-2 border-b border-zinc-700/80">
@@ -245,7 +274,7 @@
                                 'border-emerald-500/90 ring-2 ring-emerald-500/25': previewPlaying && previewIndex === index,
                             }"
                             :style="'width: ' + timelineClipWidth(slide) + 'px'"
-                            :title="(slide.title || 'Slide ' + (index + 1)) + ' · ' + formatTimelineTime(slide.duration_seconds)"
+                            :title="slidePreviewText(slide, index) + ' · ' + formatTimelineTime(slide.duration_seconds)"
                         >
                             <div class="h-11 bg-zinc-950 relative shrink-0 border-b border-zinc-700/50">
                                 <template x-if="slide.image_url">
@@ -259,7 +288,7 @@
                                 <span x-show="slide.narration_text?.trim()" class="absolute bottom-1 right-1 text-[8px] bg-emerald-900/80 px-1 rounded text-emerald-200">🎙</span>
                             </div>
                             <div class="p-2 flex-1 flex flex-col justify-between min-h-[36px]">
-                                <p class="text-[10px] text-zinc-200 font-medium leading-snug line-clamp-2" x-text="slide.title || 'Sem título'"></p>
+                                <p class="text-[10px] text-zinc-200 font-medium leading-snug line-clamp-2" x-text="slidePreviewText(slide, index)"></p>
                                 <div class="flex items-center justify-between mt-1 gap-1">
                                     <span class="text-[9px] text-zinc-500 tabular-nums" x-text="formatTimelineTime(slide.duration_seconds)"></span>
                                     <span class="text-[8px] text-zinc-600 uppercase truncate max-w-[4rem]" x-text="slide.transition_type || 'fade'"></span>
@@ -268,6 +297,61 @@
                         </div>
                     </template>
                 </div>
+
+                {{-- Faixas de áudio --}}
+                <div x-show="showTimelineAudioLanes" class="mt-3 pt-3 border-t border-zinc-800 space-y-1.5">
+                    <div class="flex items-center justify-between mb-1">
+                        <p class="text-[10px] text-zinc-500 uppercase tracking-wide">Áudio</p>
+                        <button type="button" @click="openAudioTab()" class="text-[10px] text-violet-400 hover:text-violet-300">Editar trilhas & efeitos →</button>
+                    </div>
+
+                    <div class="flex items-center gap-2 h-6">
+                        <span class="w-[4.5rem] shrink-0 text-[9px] text-emerald-500/90 truncate">Narração</span>
+                        <div class="relative h-5 rounded border border-zinc-800 bg-zinc-950/60" :style="'width: ' + Math.max(timelineTrackWidthPx, 120) + 'px'">
+                            <div
+                                x-show="narration?.audio_url"
+                                class="absolute inset-y-0 left-0 rounded bg-emerald-900/40 border border-emerald-700/40"
+                                :style="'width: ' + timelineSecondsToPx(timelineTotalSeconds) + 'px'"
+                                title="Narração completa"
+                            ></div>
+                        </div>
+                    </div>
+
+                    <template x-for="(track, slot) in audioTracks" :key="'tl-audio-' + slot">
+                        <div class="flex items-center gap-2 h-6">
+                            <span class="w-[4.5rem] shrink-0 text-[9px] text-amber-500/90 truncate" x-text="track.label"></span>
+                            <div class="relative h-5 rounded border border-zinc-800 bg-zinc-950/60" :style="'width: ' + Math.max(timelineTrackWidthPx, 120) + 'px'">
+                                <div
+                                    x-show="track.file_path"
+                                    class="absolute inset-y-0 rounded bg-amber-900/35 border border-amber-700/40 cursor-pointer hover:bg-amber-900/50"
+                                    :style="'left: ' + timelineSecondsToPx(track.start_at) + 'px; width: ' + timelineAudioSpanWidth(track.start_at) + 'px'"
+                                    :title="track.label + ' · vol ' + Math.round((track.volume ?? 0.35) * 100) + '% · início ' + formatTimelineTime(track.start_at)"
+                                    @click="openAudioTab()"
+                                ></div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div class="flex items-start gap-2 min-h-[26px]">
+                        <span class="w-[4.5rem] shrink-0 text-[9px] text-rose-400/90 pt-1">Efeitos</span>
+                        <div class="relative h-6 rounded border border-zinc-800 bg-zinc-950/60" :style="'width: ' + Math.max(timelineTrackWidthPx, 120) + 'px'">
+                            <template x-for="fx in soundEffects" :key="'tl-fx-' + fx.id">
+                                <button
+                                    type="button"
+                                    class="absolute top-0 h-5 rounded px-1 truncate text-left bg-rose-900/50 border border-rose-600/50 hover:bg-rose-900/70 text-[8px] text-rose-100"
+                                    :class="selectedSoundEffectId === fx.id ? 'ring-1 ring-rose-400' : ''"
+                                    :style="'left: ' + timelineSecondsToPx(fx.start_at) + 'px; width: ' + timelineFxClipWidth() + 'px; max-width: 120px'"
+                                    :title="(fx.label || 'Efeito') + ' · ' + formatTimelineTime(fx.start_at)"
+                                    @click="selectSoundEffect(fx)"
+                                    x-text="fx.label || 'FX'"
+                                ></button>
+                            </template>
+                            <span x-show="!soundEffects.length" class="absolute inset-0 flex items-center justify-center text-[9px] text-zinc-600 pointer-events-none">
+                                clique em Trilhas & FX para adicionar
+                            </span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -275,13 +359,19 @@
     {{-- Abas inferiores --}}
     <div class="rounded-xl border border-zinc-800 bg-zinc-900 flex-1 min-h-0 flex flex-col overflow-hidden">
         <div class="flex border-b border-zinc-800 shrink-0">
-            <template x-for="tab in ['roteiro', 'audio', 'biblioteca', 'exportar']" :key="tab">
+            <template x-for="tab in editorTabs" :key="tab.id">
                 <button
-                    @click="switchTab(tab)"
-                    :class="activeTab === tab ? 'border-violet-500 text-white' : 'border-transparent text-zinc-400'"
-                    class="px-4 py-2 text-sm border-b-2 capitalize"
-                    x-text="tab"
-                ></button>
+                    @click="switchTab(tab.id)"
+                    :class="activeTab === tab.id ? 'border-violet-500 text-white' : 'border-transparent text-zinc-400'"
+                    class="px-4 py-2 text-sm border-b-2 flex items-center gap-1.5"
+                >
+                    <span x-text="tab.label"></span>
+                    <span
+                        x-show="tab.id === 'audio' && audioModulesCount"
+                        class="text-[10px] bg-violet-600/80 text-white px-1.5 py-0.5 rounded-full tabular-nums"
+                        x-text="audioModulesCount"
+                    ></span>
+                </button>
             </template>
         </div>
 
@@ -289,7 +379,7 @@
             {{-- Roteiro --}}
             <div x-show="activeTab === 'roteiro'" class="space-y-4">
                 <div>
-                    <label class="text-xs text-zinc-400">Roteiro completo — cole o texto; o sistema detecta parágrafos, falas, versos e cenas</label>
+                    <label class="text-xs text-zinc-400">Roteiro completo — cole o texto; o sistema divide em slides automaticamente</label>
                     <textarea
                         x-model="fullScript"
                         @input="onFullScriptInput()"
@@ -308,12 +398,7 @@ O narrador continua a história com calma."
                         class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm font-mono"
                     ></textarea>
                     <p x-show="scriptStats" x-cloak class="text-[11px] text-zinc-500 mt-1">
-                        Detectado:
-                        <strong class="text-zinc-300" x-text="scriptStats?.slides"></strong> slide(s) —
-                        <span x-text="scriptStats?.prose"></span> parágrafo(s),
-                        <span x-text="scriptStats?.dialogues"></span> fala(s),
-                        <span x-text="scriptStats?.verses"></span> verso(s),
-                        <span x-text="scriptStats?.refrains || 0"></span> refrão(ões).
+                        Detectado: <strong class="text-zinc-300" x-text="scriptStats?.slides"></strong> slide(s).
                         Ao colar aqui (ou na narração do slide, se for texto grande), divide nos slides automaticamente.
                     </p>
                     <div class="flex flex-wrap gap-2 mt-2">
@@ -332,7 +417,7 @@ O narrador continua a história com calma."
                         placeholder="Texto que será lido na narração deste slide..."
                         class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm"
                     ></textarea>
-                    <button type="button" @click="copyTitleToNarration()" class="mt-2 text-xs text-violet-400 hover:text-violet-300">Usar título + subtítulo + corpo</button>
+                    <button type="button" @click="copyBodyToNarration()" class="mt-2 text-xs text-violet-400 hover:text-violet-300">Usar corpo do slide</button>
                 </div>
 
                 <div class="flex flex-wrap gap-3 items-end border-t border-zinc-800 pt-4">
@@ -394,84 +479,213 @@ O narrador continua a história com calma."
             </div>
 
             {{-- Áudio --}}
-            <div x-show="activeTab === 'audio'" class="space-y-4">
-                <div class="flex flex-wrap gap-3 items-end">
-                    <div>
-                        <label class="text-xs text-zinc-400">Volume trilha</label>
-                        <input type="range" min="0" max="1" step="0.05" x-model.number="audioTrack.volume" @change="saveAudioTrack()" class="block w-40 mt-1">
-                    </div>
-                    <label class="flex items-center gap-2 text-sm">
-                        <input type="checkbox" x-model="audioTrack.ducking_enabled" @change="saveAudioTrack()">
-                        Ducking (abaixa trilha na narração)
-                    </label>
-                </div>
+            <div x-show="activeTab === 'audio'" class="space-y-5">
                 <div>
-                    <label class="text-xs text-zinc-400">Importar trilha local (MP3/WAV)</label>
-                    <input type="file" accept="audio/*" @change="uploadAudio($event)" class="w-full mt-1 text-sm text-zinc-400">
+                    <h3 class="text-sm font-medium text-white mb-1">Trilhas sonoras (até 3)</h3>
+                    <p class="text-[11px] text-zinc-500 mb-3">Mix de trilhas com volume e início independentes. Ducking abaixa a trilha durante a narração (trilha 1).</p>
+                    <button type="button" @click="openLibraryForMusic(selectedMusicSlot ?? 0)" class="mb-3 text-xs px-3 py-1.5 rounded-lg bg-amber-900/40 border border-amber-700/40 text-amber-200 hover:bg-amber-900/60">
+                        🔍 Buscar trilha na biblioteca
+                    </button>
+                    <div class="space-y-3">
+                        <template x-for="(track, slot) in audioTracks" :key="'music-' + slot">
+                            <div class="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 space-y-2">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="text-xs font-medium text-zinc-200" x-text="track.label"></span>
+                                    <span x-show="track.file_path" class="text-[10px] text-emerald-400">ativa</span>
+                                    <button x-show="track.id" type="button" @click="removeMusicTrack(slot)" class="text-[10px] text-red-400 hover:text-red-300">Remover</button>
+                                </div>
+                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    <div>
+                                        <label class="text-[10px] text-zinc-500">Volume</label>
+                                        <input type="range" min="0" max="1" step="0.05" x-model.number="track.volume" @change="saveMusicTrack(slot)" class="block w-full mt-1">
+                                    </div>
+                                    <div>
+                                        <label class="text-[10px] text-zinc-500">Início (s)</label>
+                                        <input type="number" min="0" step="0.1" x-model.number="track.start_at" @change="saveMusicTrack(slot)" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs">
+                                    </div>
+                                    <div x-show="slot === 0" class="flex items-end">
+                                        <label class="flex items-center gap-1 text-[10px] text-zinc-400">
+                                            <input type="checkbox" x-model="track.ducking_enabled" @change="saveMusicTrack(slot)">
+                                            Ducking
+                                        </label>
+                                    </div>
+                                    <div class="flex items-end">
+                                        <label class="text-[10px] text-violet-400 cursor-pointer hover:text-violet-300">
+                                            <input type="file" accept="audio/*" class="hidden" @change="selectedMusicSlot = slot; uploadAudio($event)">
+                                            Importar MP3/WAV
+                                        </label>
+                                    </div>
+                                </div>
+                                <audio x-show="track.audio_url" :src="track.audio_url" controls class="w-full h-8 mt-1" preload="metadata"></audio>
+                            </div>
+                        </template>
+                    </div>
                 </div>
-                <template x-if="audioTrack?.file_path">
-                    <p class="text-xs text-emerald-400">Trilha configurada</p>
-                </template>
+
+                <div class="border-t border-zinc-800 pt-4">
+                    <h3 class="text-sm font-medium text-white mb-1">Efeitos sonoros</h3>
+                    <p class="text-[11px] text-zinc-500 mb-3">Posicione efeitos em qualquer segundo da linha do tempo do preview.</p>
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        <button type="button" @click="openLibraryForSfx(0)" class="text-xs px-3 py-1.5 rounded-lg bg-rose-900/40 border border-rose-700/40 text-rose-200 hover:bg-rose-900/60">
+                            🔍 Buscar efeito na biblioteca
+                        </button>
+                        <label class="text-xs px-3 py-1.5 rounded-lg bg-violet-700 hover:bg-violet-600 cursor-pointer">
+                            + Adicionar efeito
+                            <input type="file" accept="audio/*" class="hidden" @change="uploadSoundEffect($event)">
+                        </label>
+                    </div>
+                    <div x-show="!soundEffects.length" class="text-xs text-zinc-500 py-4 text-center border border-dashed border-zinc-800 rounded-lg">
+                        Nenhum efeito — importe sons curtos (impacto, risada, ambiente…)
+                    </div>
+                    <div class="space-y-2 max-h-48 overflow-y-auto">
+                        <template x-for="fx in soundEffects" :key="'fx-' + fx.id">
+                            <div
+                                class="rounded-lg border bg-zinc-950/50 p-3"
+                                :class="selectedSoundEffectId === fx.id ? 'border-rose-500/60 ring-1 ring-rose-500/30' : 'border-zinc-800'"
+                            >
+                                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+                                    <div class="col-span-2 sm:col-span-1">
+                                        <label class="text-[10px] text-zinc-500">Nome</label>
+                                        <input type="text" x-model="fx.label" @change="saveSoundEffect(fx)" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs">
+                                    </div>
+                                    <div>
+                                        <label class="text-[10px] text-zinc-500">Início (s)</label>
+                                        <input type="number" min="0" step="0.1" x-model.number="fx.start_at" @change="saveSoundEffect(fx)" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs">
+                                    </div>
+                                    <div>
+                                        <label class="text-[10px] text-zinc-500">Volume</label>
+                                        <input type="range" min="0" max="1" step="0.05" x-model.number="fx.volume" @change="saveSoundEffect(fx)" class="block w-full mt-1">
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button type="button" @click="removeSoundEffect(fx)" class="text-[10px] text-red-400">Remover</button>
+                                    </div>
+                                </div>
+                                <audio x-show="fx.audio_url" :src="fx.audio_url" controls class="w-full h-8 mt-2" preload="metadata"></audio>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <p class="text-[10px] text-zinc-600">No preview, narração + trilhas + efeitos tocam juntos ao pressionar ▶ Reproduzir.</p>
             </div>
 
             {{-- Biblioteca --}}
             <div x-show="activeTab === 'biblioteca'" class="space-y-3">
-                <p class="text-xs text-zinc-500">Imagens (Openverse grátis) e vídeos curtos (Mixkit grátis + Pexels/Pixabay com chave). Áudio para trilha.</p>
+                <div class="flex flex-wrap gap-2 border-b border-zinc-800 pb-3">
+                    <button type="button" @click="setMediaLibraryMode('visual')" class="text-xs px-3 py-1.5 rounded-lg" :class="mediaType === 'image' || mediaType === 'video' ? 'bg-violet-700 text-white' : 'bg-zinc-800 text-zinc-400'">Visual</button>
+                    <button type="button" @click="setMediaLibraryMode('music')" class="text-xs px-3 py-1.5 rounded-lg" :class="mediaType === 'music' ? 'bg-amber-800 text-amber-100' : 'bg-zinc-800 text-zinc-400'">🎵 Trilhas</button>
+                    <button type="button" @click="setMediaLibraryMode('sfx')" class="text-xs px-3 py-1.5 rounded-lg" :class="mediaType === 'sfx' ? 'bg-rose-800 text-rose-100' : 'bg-zinc-800 text-zinc-400'">💥 Efeitos</button>
+                </div>
+
+                <p class="text-xs text-zinc-500" x-show="mediaType === 'image' || mediaType === 'video'">Imagens e vídeos — Openverse grátis + Pexels/Pixabay/Unsplash com chave.</p>
+                <p class="text-xs text-zinc-500" x-show="mediaType === 'music'">Biblioteca de trilhas — Mixkit grátis + Freesound/Pixabay (com chave). Créditos vão para a descrição automaticamente.</p>
+                <p class="text-xs text-zinc-500" x-show="mediaType === 'sfx'">Biblioteca de efeitos sonoros — Mixkit grátis + Freesound (CC, crédito ao autor obrigatório).</p>
+
                 <div class="flex flex-wrap gap-2">
+                    <template x-if="mediaType === 'image' || mediaType === 'video'">
+                        <select x-model="mediaType" class="rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
+                            <option value="image">Imagens</option>
+                            <option value="video">Vídeos curtos</option>
+                        </select>
+                    </template>
                     <select x-model="mediaSource" class="rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
-                        <option value="all">Todas (gratuitas + APIs)</option>
-                        <option value="openverse">Openverse (sem chave)</option>
-                        <option value="pexels">Pexels</option>
-                        <option value="pixabay">Pixabay</option>
-                        <option value="unsplash">Unsplash</option>
-                        <option value="mixkit">Mixkit (áudio)</option>
+                        <template x-if="mediaType === 'music' || mediaType === 'sfx'">
+                            <option value="all">Todas as fontes gratuitas</option>
+                            <option value="mixkit">Mixkit (sem chave)</option>
+                            <option value="freesound">Freesound (chave .env)</option>
+                        </template>
+                        <template x-if="mediaType === 'music'">
+                            <option value="pixabay">Pixabay (chave .env)</option>
+                        </template>
+                        <template x-if="mediaType === 'image' || mediaType === 'video'">
+                            <option value="all">Todas (gratuitas + APIs)</option>
+                            <option value="openverse">Openverse (sem chave)</option>
+                            <option value="pexels">Pexels</option>
+                            <option value="pixabay">Pixabay</option>
+                            <option value="unsplash">Unsplash</option>
+                            <option value="mixkit">Mixkit</option>
+                        </template>
                     </select>
-                    <select x-model="mediaType" class="rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
-                        <option value="image">Imagens</option>
-                        <option value="video">Vídeos curtos</option>
-                        <option value="audio">Áudio</option>
-                    </select>
+                    <div x-show="mediaType === 'music'" class="flex items-center gap-2">
+                        <label class="text-[10px] text-zinc-500">Trilha</label>
+                        <select x-model.number="selectedMusicSlot" class="rounded bg-zinc-800 border border-zinc-700 px-2 py-2 text-sm">
+                            <option :value="0">Trilha 1</option>
+                            <option :value="1">Trilha 2</option>
+                            <option :value="2">Trilha 3</option>
+                        </select>
+                    </div>
                     <input
                         type="text"
                         x-model="mediaQuery"
                         @keydown.enter.prevent="searchMedia()"
-                        placeholder="Buscar em português — ex.: praia, futebol, cachorro, cidade..."
+                        :placeholder="mediaType === 'sfx' ? 'Buscar efeito — impacto, risada, whoosh, notification…' : (mediaType === 'music' ? 'Buscar trilha — ambient, cinematic, upbeat…' : 'Buscar em português — praia, futebol, cidade…')"
                         class="flex-1 min-w-[200px] rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm"
                     >
-                    <button @click="searchFromSlideTitle()" :disabled="!selectedSlide?.title" class="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-sm">Título</button>
+                    <button x-show="mediaType === 'image'" @click="searchFromSlideBody()" :disabled="!selectedSlide?.body_text?.trim()" class="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-sm">Texto slide</button>
                     <button @click="searchMedia()" :disabled="mediaSearching" class="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-sm">
                         <span x-text="mediaSearching ? 'Buscando...' : 'Buscar'"></span>
                     </button>
                 </div>
+
+                <div x-show="mediaLibraryProviders && (mediaType === 'music' || mediaType === 'sfx')" class="flex flex-wrap gap-2 text-[10px]">
+                    <template x-for="provider in (mediaType === 'music' ? mediaLibraryProviders?.music : mediaLibraryProviders?.sfx) || []" :key="provider.id">
+                        <span class="px-2 py-1 rounded border" :class="provider.configured ? 'border-emerald-700/50 text-emerald-400 bg-emerald-950/30' : 'border-zinc-700 text-zinc-500'">
+                            <span x-text="provider.label"></span>
+                            <span x-show="provider.attribution" title="Requer crédito na descrição"> ©</span>
+                            <span x-show="!provider.configured"> (sem chave)</span>
+                        </span>
+                    </template>
+                </div>
+
                 <p x-show="mediaErrors.length && !mediaResults.length" class="text-xs text-yellow-400" x-text="mediaErrors.join(' ')"></p>
-                <p class="text-[11px] text-zinc-500">Digite em português — o app traduz automaticamente para as APIs (Openverse, Mixkit, Pexels…).</p>
-                <p x-show="mediaResults.length && mediaType === 'image'" class="text-xs text-emerald-400">Clique na imagem para inserir no slide selecionado.</p>
+                <p x-show="mediaResults.length && (mediaType === 'image')" class="text-xs text-emerald-400">Clique na imagem para inserir no slide selecionado.</p>
                 <p x-show="mediaResults.length && mediaType === 'video'" class="text-xs text-emerald-400">Clique no vídeo para inserir como B-roll no slide selecionado.</p>
+                <p x-show="mediaResults.length && mediaType === 'music'" class="text-xs text-amber-400">Ouça o preview e clique em Inserir — vai para a trilha selecionada com licença registrada.</p>
+                <p x-show="mediaResults.length && mediaType === 'sfx'" class="text-xs text-rose-400">Ouça e clique em Inserir — posicione na timeline (segundos).</p>
+
                 <div x-show="publishAuto && projectCreditsCount" class="rounded border border-emerald-800/40 bg-emerald-950/30 p-2">
                     <p class="text-xs text-emerald-300">
-                        ✓ <strong>Publicação automática</strong> — ao inserir mídia da biblioteca, créditos e descrições (YouTube, TikTok, Instagram) são gerados e salvos nos arquivos de exportação. Nada para copiar manualmente.
+                        ✓ <strong>Licenças ativas</strong> — ao importar, créditos e descrições (YouTube, TikTok, Instagram) são gerados automaticamente nos arquivos de exportação.
                     </p>
                 </div>
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-56 overflow-y-auto">
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-72 overflow-y-auto">
                     <template x-for="item in mediaResults" :key="item.source + '-' + item.id">
-                        <div class="relative group cursor-pointer rounded overflow-hidden border border-zinc-700 bg-zinc-800" @click="importMedia(item)">
-                            <template x-if="item.type === 'audio'">
-                                <div class="h-24 flex items-center justify-center text-xs text-center p-2" x-text="item.title || item.author || 'Áudio'"></div>
-                            </template>
-                            <template x-if="item.type === 'video'">
-                                <div class="relative h-24">
-                                    <img :src="item.preview_url" :alt="item.author || 'Vídeo'" class="w-full h-24 object-cover" loading="lazy">
-                                    <span class="absolute inset-0 flex items-center justify-center text-2xl text-white/90">▶</span>
-                                    <span x-show="item.duration_seconds" class="absolute bottom-1 right-1 text-[10px] bg-black/80 px-1 rounded" x-text="item.duration_seconds + 's'"></span>
+                        <div class="rounded-lg border border-zinc-700 bg-zinc-800/80 overflow-hidden group">
+                            <template x-if="item.type === 'audio' || item.type === 'sfx'">
+                                <div class="p-3 space-y-2">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <p class="text-xs font-medium text-zinc-200 line-clamp-2" x-text="item.title || item.author || 'Áudio'"></p>
+                                        <span class="text-[9px] uppercase shrink-0 px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-400" x-text="item.source"></span>
+                                    </div>
+                                    <audio x-show="item.preview_url || item.download_url" :src="item.preview_url || item.download_url" controls class="w-full h-8" preload="none" @click.stop></audio>
+                                    <p x-show="item.duration_seconds" class="text-[10px] text-zinc-500" x-text="item.duration_seconds + 's'"></p>
+                                    <p x-show="item.attribution_text" class="text-[9px] text-zinc-500 line-clamp-2" x-text="item.attribution_text"></p>
+                                    <div class="flex items-center justify-between gap-2 pt-1">
+                                        <span x-show="item.requires_attribution || item.attribution_text" class="text-[10px] text-yellow-500" title="Crédito na descrição">© crédito</span>
+                                        <span x-show="item.license_type" class="text-[9px] text-zinc-600 truncate" x-text="item.license_type"></span>
+                                        <button type="button" @click="importMedia(item)" class="text-xs px-2 py-1 rounded bg-violet-700 hover:bg-violet-600 shrink-0">Inserir</button>
+                                    </div>
                                 </div>
                             </template>
-                            <template x-if="item.type !== 'audio' && item.type !== 'video'">
-                                <img :src="item.preview_url" :alt="item.title || 'Imagem'" class="w-full h-24 object-cover" loading="lazy">
+                            <template x-if="item.type !== 'audio' && item.type !== 'sfx'">
+                                <div class="relative cursor-pointer" @click="importMedia(item)">
+                                    <template x-if="item.type === 'video'">
+                                        <div class="relative h-24">
+                                            <img :src="item.preview_url" :alt="item.author || 'Vídeo'" class="w-full h-24 object-cover" loading="lazy">
+                                            <span class="absolute inset-0 flex items-center justify-center text-2xl text-white/90">▶</span>
+                                            <span x-show="item.duration_seconds" class="absolute bottom-1 right-1 text-[10px] bg-black/80 px-1 rounded" x-text="item.duration_seconds + 's'"></span>
+                                        </div>
+                                    </template>
+                                    <template x-if="item.type !== 'video'">
+                                        <img :src="item.preview_url" :alt="item.title || 'Imagem'" class="w-full h-24 object-cover" loading="lazy">
+                                    </template>
+                                    <span class="absolute bottom-0 left-0 right-0 bg-black/70 text-[10px] px-1 py-0.5 truncate" x-text="item.source"></span>
+                                    <p x-show="item.attribution_text" class="absolute top-0 left-0 right-0 bg-black/80 text-[9px] px-1 py-0.5 line-clamp-2 leading-tight opacity-0 group-hover:opacity-100 transition-opacity" x-text="item.attribution_text"></p>
+                                    <span x-show="item.requires_attribution || item.attribution_text" class="absolute top-1 right-1 text-[10px] bg-yellow-600/80 px-1 rounded" title="Crédito ao autor">©</span>
+                                    <div class="absolute inset-0 bg-violet-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs font-medium">Inserir</div>
+                                </div>
                             </template>
-                            <span class="absolute bottom-0 left-0 right-0 bg-black/70 text-[10px] px-1 py-0.5 truncate" x-text="item.source"></span>
-                            <p x-show="item.attribution_text" class="absolute top-0 left-0 right-0 bg-black/80 text-[9px] px-1 py-0.5 line-clamp-2 leading-tight opacity-0 group-hover:opacity-100 transition-opacity" x-text="item.attribution_text" title="Crédito sugerido pela plataforma"></p>
-                            <span x-show="item.requires_attribution || item.attribution_text" class="absolute top-1 right-1 text-[10px] bg-yellow-600/80 px-1 rounded" title="Crédito ao autor">©</span>
-                            <div class="absolute inset-0 bg-violet-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs font-medium">Inserir</div>
                         </div>
                     </template>
                 </div>

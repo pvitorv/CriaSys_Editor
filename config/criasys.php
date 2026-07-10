@@ -84,6 +84,7 @@ return [
         'pexels_api_key' => env('PEXELS_API_KEY'),
         'pixabay_api_key' => env('PIXABAY_API_KEY'),
         'unsplash_access_key' => env('UNSPLASH_ACCESS_KEY'),
+        'freesound_api_key' => env('FREESOUND_API_KEY'),
         'envato_api_token' => env('ENVATO_API_TOKEN'),
     ],
 
@@ -111,9 +112,15 @@ return [
     ],
 
     'mixkit_catalog' => [
-        ['id' => 'mixkit-1', 'title' => 'Ambient Corporate', 'tags' => 'corporate ambient calm', 'download_url' => 'https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3', 'original_url' => 'https://mixkit.co/free-stock-music/'],
-        ['id' => 'mixkit-2', 'title' => 'Inspiring Cinematic', 'tags' => 'cinematic inspiring epic', 'download_url' => 'https://assets.mixkit.co/music/preview/mixkit-emotive-piano-563.mp3', 'original_url' => 'https://mixkit.co/free-stock-music/'],
-        ['id' => 'mixkit-3', 'title' => 'Upbeat Technology', 'tags' => 'tech upbeat modern', 'download_url' => 'https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3', 'original_url' => 'https://mixkit.co/free-stock-music/'],
+        ['id' => 'mixkit-1', 'title' => 'Ambient Corporate', 'tags' => 'corporate ambient calm', 'download_url' => 'https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3', 'preview_url' => 'https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3', 'original_url' => 'https://mixkit.co/free-stock-music/'],
+        ['id' => 'mixkit-2', 'title' => 'Inspiring Cinematic', 'tags' => 'cinematic inspiring epic', 'download_url' => 'https://assets.mixkit.co/music/preview/mixkit-emotive-piano-563.mp3', 'preview_url' => 'https://assets.mixkit.co/music/preview/mixkit-emotive-piano-563.mp3', 'original_url' => 'https://mixkit.co/free-stock-music/'],
+        ['id' => 'mixkit-3', 'title' => 'Upbeat Technology', 'tags' => 'tech upbeat modern', 'download_url' => 'https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3', 'preview_url' => 'https://assets.mixkit.co/music/preview/mixkit-tech-house-vibes-130.mp3', 'original_url' => 'https://mixkit.co/free-stock-music/'],
+    ],
+
+    'mixkit_sfx_catalog' => [
+        ['id' => 'sfx-1', 'title' => 'Cinematic Impact', 'tags' => 'impact cinematic boom', 'download_url' => 'https://assets.mixkit.co/active_storage/sfx/1143/1143.mp3', 'preview_url' => 'https://assets.mixkit.co/active_storage/sfx/1143/1143-preview.mp3', 'original_url' => 'https://mixkit.co/free-sound-effects/impact/'],
+        ['id' => 'sfx-2', 'title' => 'Whoosh Transition', 'tags' => 'whoosh transition swoosh', 'download_url' => 'https://assets.mixkit.co/active_storage/sfx/2908/2908.mp3', 'preview_url' => 'https://assets.mixkit.co/active_storage/sfx/2908/2908-preview.mp3', 'original_url' => 'https://mixkit.co/free-sound-effects/whoosh/'],
+        ['id' => 'sfx-3', 'title' => 'Notification Pop', 'tags' => 'notification pop ui', 'download_url' => 'https://assets.mixkit.co/active_storage/sfx/788/788.mp3', 'preview_url' => 'https://assets.mixkit.co/active_storage/sfx/788/788-preview.mp3', 'original_url' => 'https://mixkit.co/free-sound-effects/notification/'],
     ],
 
 ];

@@ -9,6 +9,8 @@ enum LicenseType: string
     case CcBySa = 'CC BY-SA';
     case Pexels = 'Pexels License';
     case Pixabay = 'Pixabay License';
+    case Mixkit = 'Mixkit License';
+    case Freesound = 'Freesound (CC)';
     case UserPurchased = 'user_purchased';
     case Envato = 'Envato Elements';
     case Storyblocks = 'Storyblocks';

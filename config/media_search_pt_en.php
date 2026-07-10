@@ -6,6 +6,42 @@
  */
 return [
 
+    /** Palavras ignoradas ao extrair termos visuais de frases/narração. */
+    'stop_words' => [
+        'a', 'o', 'os', 'as', 'um', 'uma', 'uns', 'umas', 'de', 'da', 'do', 'das', 'dos',
+        'em', 'no', 'na', 'nos', 'nas', 'num', 'numa', 'por', 'para', 'pra', 'pro', 'pelo', 'pela',
+        'pelos', 'pelas', 'com', 'sem', 'sob', 'sobre', 'entre', 'ate', 'até', 'desde', 'durante',
+        'apos', 'após', 'antes', 'contra', 'e', 'ou', 'mas', 'que', 'se', 'como', 'quando', 'onde',
+        'porque', 'pois', 'entao', 'então', 'tambem', 'também', 'so', 'só', 'ja', 'já', 'ainda',
+        'sempre', 'nunca', 'jamais', 'muito', 'pouco', 'mais', 'menos', 'bem', 'mal', 'quase',
+        'todo', 'toda', 'todos', 'todas', 'cada', 'outro', 'outra', 'outros', 'outras', 'mesmo',
+        'mesma', 'mesmos', 'mesmas', 'tal', 'tals', 'qual', 'quais', 'quem', 'algo', 'nada',
+        'tudo', 'alguem', 'alguém', 'ninguem', 'ninguém', 'aqui', 'ali', 'la', 'lá', 'ai', 'aí',
+        'eu', 'tu', 'voce', 'você', 'ele', 'ela', 'nos', 'nós', 'vos', 'eles', 'elas', 'me', 'te',
+        'lhe', 'lhes', 'meu', 'minha', 'meus', 'minhas', 'seu', 'sua', 'seus', 'suas', 'nosso',
+        'nossa', 'dele', 'dela', 'deles', 'delas', 'este', 'esta', 'estes', 'estas', 'esse', 'essa',
+        'esses', 'essas', 'aquele', 'aquela', 'aqueles', 'aquelas', 'isto', 'isso', 'aquilo',
+        'ser', 'estar', 'ter', 'haver', 'fazer', 'ir', 'vir', 'ver', 'dar', 'dizer', 'disse',
+        'diz', 'fala', 'falar', 'falou', 'perguntou', 'respondeu', 'pode', 'podia', 'saber',
+        'quer', 'quero', 'vou', 'vai', 'vamos', 'foi', 'era', 'eram', 'sou', 'somos', 'sao', 'são',
+        'estou', 'esta', 'está', 'estava', 'ficar', 'fica', 'ficou', 'deixar', 'deixa', 'deixou',
+        'continuar', 'continua', 'seguir', 'segue', 'seguiu', 'passar', 'passa', 'passou',
+        'voltar', 'volta', 'voltei', 'sentir', 'sinto', 'sentiu', 'parecer', 'parece', 'precisar',
+        'precisa', 'conseguir', 'consegue', 'nao', 'não', 'sim', 'talvez', 'enquanto', 'embora',
+        'pois', 'logo', 'assim', 'entao', 'então', 'ai', 'aí', 'la', 'lá', 'ne', 'né', 'ta', 'tá',
+        'to', 'tô', 'pro', 'pra', 'num', 'numa', 'dum', 'duma', 'pelo', 'pelos', 'tipo', 'coisa',
+        'vez', 'vezes', 'dia', 'dias', 'ano', 'anos', 'hora', 'horas', 'agora', 'hoje', 'ontem',
+        'amanha', 'amanhã', 'la', 'lá', 'cada', 'tanto', 'tanta', 'tantos', 'tantas', 'demais',
+        'naquela', 'naquele', 'nesta', 'neste', 'nessa', 'nesse', 'aquela', 'aquilo', 'pela', 'pelo',
+        'caminhava', 'caminhando', 'pensando', 'pensava', 'olhando', 'sentindo', 'lembro', 'lembra',
+    ],
+
+    /** Termos abstratos — menos úteis para busca de stock. */
+    'abstract_words' => [
+        'future', 'past', 'time', 'hope', 'dream', 'energy', 'power', 'peace', 'war', 'freedom',
+        'success', 'love', 'fear', 'day', 'morning', 'afternoon', 'night', 'year', 'world',
+    ],
+
     'phrases' => [
         'por do sol' => 'sunset',
         'pôr do sol' => 'sunset',
@@ -64,6 +100,7 @@ return [
         'aurora' => 'aurora', 'entardecer' => 'sunset', 'amanhecer' => 'sunrise', 'noite' => 'night',
         'dia' => 'day', 'manha' => 'morning', 'manhã' => 'morning', 'tarde' => 'afternoon',
         'chuva' => 'rain', 'neblina' => 'fog', 'bruma' => 'mist',
+        'chuvoso' => 'rainy', 'chuvosa' => 'rainy',
 
         // animais
         'animal' => 'animal', 'animais' => 'animals', 'cachorro' => 'dog', 'cao' => 'dog', 'cão' => 'dog',
@@ -167,7 +204,7 @@ return [
         'cor' => 'color', 'cores' => 'colors', 'vermelho' => 'red', 'azul' => 'blue',
         'verde' => 'green', 'amarelo' => 'yellow', 'laranja' => 'orange', 'roxo' => 'purple',
         'rosa' => 'pink', 'preto' => 'black', 'branco' => 'white', 'cinza' => 'gray',
-        'dourado' => 'gold', 'prata' => 'silver', 'luz' => 'light', 'escuro' => 'dark',
+        'dourado' => 'gold', 'prata' => 'silver', 'luz' => 'light', 'luzes' => 'lights', 'escuro' => 'dark',
         'sombra' => 'shadow', 'reflexo' => 'reflection', 'espelho' => 'mirror',
         'tempo' => 'time', 'relógio' => 'clock', 'relogio' => 'clock', 'calendario' => 'calendar',
         'calendário' => 'calendar', 'futuro' => 'future', 'passado' => 'past',

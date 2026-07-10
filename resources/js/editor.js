@@ -1,5 +1,12 @@
 import axios from 'axios';
 import { formatNarrationText, parseScript } from './scriptParser';
+import { applyAutomaticDurations, probeVideoFileDuration, DURATION_MIN, DURATION_MAX } from './slideDuration';
+import {
+    normalizeTextStyle as normalizeSlideTextStyle,
+    slideBodyStyle as buildSlideBodyStyle,
+    defaultTextStyle,
+} from './slideTextStyle';
+import { PreviewAudioMixer } from './previewAudio';
 
 const token = document.head.querySelector('meta[name="csrf-token"]');
 if (token) {
@@ -28,6 +35,13 @@ window.editorApp = function (projectId, projectMeta = {}) {
         slides: [],
         selectedSlide: null,
         activeTab: 'roteiro',
+        editorTabs: [
+            { id: 'roteiro', label: 'Roteiro' },
+            { id: 'audio', label: 'Trilhas & FX' },
+            { id: 'biblioteca', label: 'Biblioteca' },
+            { id: 'exportar', label: 'Exportar' },
+        ],
+        selectedSoundEffectId: null,
         fullScript: '',
         scriptStats: null,
         scriptParseTimeout: null,
@@ -49,6 +63,8 @@ window.editorApp = function (projectId, projectMeta = {}) {
         mediaQuery: '',
         mediaSource: 'all',
         mediaType: 'image',
+        mediaLibraryProviders: null,
+        mediaSfxStartAt: 0,
         mediaResults: [],
         mediaErrors: [],
         mediaSearching: false,
@@ -74,6 +90,10 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
         attachPaidLicenseOnUpload: true,
         audioTrack: { volume: 0.35, ducking_enabled: true },
+        audioTracks: [],
+        selectedMusicSlot: 0,
+        soundEffects: [],
+        previewMixer: null,
         renderJobs: [],
         saving: false,
         message: '',
@@ -90,6 +110,39 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 return this.slides[this.previewIndex] ?? this.selectedSlide;
             }
             return this.selectedSlide;
+        },
+
+        get previewDisplayText() {
+            const slide = this.previewSlide;
+
+            if (slide) {
+                const body = (slide.body_text || '').trim();
+                if (body) return body;
+
+                const narr = (slide.narration_text || '').trim();
+                if (narr) return narr;
+
+                return '';
+            }
+
+            if (this.fullScript?.trim()) return this.fullScript.trim();
+            if (this.narration?.full_script?.trim()) return this.narration.full_script.trim();
+
+            return '';
+        },
+
+        get canPlayPreview() {
+            if (this.slides.length > 0) return true;
+
+            return !!this.fullScript?.trim() || !!this.narration?.audio_url;
+        },
+
+        get previewModeLabel() {
+            if (!this.slides.length) return 'Roteiro / narração';
+            if (this.previewPlaying) {
+                return `Slide ${this.previewIndex + 1}/${this.slides.length}`;
+            }
+            return '';
         },
 
         get defaultStockLicense() {
@@ -130,6 +183,19 @@ window.editorApp = function (projectId, projectMeta = {}) {
             return ticks;
         },
 
+        get audioModulesCount() {
+            const tracks = this.audioTracks.filter((t) => t.file_path).length;
+
+            return tracks + this.soundEffects.length;
+        },
+
+        get showTimelineAudioLanes() {
+            return this.slides.length > 0
+                || this.audioTracks.some((t) => t.file_path)
+                || this.soundEffects.length > 0
+                || !!this.narration?.audio_url;
+        },
+
         async init() {
             await Promise.all([
                 this.loadSlides(),
@@ -138,7 +204,9 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 this.loadDownloads(),
                 this.loadExportPresets(),
                 this.loadExportPackages(),
-                this.loadAudioTrack(),
+                this.loadAudioTracks(),
+                this.loadSoundEffects(),
+                this.loadMediaProviders(),
                 this.loadTtsEngines(),
                 this.loadProjectCredits(),
                 this.loadPlatformDescriptions(),
@@ -146,6 +214,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             ]);
             await this.loadVoices();
             await this.syncPublish();
+            this.previewMixer = new PreviewAudioMixer();
             this.pollInterval = setInterval(() => {
                 this.loadRenderJobs();
                 this.loadExportPackages();
@@ -209,6 +278,29 @@ window.editorApp = function (projectId, projectMeta = {}) {
             }
         },
 
+        slidePreviewText(slide, index = 0) {
+            if (!slide) return `Slide ${index + 1}`;
+            const body = (slide.body_text || '').trim();
+            if (body) {
+                const oneLine = body.replace(/\s+/g, ' ');
+                return oneLine.length > 72 ? `${oneLine.slice(0, 72)}…` : oneLine;
+            }
+            const narr = (slide.narration_text || '').trim();
+            if (narr) {
+                const oneLine = narr.replace(/\s+/g, ' ');
+                return oneLine.length > 72 ? `${oneLine.slice(0, 72)}…` : oneLine;
+            }
+            return slide.title?.trim() || `Slide ${index + 1}`;
+        },
+
+        slideSearchQuery(slide) {
+            const body = (slide?.body_text || '').trim();
+            if (body) return body.replace(/\s+/g, ' ').slice(0, 120);
+            const narr = (slide?.narration_text || '').trim();
+            if (narr) return narr.replace(/\s+/g, ' ').slice(0, 120);
+            return (slide?.title || '').trim();
+        },
+
         slidePayload(slide) {
             return {
                 title: slide.title ?? '',
@@ -216,8 +308,10 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 body_text: slide.body_text ?? '',
                 narration_text: slide.narration_text ?? '',
                 duration_seconds: slide.duration_seconds ?? 5,
+                duration_mode: slide.duration_mode ?? 'narration',
+                video_duration_seconds: slide.video_duration_seconds ?? null,
                 transition_type: slide.transition_type ?? 'fade',
-                text_style: slide.text_style ?? null,
+                text_style: this.normalizeTextStyle(slide.text_style),
                 image_path: slide.image_path ?? null,
                 video_path: slide.video_path ?? null,
             };
@@ -455,23 +549,78 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         playSlideshow() {
-            if (!this.slides.length) return;
+            if (!this.canPlayPreview) return;
             this.stopSlideshow();
             this.previewPlaying = true;
             this.previewIndex = 0;
             this.previewPlayToken++;
             this.previewTransitioning = false;
-            this.scrollTimelineToSlide(0);
-            this.schedulePreviewAdvance();
+            if (this.slides.length) {
+                this.scrollTimelineToSlide(0);
+                this.schedulePreviewAdvance();
+            }
+            this.startPreviewAudioMix();
         },
 
         stopSlideshow() {
             this.previewPlaying = false;
+            if (this.previewMixer) {
+                this.previewMixer.stop();
+            }
             if (this.previewTimer) {
                 clearTimeout(this.previewTimer);
                 this.previewTimer = null;
             }
             this.previewTransitioning = false;
+        },
+
+        startPreviewAudioMix() {
+            if (!this.previewMixer) {
+                this.previewMixer = new PreviewAudioMixer();
+            }
+
+            const musicTracks = this.audioTracks
+                .filter((t) => t?.file_path && t?.audio_url)
+                .map((t) => ({
+                    audio_url: t.audio_url,
+                    volume: t.volume ?? 0.35,
+                    start_at: t.start_at ?? 0,
+                }));
+
+            const soundEffects = this.soundEffects
+                .filter((fx) => fx?.file_path && fx?.audio_url)
+                .map((fx) => ({
+                    audio_url: fx.audio_url,
+                    volume: fx.volume ?? 1,
+                    start_at: fx.start_at ?? 0,
+                }));
+
+            this.previewMixer.play({
+                narrationUrl: this.narration?.audio_url || null,
+                musicTracks,
+                soundEffects,
+                onEnd: () => {
+                    if (this.previewPlaying && !this.slides.length) {
+                        this.stopSlideshow();
+                    }
+                },
+            });
+        },
+
+        previewTextStyle() {
+            if (this.previewSlide?.text_style) {
+                return this.slideBodyStyle(this.previewSlide);
+            }
+
+            return buildSlideBodyStyle(defaultTextStyle());
+        },
+
+        previewVerticalAlignClass() {
+            const slide = this.previewSlide;
+            if (slide?.text_style?.vertical_align) {
+                return this.slideVerticalAlignClass(slide);
+            }
+            return 'justify-center';
         },
 
         schedulePreviewAdvance() {
@@ -529,10 +678,161 @@ window.editorApp = function (projectId, projectMeta = {}) {
             }));
         },
 
-        async loadAudioTrack() {
+        async loadMediaProviders() {
+            try {
+                const { data } = await api.get('/media/providers');
+                this.mediaLibraryProviders = data;
+            } catch {
+                this.mediaLibraryProviders = null;
+            }
+        },
+
+        mediaSearchType() {
+            if (this.mediaType === 'music') return 'audio';
+            return this.mediaType;
+        },
+
+        setMediaLibraryMode(mode) {
+            this.mediaType = mode === 'visual' ? 'image' : mode;
+            if (mode === 'music' || mode === 'sfx') {
+                this.mediaSource = 'all';
+            }
+            if (mode === 'visual' || mode === 'image') {
+                this.mediaSource = 'all';
+            }
+        },
+
+        openLibraryForMusic(slot = 0) {
+            this.selectedMusicSlot = slot;
+            this.setMediaLibraryMode('music');
+            this.activeTab = 'biblioteca';
+        },
+
+        openLibraryForSfx(startAt = 0) {
+            this.mediaSfxStartAt = startAt;
+            this.setMediaLibraryMode('sfx');
+            this.activeTab = 'biblioteca';
+        },
+
+        async loadAudioTracks() {
             const { data } = await api.get(`/projects/${this.projectId}/audio-tracks`);
-            if (data.length) {
-                this.audioTrack = data[0];
+            const music = data.filter((t) => t.type === 'music');
+            this.audioTracks = [0, 1, 2].map((slot) => {
+                const track = music.find((t) => (t.track_slot ?? 0) === slot);
+                return track ? this.enrichAudioTrack({ ...track, track_slot: slot }) : this.emptyMusicSlot(slot);
+            });
+            this.audioTrack = this.audioTracks[0];
+        },
+
+        emptyMusicSlot(slot) {
+            return {
+                track_slot: slot,
+                id: null,
+                type: 'music',
+                volume: 0.35,
+                start_at: 0,
+                ducking_enabled: slot === 0,
+                file_path: null,
+                audio_url: null,
+                label: `Trilha ${slot + 1}`,
+            };
+        },
+
+        enrichAudioTrack(track) {
+            if (track?.file_path) {
+                track.audio_url = this.fileUrl('assets', track.file_path.split(/[/\\]/).pop());
+            }
+            track.label = track.label || `Trilha ${(track.track_slot ?? 0) + 1}`;
+
+            return track;
+        },
+
+        async loadSoundEffects() {
+            const { data } = await api.get(`/projects/${this.projectId}/sound-effects`);
+            this.soundEffects = data.map((fx) => this.enrichSoundEffect(fx));
+        },
+
+        enrichSoundEffect(fx) {
+            if (fx?.file_path) {
+                fx.audio_url = this.fileUrl('assets', fx.file_path.split(/[/\\]/).pop());
+            }
+
+            return fx;
+        },
+
+        async saveMusicTrack(slot) {
+            const track = this.audioTracks[slot];
+            if (!track?.id) return;
+            try {
+                const { data } = await api.put(
+                    `/projects/${this.projectId}/audio-tracks/${track.id}`,
+                    {
+                        volume: track.volume,
+                        start_at: track.start_at,
+                        ducking_enabled: track.ducking_enabled,
+                    }
+                );
+                this.audioTracks[slot] = this.enrichAudioTrack({ ...track, ...data });
+                if (slot === 0) this.audioTrack = this.audioTracks[0];
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao salvar trilha';
+            }
+        },
+
+        async removeMusicTrack(slot) {
+            const track = this.audioTracks[slot];
+            if (!track?.id) return;
+            if (!confirm(`Remover ${track.label}?`)) return;
+            await api.delete(`/projects/${this.projectId}/audio-tracks/${track.id}`);
+            this.audioTracks[slot] = this.emptyMusicSlot(slot);
+            if (slot === 0) this.audioTrack = this.audioTracks[0];
+            this.message = 'Trilha removida';
+        },
+
+        async saveSoundEffect(fx) {
+            if (!fx?.id) return;
+            try {
+                const { data } = await api.put(
+                    `/projects/${this.projectId}/sound-effects/${fx.id}`,
+                    {
+                        label: fx.label,
+                        start_at: fx.start_at,
+                        volume: fx.volume,
+                    }
+                );
+                const idx = this.soundEffects.findIndex((e) => e.id === fx.id);
+                if (idx >= 0) {
+                    this.soundEffects[idx] = this.enrichSoundEffect({ ...fx, ...data });
+                }
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao salvar efeito';
+            }
+        },
+
+        async removeSoundEffect(fx) {
+            if (!fx?.id) return;
+            if (!confirm('Remover este efeito?')) return;
+            await api.delete(`/projects/${this.projectId}/sound-effects/${fx.id}`);
+            this.soundEffects = this.soundEffects.filter((e) => e.id !== fx.id);
+        },
+
+        async uploadSoundEffect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const startAt = parseFloat(prompt('Início do efeito (segundos):', '0') || '0') || 0;
+            try {
+                const asset = await this.uploadAsset(file, 'audio', false);
+                const { data } = await api.post(`/projects/${this.projectId}/sound-effects`, {
+                    asset_id: asset.id,
+                    file_path: asset.file_path,
+                    label: file.name.replace(/\.[^.]+$/, ''),
+                    start_at: startAt,
+                    volume: 1,
+                });
+                this.soundEffects.push(this.enrichSoundEffect(data));
+                this.message = `Efeito adicionado aos ${startAt}s`;
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao importar efeito';
             }
         },
 
@@ -544,12 +844,10 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         enrichSlide(slide) {
-            if (!slide.text_style) {
-                slide.text_style = {
-                    title_color: '#ffffff',
-                    title_size: 48,
-                    align: 'center',
-                };
+            slide.text_style = this.normalizeTextStyle(slide.text_style);
+            slide.duration_mode = slide.duration_mode || 'narration';
+            if (!(slide.body_text || '').trim() && (slide.narration_text || '').trim()) {
+                slide.body_text = slide.narration_text;
             }
             if (slide.image_path) {
                 slide.image_url = this.fileUrl('assets', slide.image_path.split(/[/\\]/).pop());
@@ -558,6 +856,76 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 slide.video_url = this.fileUrl('assets', slide.video_path.split(/[/\\]/).pop());
             }
             return slide;
+        },
+
+        normalizeTextStyle(style) {
+            return normalizeSlideTextStyle(style);
+        },
+
+        slideBodyStyle(slide) {
+            return buildSlideBodyStyle(slide?.text_style);
+        },
+
+        durationModeLabel(mode) {
+            return {
+                manual: 'Manual',
+                video: 'Vídeo',
+                narration: 'Narração',
+            }[mode] || 'Narração';
+        },
+
+        onManualDurationChange() {
+            if (this.selectedSlide) {
+                this.selectedSlide.duration_mode = 'manual';
+            }
+            this.scheduleSave();
+        },
+
+        async onDurationModeChange() {
+            const slide = this.selectedSlide;
+            if (!slide) return;
+
+            if (slide.duration_mode === 'narration') {
+                await this.recalculateNarrationDurations();
+                return;
+            }
+
+            if (slide.duration_mode === 'video' && slide.video_duration_seconds > 0) {
+                slide.duration_seconds = Math.round(slide.video_duration_seconds * 10) / 10;
+            }
+
+            this.scheduleSave();
+        },
+
+        async recalculateNarrationDurations() {
+            try {
+                const { data } = await api.post(`/projects/${this.projectId}/slides/recalculate-durations`);
+                this.slides = data.map((s) => this.enrichSlide(s));
+                this.syncSelection();
+                this.message = `Tempos recalculados pela narração (${DURATION_MIN}–${DURATION_MAX}s)`;
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao recalcular tempos';
+            }
+        },
+
+        applyLocalAutomaticDurations() {
+            applyAutomaticDurations(this.slides);
+        },
+
+        slideVerticalAlignClass(slide) {
+            const align = slide?.text_style?.vertical_align || 'center';
+            if (align === 'top') return 'justify-start';
+            if (align === 'bottom') return 'justify-end';
+
+            return 'justify-center';
+        },
+
+        syncBodyTextStyle() {
+            const slide = this.selectedSlide;
+            if (!slide?.text_style) return;
+            slide.text_style.title_color = slide.text_style.body_color;
+            slide.text_style.title_size = slide.text_style.body_size;
+            this.scheduleSave();
         },
 
         fileUrl(type, filename) {
@@ -590,6 +958,30 @@ window.editorApp = function (projectId, projectMeta = {}) {
             const dur = parseFloat(slide?.duration_seconds || 5);
 
             return Math.max(80, dur * this.timelineZoom);
+        },
+
+        timelineSecondsToPx(seconds) {
+            return Math.max(0, parseFloat(seconds) || 0) * this.timelineZoom;
+        },
+
+        timelineAudioSpanWidth(startAt) {
+            const start = Math.max(0, parseFloat(startAt) || 0);
+            const span = Math.max(0, this.timelineTotalSeconds - start);
+
+            return Math.max(24, span * this.timelineZoom);
+        },
+
+        timelineFxClipWidth() {
+            return Math.max(36, this.timelineZoom * 1.5);
+        },
+
+        selectSoundEffect(fx) {
+            this.selectedSoundEffectId = fx?.id ?? null;
+            this.activeTab = 'audio';
+        },
+
+        openAudioTab() {
+            this.activeTab = 'audio';
         },
 
         timelineOffsetPx(index) {
@@ -630,21 +1022,37 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
         prepareMediaSearch() {
             const slide = this.selectedSlide;
-            if (!this.mediaQuery.trim() && slide?.title?.trim()) {
-                this.mediaQuery = slide.title.trim();
-                this.searchMedia();
+            const raw = this.slideSearchQuery(slide);
+            if (!raw) return;
+            if (!this.mediaQuery.trim() || this.mediaQuery === this._lastSlideSearchRaw) {
+                this.resolveMediaQuery(raw).then((query) => {
+                    this.mediaQuery = query;
+                    this._lastSlideSearchRaw = raw;
+                    this.searchMedia();
+                });
             }
         },
 
-        searchFromSlideTitle() {
+        async searchFromSlideBody() {
             const slide = this.selectedSlide;
-            if (!slide?.title?.trim()) {
-                this.error = 'Defina um título no slide antes de buscar imagens.';
+            const raw = this.slideSearchQuery(slide);
+            if (!raw) {
+                this.error = 'Escreva o corpo do slide antes de buscar imagens.';
                 return;
             }
-            this.mediaQuery = slide.title.trim();
             this.activeTab = 'biblioteca';
+            this.mediaQuery = await this.resolveMediaQuery(raw);
+            this._lastSlideSearchRaw = raw;
             this.searchMedia();
+        },
+
+        async resolveMediaQuery(raw) {
+            try {
+                const { data } = await api.get('/media/suggest-query', { params: { query: raw } });
+                return data.primary || data.extracted || raw;
+            } catch {
+                return raw.replace(/\s+/g, ' ').slice(0, 80);
+            }
         },
 
         buildFullScriptFromSlides() {
@@ -657,6 +1065,8 @@ window.editorApp = function (projectId, projectMeta = {}) {
         async addSlide() {
             const { data } = await api.post(`/projects/${this.projectId}/slides`, {
                 title: `Slide ${this.slides.length + 1}`,
+                text_style: defaultTextStyle(),
+                duration_mode: 'narration',
             });
             this.slides.push(this.enrichSlide(data));
             this.selectSlide(data);
@@ -696,13 +1106,17 @@ window.editorApp = function (projectId, projectMeta = {}) {
             }
         },
 
-        copyTitleToNarration() {
+        copyBodyToNarration() {
             const slide = this.selectedSlide;
             if (!slide) return;
-            const parts = [slide.title, slide.subtitle, slide.body_text].filter(v => v?.trim());
-            slide.narration_text = formatNarrationText(parts.join('. '));
+            const text = (slide.body_text || '').trim();
+            if (!text) {
+                this.error = 'Escreva o corpo do slide primeiro.';
+                return;
+            }
+            slide.narration_text = formatNarrationText(text);
             this.scheduleSave();
-            this.message = 'Texto copiado para narração';
+            this.message = 'Corpo copiado para narração';
         },
 
         onFullScriptInput() {
@@ -775,14 +1189,18 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
             try {
                 const { data } = await api.post(`/projects/${this.projectId}/slides/apply-script`, {
-                    blocks: parsed.blocks.map(({ narration_text, title }) => ({ narration_text, title })),
+                    blocks: parsed.blocks.map(({ narration_text, body_text, kind, section_title }) => ({
+                        narration_text,
+                        body_text,
+                        kind,
+                        section_title,
+                    })),
                     trim_extra_slides: fromPaste || trimExtra,
                 });
                 this.slides = data.map(s => this.enrichSlide(s));
                 this.syncSelection();
                 if (!silent) {
-                    const s = parsed.stats;
-                    this.message = `Roteiro aplicado: ${s.slides} slide(s) — ${s.prose} parágrafo(s), ${s.dialogues} fala(s), ${s.verses} verso(s), ${s.refrains || 0} refrão(ões)`;
+                    this.message = `Roteiro aplicado: ${parsed.stats.slides} slide(s) — tempos ajustados automaticamente`;
                 }
             } catch (e) {
                 if (!silent) this.error = e.response?.data?.message || 'Erro ao aplicar roteiro';
@@ -815,11 +1233,19 @@ window.editorApp = function (projectId, projectMeta = {}) {
             const file = event.target.files[0];
             if (!file || !this.selectedSlide) return;
             try {
+                const duration = await probeVideoFileDuration(file);
                 const asset = await this.uploadAsset(file, 'video', false);
                 this.selectedSlide.video_path = asset.file_path;
                 this.selectedSlide.video_url = this.fileUrl('assets', asset.file_path.split(/[/\\]/).pop());
+                this.selectedSlide.duration_mode = 'video';
+                if (duration && duration > 0) {
+                    this.selectedSlide.video_duration_seconds = duration;
+                    this.selectedSlide.duration_seconds = Math.round(duration * 10) / 10;
+                }
                 await this.saveSlide();
-                this.message = 'Vídeo inserido no slide';
+                this.message = duration
+                    ? `Vídeo inserido — duração ${Math.round(duration * 10) / 10}s (corrido)`
+                    : 'Vídeo inserido no slide';
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao enviar vídeo';
             }
@@ -829,23 +1255,32 @@ window.editorApp = function (projectId, projectMeta = {}) {
             if (!this.selectedSlide) return;
             this.selectedSlide.video_path = null;
             this.selectedSlide.video_url = null;
+            this.selectedSlide.video_duration_seconds = null;
+            if (this.selectedSlide.duration_mode === 'video') {
+                this.selectedSlide.duration_mode = 'narration';
+            }
             this.scheduleSave();
         },
 
         async uploadAudio(event) {
             const file = event.target.files[0];
             if (!file) return;
+            const slot = this.selectedMusicSlot ?? 0;
+            const track = this.audioTracks[slot] ?? this.emptyMusicSlot(slot);
 
             try {
                 const asset = await this.uploadAsset(file, 'audio', false);
-                await api.post(`/projects/${this.projectId}/audio-tracks`, {
+                const { data } = await api.post(`/projects/${this.projectId}/audio-tracks`, {
                     asset_id: asset.id,
                     file_path: asset.file_path,
-                    volume: this.audioTrack.volume,
-                    ducking_enabled: this.audioTrack.ducking_enabled,
+                    track_slot: slot,
+                    volume: track.volume ?? 0.35,
+                    start_at: track.start_at ?? 0,
+                    ducking_enabled: track.ducking_enabled ?? true,
                 });
-                await this.loadAudioTrack();
-                this.message = 'Trilha importada';
+                this.audioTracks[slot] = this.enrichAudioTrack(data);
+                if (slot === 0) this.audioTrack = this.audioTracks[0];
+                this.message = `${this.audioTracks[slot].label} importada`;
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao importar áudio';
             }
@@ -882,17 +1317,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         async saveAudioTrack() {
-            if (!this.audioTrack?.id) return;
-            try {
-                const { data } = await api.put(
-                    `/projects/${this.projectId}/audio-tracks/${this.audioTrack.id}`,
-                    this.audioTrack
-                );
-                this.audioTrack = data;
-                this.message = 'Trilha atualizada';
-            } catch (e) {
-                this.error = e.response?.data?.message || 'Erro ao salvar trilha';
-            }
+            await this.saveMusicTrack(0);
         },
 
         async searchMedia() {
@@ -909,18 +1334,21 @@ window.editorApp = function (projectId, projectMeta = {}) {
                     params: {
                         query,
                         source: this.mediaSource,
-                        type: this.mediaType,
+                        type: this.mediaSearchType(),
                     },
                 });
                 this.mediaResults = data.results || [];
                 this.mediaErrors = data.errors || [];
                 if (this.mediaResults.length) {
-                    const hint = data.search?.translated
-                        ? ` (${data.search.query} → ${data.search.primary})`
-                        : '';
+                    const search = data.search || {};
+                    const hint = search.hint
+                        ? ` — ${search.hint}`
+                        : search.translated
+                            ? ` (${search.query} → ${search.primary})`
+                            : '';
                     this.message = `${this.mediaResults.length} resultado(s)${hint} — clique para inserir`;
-                } else if (data.search?.translated) {
-                    this.message = `Buscamos também como "${data.search.primary}" — nenhum resultado ainda.`;
+                } else if (data.search?.hint || data.search?.translated) {
+                    this.message = (data.search.hint || `Buscamos como "${data.search.primary}"`) + ' — nenhum resultado ainda.';
                 }
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro na busca';
@@ -930,22 +1358,40 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         async importMedia(item) {
-            if (!this.selectedSlide && item.type !== 'audio') {
+            const isMusic = item.type === 'audio' || this.mediaType === 'music';
+            const isSfx = item.type === 'sfx' || this.mediaType === 'sfx';
+
+            if (!isMusic && !isSfx && !this.selectedSlide) {
                 this.error = 'Selecione um slide antes de inserir mídia.';
                 return;
             }
-            const target = item.type === 'audio' ? 'audio_track' : 'slide';
+
+            const target = isSfx ? 'sound_effect' : (isMusic ? 'audio_track' : 'slide');
+            const payload = {
+                item,
+                target,
+                slide_id: this.selectedSlide?.id,
+            };
+
+            if (isMusic) {
+                payload.track_slot = this.selectedMusicSlot ?? 0;
+            }
+
+            if (isSfx) {
+                const startAt = parseFloat(
+                    prompt('Início do efeito na timeline (segundos):', String(this.mediaSfxStartAt ?? 0))
+                ) || 0;
+                payload.start_at = startAt;
+                payload.label = item.title || 'Efeito';
+            }
+
             try {
-                const { data } = await api.post(`/projects/${this.projectId}/media/import`, {
-                    item,
-                    target,
-                    slide_id: this.selectedSlide?.id,
-                });
+                const { data } = await api.post(`/projects/${this.projectId}/media/import`, payload);
 
                 this.applyPublish(data.publish);
 
                 if (target === 'slide' && this.selectedSlide) {
-                    const asset = data.asset || data;
+                    const asset = data.asset;
                     const slideFromServer = data.slide;
 
                     if (slideFromServer) {
@@ -957,12 +1403,14 @@ window.editorApp = function (projectId, projectMeta = {}) {
                         if (this.selectedSlide?.id === merged.id) {
                             this.selectedSlide = merged;
                         }
-                    } else {
+                    } else if (asset) {
                         if (item.type === 'video') {
                             this.selectedSlide.video_path = asset.file_path;
                             this.selectedSlide.video_url = this.fileUrl('assets', asset.file_path.split(/[/\\]/).pop());
+                            this.selectedSlide.duration_mode = 'video';
                             if (item.duration_seconds && item.duration_seconds > 0) {
-                                this.selectedSlide.duration_seconds = Math.min(Math.max(item.duration_seconds, 1), 60);
+                                this.selectedSlide.video_duration_seconds = item.duration_seconds;
+                                this.selectedSlide.duration_seconds = Math.round(item.duration_seconds * 10) / 10;
                             }
                         } else {
                             this.selectedSlide.image_path = asset.file_path;
@@ -971,10 +1419,17 @@ window.editorApp = function (projectId, projectMeta = {}) {
                         await this.saveSlide();
                     }
 
-                    this.message = data.publish?.message || 'Mídia inserida — publicação atualizada automaticamente';
-                } else {
-                    await this.loadAudioTrack();
-                    this.message = data.publish?.message || 'Áudio inserido — créditos incluídos automaticamente';
+                    this.message = data.publish?.message || 'Mídia inserida — créditos atualizados na exportação';
+                } else if (data.audio_track) {
+                    const slot = data.audio_track.track_slot ?? 0;
+                    this.audioTracks[slot] = this.enrichAudioTrack(data.audio_track);
+                    if (slot === 0) this.audioTrack = this.audioTracks[0];
+                    this.message = data.publish?.message || `${this.audioTracks[slot].label} importada — licença registrada`;
+                    this.activeTab = 'audio';
+                } else if (data.sound_effect) {
+                    this.soundEffects.push(this.enrichSoundEffect(data.sound_effect));
+                    this.message = data.publish?.message || `Efeito "${data.sound_effect.label}" adicionado — crédito na descrição`;
+                    this.activeTab = 'audio';
                 }
 
                 await this.loadDownloads();
@@ -996,13 +1451,13 @@ window.editorApp = function (projectId, projectMeta = {}) {
             if (!slide) return '';
             const text = (slide.narration_text || '').trim();
             if (text) return formatNarrationText(text);
-            return formatNarrationText([slide.title, slide.subtitle, slide.body_text].filter(v => v?.trim()).join('. '));
+            return formatNarrationText((slide.body_text || '').trim() || (slide.narration_text || '').trim());
         },
 
         async testNarration() {
             const text = this.slideNarrationText();
             if (!text) {
-                this.error = 'Escreva texto de narração ou preencha título/subtítulo do slide.';
+                this.error = 'Escreva narração ou preencha o corpo do slide.';
                 return;
             }
             this.previewLoading = true;

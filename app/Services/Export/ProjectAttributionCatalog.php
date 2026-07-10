@@ -18,7 +18,7 @@ class ProjectAttributionCatalog
     public function collect(Project $project): array
     {
         $this->repair->repairProject($project);
-        $project->load(['slides', 'assets.stockLicense', 'audioTracks']);
+        $project->load(['slides', 'assets.stockLicense', 'audioTracks', 'soundEffects']);
 
         $usage = $this->buildUsageMap($project);
         $usedPaths = array_keys($usage);
@@ -99,6 +99,15 @@ class ProjectAttributionCatalog
                 $key = $this->normalizePath($track->file_path);
                 $map[$key] ??= [];
                 $map[$key][] = $track->type === 'music' ? 'Trilha sonora' : 'Áudio';
+            }
+        }
+
+        foreach ($project->soundEffects as $effect) {
+            if ($effect->file_path) {
+                $key = $this->normalizePath($effect->file_path);
+                $map[$key] ??= [];
+                $label = trim($effect->label ?? '') ?: 'Efeito sonoro';
+                $map[$key][] = $label.' ('.number_format((float) $effect->start_at, 1, ',', '').'s)';
             }
         }
 

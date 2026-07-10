@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\Slide;
 use App\Services\Script\ScriptParser;
+use App\Services\Slide\SlideDurationService;
 use App\Support\SafeJson;
 use App\Support\Utf8;
 use Illuminate\Http\JsonResponse;
@@ -13,6 +14,7 @@ use Illuminate\Http\Request;
 
 class SlideController extends Controller
 {
+    public function __construct(private SlideDurationService $durations) {}
     public function index(Project $project): JsonResponse
     {
         return SafeJson::response(
@@ -28,6 +30,8 @@ class SlideController extends Controller
             'body_text' => ['nullable', 'string'],
             'narration_text' => ['nullable', 'string'],
             'duration_seconds' => ['nullable', 'numeric', 'min:0.5'],
+            'duration_mode' => ['nullable', 'in:manual,video,narration'],
+            'video_duration_seconds' => ['nullable', 'numeric', 'min:0'],
             'transition_type' => ['nullable', 'in:fade,cut,slide'],
             'text_style' => ['nullable', 'array'],
         ]);
@@ -38,6 +42,8 @@ class SlideController extends Controller
             'order' => $order,
             'duration_seconds' => $data['duration_seconds'] ?? 5,
             'transition_type' => $data['transition_type'] ?? 'fade',
+            'text_style' => $data['text_style'] ?? (new Slide)->defaultTextStyle(),
+            'duration_mode' => $data['duration_mode'] ?? 'narration',
         ]));
 
         return SafeJson::response($this->slideResponse($slide), 201);
@@ -53,13 +59,35 @@ class SlideController extends Controller
             'body_text' => ['nullable', 'string'],
             'narration_text' => ['nullable', 'string'],
             'duration_seconds' => ['nullable', 'numeric', 'min:0.5'],
+            'duration_mode' => ['nullable', 'in:manual,video,narration'],
+            'video_duration_seconds' => ['nullable', 'numeric', 'min:0'],
             'transition_type' => ['nullable', 'in:fade,cut,slide'],
             'text_style' => ['nullable', 'array'],
             'image_path' => ['nullable', 'string'],
             'video_path' => ['nullable', 'string'],
         ]);
 
+        $hadVideo = (bool) $slide->video_path;
         $slide->update($this->sanitizeSlideInput($data));
+        $slide->refresh();
+
+        if (array_key_exists('video_path', $data)) {
+            if ($data['video_path']) {
+                if (! empty($data['video_duration_seconds'])) {
+                    $slide->update([
+                        'video_duration_seconds' => (float) $data['video_duration_seconds'],
+                        'duration_mode' => $data['duration_mode'] ?? 'video',
+                    ]);
+                }
+                $this->durations->applyVideoDuration($slide->fresh());
+            } elseif ($hadVideo && ($slide->duration_mode === 'video' || ! ($data['duration_mode'] ?? null))) {
+                $slide->update(['duration_mode' => 'narration', 'video_duration_seconds' => null]);
+            }
+        }
+
+        if (($data['duration_mode'] ?? null) === 'narration') {
+            $this->durations->applyAutomaticDurations($project->fresh('slides')->slides);
+        }
 
         return SafeJson::response($this->slideResponse($slide->fresh()));
     }
@@ -70,7 +98,9 @@ class SlideController extends Controller
             'text' => ['nullable', 'string'],
             'blocks' => ['nullable', 'array', 'min:1'],
             'blocks.*.narration_text' => ['required_with:blocks', 'string'],
-            'blocks.*.title' => ['nullable', 'string', 'max:255'],
+            'blocks.*.body_text' => ['nullable', 'string'],
+            'blocks.*.kind' => ['nullable', 'string'],
+            'blocks.*.section_title' => ['nullable', 'string'],
             'trim_extra_slides' => ['nullable', 'boolean'],
         ]);
 
@@ -81,7 +111,9 @@ class SlideController extends Controller
             $blocks = array_map(function (array $block) use ($parser) {
                 return [
                     'narration_text' => $parser->formatNarrationText($block['narration_text']),
-                    'title' => $block['title'] ?? null,
+                    'body_text' => isset($block['body_text']) ? trim((string) $block['body_text']) : null,
+                    'kind' => $block['kind'] ?? null,
+                    'section_title' => $block['section_title'] ?? null,
                 ];
             }, $data['blocks']);
         } else {
@@ -96,19 +128,18 @@ class SlideController extends Controller
 
         foreach ($blocks as $index => $block) {
             $block = $this->sanitizeSlideInput($block);
+            $payload = $this->scriptBlockPayload($block, $slides->has($index) ? $slides[$index] : null);
+
             if ($slides->has($index)) {
-                $slides[$index]->update([
-                    'narration_text' => $block['narration_text'],
-                    'title' => $block['title'] ?? $slides[$index]->title,
-                ]);
+                $slides[$index]->update($payload);
             } else {
-                $project->slides()->create([
+                $project->slides()->create(array_merge([
                     'order' => $index,
-                    'title' => $block['title'] ?? 'Slide '.($index + 1),
-                    'narration_text' => $block['narration_text'],
+                    'title' => 'Slide '.($index + 1),
                     'duration_seconds' => 5,
+                    'duration_mode' => 'narration',
                     'transition_type' => 'fade',
-                ]);
+                ], $payload));
             }
         }
 
@@ -123,6 +154,17 @@ class SlideController extends Controller
                 $s->update(['order' => $index]);
             });
         }
+
+        $this->durations->applyAutomaticDurations($project->fresh('slides')->slides);
+
+        return SafeJson::response(
+            $project->fresh('slides')->slides->map(fn (Slide $slide) => $this->slideResponse($slide))->values()
+        );
+    }
+
+    public function recalculateDurations(Project $project): JsonResponse
+    {
+        $this->durations->applyAutomaticDurations($project->slides()->orderBy('order')->get());
 
         return SafeJson::response(
             $project->fresh('slides')->slides->map(fn (Slide $slide) => $this->slideResponse($slide))->values()
@@ -168,6 +210,45 @@ class SlideController extends Controller
     }
 
     /**
+     * @param  array<string, mixed>  $block
+     * @return array<string, mixed>
+     */
+    private function scriptBlockPayload(array $block, ?Slide $existing = null): array
+    {
+        $bodyText = $block['body_text'] ?? $block['narration_text'];
+        $sectionTitle = trim((string) ($block['section_title'] ?? ''));
+        if ($sectionTitle !== '' && ! str_contains($bodyText, $sectionTitle)) {
+            $bodyText = $sectionTitle."\n".$bodyText;
+        }
+
+        $payload = [
+            'narration_text' => $block['narration_text'],
+            'body_text' => $bodyText,
+            'text_style' => $this->scriptBlockTextStyle($existing),
+        ];
+
+        return $payload;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function scriptBlockTextStyle(?Slide $existing): array
+    {
+        $base = $existing?->text_style ?? [];
+        $verticalAlign = $base['vertical_align'] ?? 'center';
+
+        return [
+            'body_color' => '#ffffff',
+            'title_color' => '#ffffff',
+            'body_size' => 12,
+            'title_size' => 12,
+            'align' => 'center',
+            'vertical_align' => $verticalAlign,
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
@@ -191,6 +272,10 @@ class SlideController extends Controller
      */
     private function slideResponse(Slide $slide): array
     {
-        return Utf8::cleanArray($slide->toArray());
+        $data = $slide->toArray();
+        $data['text_style'] = $slide->normalizeTextStyle($slide->text_style ?? []);
+        $data['duration_mode'] = $slide->duration_mode ?? 'narration';
+
+        return Utf8::cleanArray($data);
     }
 }

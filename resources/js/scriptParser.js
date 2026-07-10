@@ -3,7 +3,7 @@
  * Reconhece: parágrafos, falas, versos/refrões, marcadores de cena.
  */
 
-const SECTION_HEADER = /^(?:\[\s*)?(REFRÃO|REFRAO|CORO|VERSO|ESTROFE|ESTRÓFE|INTRODUÇÃO|INTRO|PONTE|SÓLO|SOLO|PARTE|CENA|NARRADOR|NARRAÇÃO|NARRACAO|LOCUÇÃO|LOCUCAO|FALA|RAP|SLIDE|HOOK|OUTRO)\s*\d*\s*(?:[-–—:]\s*([^\]\n]+))?\s*(?:\])?\s*$/i;
+const SECTION_HEADER = /^(?:\[\s*)?(REFRÃO|REFRAO|CORO|REPARTIDO|VERSO|ESTROFE|ESTRÓFE|INTRODUÇÃO|INTRO|PONTE|SÓLO|SOLO|PARTE|CENA|NARRADOR|NARRAÇÃO|NARRACAO|LOCUÇÃO|LOCUCAO|FALA|RAP|SLIDE|HOOK|OUTRO)\s*\d*\s*(?:[-–—:]\s*([^\]\n]+))?\s*(?:\])?\s*$/i;
 
 const SCENE_MARKER = /^(?:[-–—=*_]{3,}|#{1,3}\s*(?:Slide|Cena|Parte|Ato)\s+\d+.*|(?:Slide|Cena|Parte|Ato)\s+\d+\s*[:.\-–—].*)$/i;
 
@@ -136,16 +136,9 @@ function isEmDashLine(line) {
 
 function formatEmDashDialogue(line) {
     let t = line.trim().replace(/^[\u2014—]\s*/, '');
+    t = t.replace(/\s+[\u2014—]\s+/g, ' ').trim();
 
-    const attr = t.match(/^(.+?[.!?])\s+[\u2014—]\s+(ele|ela)\s+(.+)$/iu);
-    if (attr) {
-        const speech = attr[1].trim();
-        const tag = `${attr[2].charAt(0).toUpperCase()}${attr[2].slice(1).toLowerCase()} ${attr[3].trim().replace(/\.$/, '')}`;
-
-        return formatProseLine(`${tag}: ${speech}`, false);
-    }
-
-    return formatProseLine(t.replace(/\s+[\u2014—]\s+/g, ' ').trim(), false);
+    return formatProseLine(t, false);
 }
 
 function isSceneMarker(line) {
@@ -168,7 +161,7 @@ function parseSectionHeader(line) {
     if (!m) return null;
 
     const label = m[1];
-    const title = m[2]?.trim() || label.charAt(0).toUpperCase() + label.slice(1).toLowerCase();
+    const title = m[2]?.trim() || null;
 
     return { label, title };
 }
@@ -228,6 +221,27 @@ function isRefrainHeader(header) {
     return header && /^(REFRÃO|REFRAO|CORO)$/i.test(header.label || header);
 }
 
+function isLyricKind(kind) {
+    return ['refrain', 'verse', 'repartido'].includes(kind);
+}
+
+function sectionKind(header) {
+    if (isRefrainHeader(header)) return 'refrain';
+    if (/^REPARTIDO$/i.test(header.label || '')) return 'repartido';
+    if (/^(VERSO|ESTROFE|ESTRÓFE)$/i.test(header.label || '')) return 'verse';
+
+    return 'prose';
+}
+
+function buildLyricBody(narrationText, sectionTitle) {
+    const text = String(narrationText ?? '').trim();
+    const section = String(sectionTitle ?? '').trim();
+    if (!section) return text;
+    if (text.toLowerCase().includes(section.toLowerCase())) return text;
+
+    return `${section}\n${text}`;
+}
+
 function shouldBreakProse(prevLine, nextLine) {
     const prev = prevLine?.trim();
     const next = nextLine?.trim();
@@ -258,14 +272,20 @@ function formatSpeaker(speaker) {
 }
 
 function formatDialogue(speaker, text) {
-    const name = formatSpeaker(speaker);
     const clean = formatProseLine(text, false);
-    if (!clean) return '';
-    if (!name) return clean;
 
-    const verb = /^(?:ele|ela|eles|elas)$/i.test(name) ? 'continuou' : 'disse';
+    return clean;
+}
 
-    return `${name} ${verb}: ${clean}`;
+function dialogueBlock(narrationText, sectionTitle = null) {
+    const narration = narrationText.trim();
+    if (!narration) return null;
+
+    return {
+        narration_text: narration,
+        title: sectionTitle || truncateTitle(narration),
+        kind: 'dialogue',
+    };
 }
 
 function formatProseLine(text, forceEnd = true) {
@@ -318,9 +338,12 @@ function makeProseBlock(lines, title, kind = 'prose') {
     const text = lines.map((l) => l.trim()).filter(Boolean).join(' ');
     if (!text) return null;
 
+    const narration = formatProseLine(text);
+
     return {
-        narration_text: formatProseLine(text),
+        narration_text: narration,
         title: title || truncateTitle(lines[0]),
+        body_text: isLyricKind(kind) ? buildLyricBody(narration, title) : narration,
         kind,
     };
 }
@@ -328,9 +351,12 @@ function makeProseBlock(lines, title, kind = 'prose') {
 function makeVerseBlock(lines, title, kind = 'verse') {
     if (!lines.length) return null;
 
+    const narration = formatVerseLines(lines);
+
     return {
-        narration_text: formatVerseLines(lines),
+        narration_text: narration,
         title: title || truncateTitle(lines[0]),
+        body_text: buildLyricBody(narration, title),
         kind,
     };
 }
@@ -364,7 +390,7 @@ function parseLines(lines) {
     const startSection = (header) => {
         flushAll();
         currentTitle = header.title;
-        currentKind = isRefrainHeader(header) ? 'refrain' : /^(VERSO|ESTROFE|ESTRÓFE)$/i.test(header.label || '') ? 'verse' : 'prose';
+        currentKind = sectionKind(header);
     };
 
     for (let i = 0; i < lines.length; i++) {
@@ -393,11 +419,8 @@ function parseLines(lines) {
             pendingSpeaker = null;
             flushProse();
             flushVerse();
-            blocks.push({
-                narration_text: formatDialogue(speaker, line),
-                title: formatSpeaker(speaker) || currentTitle,
-                kind: 'dialogue',
-            });
+            const block = dialogueBlock(formatDialogue(speaker, line), currentTitle);
+            if (block) blocks.push(block);
             continue;
         }
 
@@ -410,22 +433,16 @@ function parseLines(lines) {
         if (isEmDashLine(line)) {
             flushProse();
             flushVerse();
-            blocks.push({
-                narration_text: formatEmDashDialogue(line),
-                title: 'Fala',
-                kind: 'dialogue',
-            });
+            const block = dialogueBlock(formatEmDashDialogue(line), currentTitle);
+            if (block) blocks.push(block);
             continue;
         }
 
         const speaker = parseSpeakerLine(line);
         if (speaker) {
             flushAll();
-            blocks.push({
-                narration_text: formatDialogue(speaker.speaker, speaker.text),
-                title: formatSpeaker(speaker.speaker) || currentTitle,
-                kind: 'dialogue',
-            });
+            const block = dialogueBlock(formatProseLine(line.replace(/^[-–—•*]\s*/, ''), false), currentTitle);
+            if (block) blocks.push(block);
             continue;
         }
 
@@ -434,7 +451,7 @@ function parseLines(lines) {
             flushProse();
         }
 
-        if (currentKind === 'refrain' || currentKind === 'verse' || isVerseLine(line)) {
+        if (currentKind === 'refrain' || currentKind === 'verse' || currentKind === 'repartido' || isVerseLine(line)) {
             if (proseBuffer.length) flushProse();
             verseBuffer.push(line);
             continue;
@@ -488,17 +505,18 @@ export function parseScript(rawText) {
 
     normalized = expandWallOfText(normalized);
 
-    const blocks = parseLines(normalized.split('\n')).map((block, index) => ({
+    const blocks = parseLines(normalized.split('\n')).map((block) => ({
         narration_text: block.narration_text,
-        title: block.title || `Slide ${index + 1}`,
+        body_text: block.body_text || block.narration_text,
         kind: block.kind,
+        section_title: isLyricKind(block.kind) ? (block.title || null) : null,
     }));
 
     const stats = {
         slides: blocks.length,
         dialogues: blocks.filter((b) => b.kind === 'dialogue').length,
         verses: blocks.filter((b) => b.kind === 'verse').length,
-        refrains: blocks.filter((b) => b.kind === 'refrain').length,
+        refrains: blocks.filter((b) => b.kind === 'refrain' || b.kind === 'repartido').length,
         prose: blocks.filter((b) => b.kind === 'prose').length,
     };
 

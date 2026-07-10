@@ -2,6 +2,8 @@
 
 namespace App\Services\MediaLibrary;
 
+use App\Enums\LicenseType;
+
 class MixkitService
 {
     public function __construct(private MediaSearchQueryTranslator $queryTranslator) {}
@@ -39,7 +41,9 @@ class MixkitService
             return array_merge($track, [
                 'source' => 'mixkit',
                 'type' => 'audio',
-                'license_type' => 'Mixkit License',
+                'subtype' => 'music',
+                'preview_url' => $track['preview_url'] ?? $track['download_url'] ?? null,
+                'license_type' => LicenseType::Mixkit->value,
                 'requires_attribution' => $attribution['requires_attribution'],
                 'attribution_text' => $attribution['attribution_text'],
             ]);

@@ -12,13 +12,16 @@ class AudioTrackController extends Controller
 {
     public function index(Project $project): JsonResponse
     {
-        return response()->json($project->audioTracks()->with('asset')->get());
+        return response()->json(
+            $project->audioTracks()->with('asset')->orderBy('track_slot')->get()
+        );
     }
 
     public function store(Request $request, Project $project): JsonResponse
     {
         $data = $request->validate([
             'type' => ['nullable', 'in:music,sfx'],
+            'track_slot' => ['nullable', 'integer', 'min:0', 'max:2'],
             'asset_id' => ['nullable', 'exists:assets,id'],
             'file_path' => ['nullable', 'string'],
             'volume' => ['nullable', 'numeric', 'min:0', 'max:1'],
@@ -26,8 +29,15 @@ class AudioTrackController extends Controller
             'ducking_enabled' => ['nullable', 'boolean'],
         ]);
 
+        $type = $data['type'] ?? 'music';
+        $slot = (int) ($data['track_slot'] ?? 0);
+
+        if ($type === 'music' && ($slot < 0 || $slot > 2)) {
+            return response()->json(['message' => 'Trilha inválida — use slot 0, 1 ou 2.'], 422);
+        }
+
         $track = $project->audioTracks()->updateOrCreate(
-            ['type' => $data['type'] ?? 'music'],
+            ['type' => $type, 'track_slot' => $slot],
             [
                 'asset_id' => $data['asset_id'] ?? null,
                 'file_path' => $data['file_path'] ?? null,

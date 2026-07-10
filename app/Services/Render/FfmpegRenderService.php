@@ -116,7 +116,7 @@ class FfmpegRenderService
         $videoDuration = $this->getVideoDuration($videoPath);
         $durationArg = (string) max(0.5, $videoDuration);
         $narration = $project->latestNarration();
-        $musicTrack = $project->audioTracks()->where('type', 'music')->first();
+        $musicTrack = $project->audioTracks()->where('type', 'music')->orderBy('track_slot')->first();
 
         $narrationPath = ($narration?->audio_path && file_exists($narration->audio_path))
             ? $narration->audio_path : null;

@@ -23,26 +23,7 @@ class SlideImageRenderer
         $overlay = imagecolorallocatealpha($image, 0, 0, 0, 80);
         imagefilledrectangle($image, 0, 0, $width, $height, $overlay);
 
-        $style = $slide->resolvedTextStyle();
-        $align = $style['align'] ?? 'center';
-        $y = (int) ($height * 0.35);
-
-        if ($slide->title) {
-            $color = $this->hexToRgb($image, $style['title_color'] ?? '#ffffff');
-            $this->drawWrappedText($image, $slide->title, (int) ($style['title_size'] ?? 48), $color, $width, $y, $align);
-            $y += (int) (($style['title_size'] ?? 48) * 1.8);
-        }
-
-        if ($slide->subtitle) {
-            $color = $this->hexToRgb($image, $style['subtitle_color'] ?? '#e5e7eb');
-            $this->drawWrappedText($image, $slide->subtitle, (int) ($style['subtitle_size'] ?? 28), $color, $width, $y, $align);
-            $y += (int) (($style['subtitle_size'] ?? 28) * 1.6);
-        }
-
-        if ($slide->body_text) {
-            $color = $this->hexToRgb($image, $style['body_color'] ?? '#f3f4f6');
-            $this->drawWrappedText($image, $slide->body_text, (int) ($style['body_size'] ?? 20), $color, $width, $y, $align);
-        }
+        $this->drawSlideText($image, $slide, $width, $height);
 
         imagepng($image, $outputPath);
         imagedestroy($image);
@@ -63,29 +44,83 @@ class SlideImageRenderer
             $this->drawBackgroundImage($image, $slide->image_path, $width, $height);
         }
 
-        $style = $slide->resolvedTextStyle();
-        $align = $style['align'] ?? 'center';
-        $y = (int) ($height * 0.35);
-
-        if ($slide->title) {
-            $color = $this->hexToRgb($image, $style['title_color'] ?? '#ffffff');
-            $this->drawWrappedText($image, $slide->title, (int) ($style['title_size'] ?? 48), $color, $width, $y, $align);
-            $y += (int) (($style['title_size'] ?? 48) * 1.8);
-        }
-
-        if ($slide->subtitle) {
-            $color = $this->hexToRgb($image, $style['subtitle_color'] ?? '#e5e7eb');
-            $this->drawWrappedText($image, $slide->subtitle, (int) ($style['subtitle_size'] ?? 28), $color, $width, $y, $align);
-            $y += (int) (($style['subtitle_size'] ?? 28) * 1.6);
-        }
-
-        if ($slide->body_text) {
-            $color = $this->hexToRgb($image, $style['body_color'] ?? '#f3f4f6');
-            $this->drawWrappedText($image, $slide->body_text, (int) ($style['body_size'] ?? 20), $color, $width, $y, $align);
-        }
+        $this->drawSlideText($image, $slide, $width, $height);
 
         imagejpeg($image, $outputPath, 92);
         imagedestroy($image);
+    }
+
+    private function drawSlideText(\GdImage $image, Slide $slide, int $width, int $height): void
+    {
+        $style = $slide->resolvedTextStyle();
+        $align = $style['align'] ?? 'center';
+        $verticalAlign = $style['vertical_align'] ?? 'center';
+        $font = $this->fontPath();
+        $maxWidth = (int) ($width * 0.85);
+        $padding = (int) ($height * 0.08);
+
+        $segments = [];
+        if ($slide->title) {
+            $segments[] = [
+                'text' => $slide->title,
+                'size' => (int) ($style['title_size'] ?? 12),
+                'color' => $this->hexToRgb($image, $style['title_color'] ?? '#ffffff'),
+            ];
+        }
+        if ($slide->subtitle) {
+            $segments[] = [
+                'text' => $slide->subtitle,
+                'size' => (int) ($style['subtitle_size'] ?? 28),
+                'color' => $this->hexToRgb($image, $style['subtitle_color'] ?? '#e5e7eb'),
+            ];
+        }
+        if ($slide->body_text) {
+            $segments[] = [
+                'text' => $slide->body_text,
+                'size' => (int) ($style['body_size'] ?? $style['title_size'] ?? 12),
+                'color' => $this->hexToRgb($image, $style['body_color'] ?? $style['title_color'] ?? '#f3f4f6'),
+            ];
+        }
+
+        if ($segments === []) {
+            return;
+        }
+
+        $totalHeight = 0;
+        $segmentMetrics = [];
+        foreach ($segments as $segment) {
+            $lines = $this->wrapText($segment['text'], $font, $segment['size'], $maxWidth);
+            $lineHeight = (int) ($segment['size'] * 1.4);
+            $blockHeight = count($lines) * $lineHeight;
+            $segmentMetrics[] = [
+                ...$segment,
+                'lines' => $lines,
+                'lineHeight' => $lineHeight,
+                'blockHeight' => $blockHeight,
+            ];
+            $totalHeight += $blockHeight;
+        }
+
+        $startY = match ($verticalAlign) {
+            'top' => $padding + ($segmentMetrics[0]['size'] ?? 20),
+            'bottom' => $height - $padding - $totalHeight + ($segmentMetrics[0]['size'] ?? 20),
+            default => (int) (($height - $totalHeight) / 2) + ($segmentMetrics[0]['size'] ?? 20),
+        };
+
+        $y = $startY;
+        foreach ($segmentMetrics as $segment) {
+            foreach ($segment['lines'] as $line) {
+                $box = imagettfbbox($segment['size'], 0, $font, $line);
+                $textWidth = abs($box[2] - $box[0]);
+                $x = match ($align) {
+                    'left' => (int) ($width * 0.075),
+                    'right' => (int) ($width * 0.925 - $textWidth),
+                    default => (int) (($width - $textWidth) / 2),
+                };
+                imagettftext($image, $segment['size'], 0, $x, $y, $segment['color'], $font, $line);
+                $y += $segment['lineHeight'];
+            }
+        }
     }
 
     private function drawBackgroundImage(\GdImage $canvas, string $path, int $width, int $height): void
@@ -135,48 +170,34 @@ class SlideImageRenderer
         return imagecolorallocate($image, $r, $g, $b);
     }
 
-    private function drawWrappedText(\GdImage $image, string $text, int $size, int $color, int $width, int $startY, string $align): void
-    {
-        $font = $this->fontPath();
-        $maxWidth = (int) ($width * 0.85);
-        $lines = $this->wrapText($text, $font, $size, $maxWidth);
-        $lineHeight = (int) ($size * 1.4);
-        $y = $startY;
-
-        foreach ($lines as $line) {
-            $box = imagettfbbox($size, 0, $font, $line);
-            $textWidth = abs($box[2] - $box[0]);
-            $x = match ($align) {
-                'left' => (int) ($width * 0.075),
-                'right' => (int) ($width * 0.925 - $textWidth),
-                default => (int) (($width - $textWidth) / 2),
-            };
-            imagettftext($image, $size, 0, $x, $y, $color, $font, $line);
-            $y += $lineHeight;
-        }
-    }
-
     private function wrapText(string $text, string $font, int $size, int $maxWidth): array
     {
-        $words = preg_split('/\s+/', trim($text)) ?: [];
+        $paragraphs = preg_split("/\r\n|\n|\r/", $text) ?: [$text];
         $lines = [];
-        $current = '';
 
-        foreach ($words as $word) {
-            $test = $current === '' ? $word : $current.' '.$word;
-            $box = imagettfbbox($size, 0, $font, $test);
-            $width = abs($box[2] - $box[0]);
-
-            if ($width > $maxWidth && $current !== '') {
-                $lines[] = $current;
-                $current = $word;
-            } else {
-                $current = $test;
+        foreach ($paragraphs as $paragraph) {
+            $words = preg_split('/\s+/', trim($paragraph)) ?: [];
+            if ($words === [] || ($words === [''] && trim($paragraph) === '')) {
+                continue;
             }
-        }
 
-        if ($current !== '') {
-            $lines[] = $current;
+            $current = '';
+            foreach ($words as $word) {
+                $test = $current === '' ? $word : $current.' '.$word;
+                $box = imagettfbbox($size, 0, $font, $test);
+                $width = abs($box[2] - $box[0]);
+
+                if ($width > $maxWidth && $current !== '') {
+                    $lines[] = $current;
+                    $current = $word;
+                } else {
+                    $current = $test;
+                }
+            }
+
+            if ($current !== '') {
+                $lines[] = $current;
+            }
         }
 
         return $lines ?: [''];

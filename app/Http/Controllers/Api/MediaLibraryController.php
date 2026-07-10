@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Project;
 use App\Models\Slide;
+use App\Models\SoundEffect;
 use App\Services\Export\ProjectPublishAutoSyncService;
+use App\Services\MediaLibrary\FreesoundService;
 use App\Services\MediaLibrary\MediaImportService;
 use App\Services\MediaLibrary\MediaSearchQueryTranslator;
-use App\Services\MediaLibrary\MixkitService;
+use App\Services\MediaLibrary\MixkitMusicService;
+use App\Services\MediaLibrary\MixkitSfxService;
 use App\Services\MediaLibrary\MixkitVideoService;
 use App\Services\MediaLibrary\OpenverseService;
 use App\Services\MediaLibrary\PexelsService;
@@ -24,19 +27,51 @@ class MediaLibraryController extends Controller
         private PexelsService $pexels,
         private PixabayService $pixabay,
         private UnsplashService $unsplash,
-        private MixkitService $mixkit,
+        private MixkitMusicService $mixkitMusic,
+        private MixkitSfxService $mixkitSfx,
         private MixkitVideoService $mixkitVideos,
+        private FreesoundService $freesound,
         private MediaImportService $importer,
         private ProjectPublishAutoSyncService $publishSync,
         private MediaSearchQueryTranslator $queryTranslator,
     ) {}
 
+    public function providers(): JsonResponse
+    {
+        return response()->json([
+            'visual' => [
+                ['id' => 'openverse', 'label' => 'Openverse', 'free' => true, 'configured' => true],
+                ['id' => 'pexels', 'label' => 'Pexels', 'free' => true, 'configured' => (bool) config('criasys.media.pexels_api_key')],
+                ['id' => 'pixabay', 'label' => 'Pixabay', 'free' => true, 'configured' => (bool) config('criasys.media.pixabay_api_key')],
+                ['id' => 'unsplash', 'label' => 'Unsplash', 'free' => true, 'configured' => (bool) config('criasys.media.unsplash_access_key')],
+            ],
+            'music' => [
+                ['id' => 'mixkit', 'label' => 'Mixkit Music', 'free' => true, 'configured' => true, 'attribution' => false],
+                ['id' => 'freesound', 'label' => 'Freesound', 'free' => true, 'configured' => (bool) config('criasys.media.freesound_api_key'), 'attribution' => true],
+                ['id' => 'pixabay', 'label' => 'Pixabay', 'free' => true, 'configured' => (bool) config('criasys.media.pixabay_api_key'), 'attribution' => false],
+            ],
+            'sfx' => [
+                ['id' => 'mixkit', 'label' => 'Mixkit SFX', 'free' => true, 'configured' => true, 'attribution' => false],
+                ['id' => 'freesound', 'label' => 'Freesound', 'free' => true, 'configured' => (bool) config('criasys.media.freesound_api_key'), 'attribution' => true],
+            ],
+        ]);
+    }
+
+    public function suggestQuery(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'query' => ['required', 'string', 'min:2'],
+        ]);
+
+        return response()->json($this->queryTranslator->meta($data['query']));
+    }
+
     public function search(Request $request): JsonResponse
     {
         $data = $request->validate([
             'query' => ['required', 'string', 'min:2'],
-            'source' => ['nullable', 'in:openverse,pexels,pixabay,unsplash,mixkit,all'],
-            'type' => ['nullable', 'in:image,audio,video'],
+            'source' => ['nullable', 'in:openverse,pexels,pixabay,unsplash,mixkit,freesound,all'],
+            'type' => ['nullable', 'in:image,audio,video,sfx'],
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
@@ -50,6 +85,13 @@ class MediaLibraryController extends Controller
         if ($type === 'audio') {
             return response()->json(array_merge(
                 $this->searchAudio($query, $terms, $source, $page),
+                ['search' => $searchMeta]
+            ));
+        }
+
+        if ($type === 'sfx') {
+            return response()->json(array_merge(
+                $this->searchSfx($query, $terms, $source, $page),
                 ['search' => $searchMeta]
             ));
         }
@@ -73,11 +115,12 @@ class MediaLibraryController extends Controller
      */
     private function searchImages(string $query, array $terms, string $source, int $page): array
     {
-        $imageSources = $this->resolveImageSources($source);
+        $imageSources = $this->orderImageSources($this->resolveImageSources($source));
         $results = [];
         $lastError = null;
+        $terms = array_slice($terms, 0, 2);
 
-        foreach ($terms as $term) {
+        foreach ($terms as $termIndex => $term) {
             foreach ($imageSources as $src) {
                 try {
                     $chunk = match ($src) {
@@ -93,12 +136,16 @@ class MediaLibraryController extends Controller
                 }
             }
 
-            if (count($results) >= 24) {
+            $results = $this->uniqueResults($results);
+
+            if (count($results) >= 20) {
+                break;
+            }
+
+            if ($termIndex === 0 && count($results) >= 8) {
                 break;
             }
         }
-
-        $results = $this->uniqueResults($results);
 
         return [
             'results' => $results,
@@ -163,33 +210,130 @@ class MediaLibraryController extends Controller
     private function searchAudio(string $query, array $terms, string $source, int $page): array
     {
         $results = [];
+        $lastError = null;
+        $terms = array_slice($terms, 0, 2);
+        $sources = $this->resolveMusicSources($source);
 
         foreach ($terms as $term) {
-            try {
-                $results = array_merge($results, $this->mixkit->searchMusic($term));
-            } catch (\Throwable) {
-                // catálogo local
-            }
-
-            if (in_array($source, ['pixabay', 'all'], true) && config('criasys.media.pixabay_api_key')) {
+            foreach ($sources as $src) {
                 try {
-                    $results = array_merge($results, $this->pixabay->searchAudio($term, $page));
-                } catch (\Throwable) {
-                    // opcional
+                    $chunk = match ($src) {
+                        'mixkit' => $this->mixkitMusic->searchMusic($term, $page),
+                        'freesound' => $this->freesound->searchMusic($term, $page),
+                        'pixabay' => $this->pixabay->searchAudio($term, $page),
+                        default => [],
+                    };
+                    $results = array_merge($results, $chunk);
+                } catch (\Throwable $e) {
+                    $lastError = $e->getMessage();
                 }
             }
+
+            $results = $this->uniqueResults($results);
 
             if (count($results) >= 20) {
                 break;
             }
         }
 
-        $results = $this->uniqueResults($results);
+        $errors = $this->buildSearchErrors($results, $query, $lastError, 'música', 'músicas');
+        if (empty($results)) {
+            $errors[] = 'Mixkit é gratuito sem chave. Para mais resultados, configure FREESOUND_API_KEY ou PIXABAY_API_KEY no .env.';
+        }
 
-        return [
-            'results' => $results,
-            'errors' => empty($results) ? ['Nenhum áudio encontrado para "'.$query.'".'] : [],
-        ];
+        return ['results' => $results, 'errors' => $errors];
+    }
+
+    /**
+     * @param  list<string>  $terms
+     * @return array{results: list<array<string, mixed>>, errors: list<string>}
+     */
+    private function searchSfx(string $query, array $terms, string $source, int $page): array
+    {
+        $results = [];
+        $lastError = null;
+        $terms = array_slice($terms, 0, 2);
+        $sources = $this->resolveSfxSources($source);
+
+        foreach ($terms as $term) {
+            foreach ($sources as $src) {
+                try {
+                    $chunk = match ($src) {
+                        'mixkit' => $this->mixkitSfx->searchSfx($term, $page),
+                        'freesound' => $this->freesound->searchSfx($term, $page),
+                        default => [],
+                    };
+                    $results = array_merge($results, $chunk);
+                } catch (\Throwable $e) {
+                    $lastError = $e->getMessage();
+                }
+            }
+
+            $results = $this->uniqueResults($results);
+
+            if (count($results) >= 20) {
+                break;
+            }
+        }
+
+        $errors = $this->buildSearchErrors($results, $query, $lastError, 'efeito sonoro', 'efeitos');
+        if (empty($results)) {
+            $errors[] = 'Mixkit SFX funciona sem chave. Configure FREESOUND_API_KEY para milhares de efeitos extras (com crédito ao autor).';
+        }
+
+        return ['results' => $results, 'errors' => $errors];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function resolveMusicSources(string $source): array
+    {
+        if ($source === 'mixkit') {
+            return ['mixkit'];
+        }
+        if ($source === 'freesound') {
+            return config('criasys.media.freesound_api_key') ? ['freesound'] : ['mixkit'];
+        }
+        if ($source === 'pixabay') {
+            return array_filter([
+                'mixkit',
+                config('criasys.media.pixabay_api_key') ? 'pixabay' : null,
+            ]);
+        }
+
+        $sources = ['mixkit'];
+        if (config('criasys.media.freesound_api_key')) {
+            $sources[] = 'freesound';
+        }
+        if (config('criasys.media.pixabay_api_key')) {
+            $sources[] = 'pixabay';
+        }
+
+        return $sources;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function resolveSfxSources(string $source): array
+    {
+        if ($source === 'mixkit') {
+            return ['mixkit'];
+        }
+        if ($source === 'freesound') {
+            return array_filter([
+                'mixkit',
+                config('criasys.media.freesound_api_key') ? 'freesound' : null,
+            ]);
+        }
+
+        $sources = ['mixkit'];
+        if (config('criasys.media.freesound_api_key')) {
+            $sources[] = 'freesound';
+        }
+
+        return $sources;
     }
 
     /**
@@ -227,6 +371,19 @@ class MediaLibraryController extends Controller
     /**
      * @return list<string>
      */
+    private function orderImageSources(array $sources): array
+    {
+        $priority = ['pexels', 'unsplash', 'pixabay', 'openverse'];
+
+        return collect($priority)
+            ->filter(fn (string $src) => in_array($src, $sources, true))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<string>
+     */
     private function resolveImageSources(string $source): array
     {
         if ($source === 'openverse') {
@@ -245,17 +402,19 @@ class MediaLibraryController extends Controller
             return config('criasys.media.unsplash_access_key') ? ['unsplash'] : ['openverse'];
         }
 
-        $sources = ['openverse'];
+        $sources = [];
 
         if (config('criasys.media.pexels_api_key')) {
             $sources[] = 'pexels';
         }
-        if (config('criasys.media.pixabay_api_key')) {
-            $sources[] = 'pixabay';
-        }
         if (config('criasys.media.unsplash_access_key')) {
             $sources[] = 'unsplash';
         }
+        if (config('criasys.media.pixabay_api_key')) {
+            $sources[] = 'pixabay';
+        }
+
+        $sources[] = 'openverse';
 
         return $sources;
     }
@@ -299,17 +458,28 @@ class MediaLibraryController extends Controller
         $data = $request->validate([
             'item' => ['required', 'array'],
             'item.download_url' => ['required', 'url'],
-            'item.type' => ['nullable', 'in:image,audio,video'],
-            'target' => ['nullable', 'in:slide,audio_track'],
+            'item.type' => ['nullable', 'in:image,audio,video,sfx'],
+            'target' => ['nullable', 'in:slide,audio_track,sound_effect'],
             'slide_id' => ['nullable', 'integer'],
+            'track_slot' => ['nullable', 'integer', 'min:0', 'max:2'],
+            'start_at' => ['nullable', 'numeric', 'min:0'],
+            'label' => ['nullable', 'string', 'max:120'],
         ]);
 
         $item = $data['item'];
         $type = $item['type'] ?? 'image';
+        $target = $data['target'] ?? null;
+
+        if ($type === 'sfx') {
+            $target = 'sound_effect';
+        } elseif ($type === 'audio' && ! $target) {
+            $target = 'audio_track';
+        }
 
         try {
             $asset = match ($type) {
                 'audio' => $this->importer->importAudio($project, $item),
+                'sfx' => $this->importer->importSfx($project, $item),
                 'video' => $this->importer->importVideo($project, $item),
                 default => $this->importer->importImage($project, $item),
             };
@@ -318,7 +488,7 @@ class MediaLibraryController extends Controller
         }
 
         $slidePayload = null;
-        if (($data['target'] ?? '') !== 'audio_track' && $type !== 'audio' && ! empty($data['slide_id'])) {
+        if ($target !== 'audio_track' && $target !== 'sound_effect' && ! in_array($type, ['audio', 'sfx'], true) && ! empty($data['slide_id'])) {
             $slide = Slide::where('id', $data['slide_id'])
                 ->where('project_id', $project->id)
                 ->first();
@@ -346,13 +516,31 @@ class MediaLibraryController extends Controller
             'publish' => $publish,
         ];
 
-        if (($data['target'] ?? '') === 'audio_track' || $type === 'audio') {
+        if ($target === 'sound_effect') {
+            $effect = $project->soundEffects()->create([
+                'label' => $data['label'] ?? $item['title'] ?? 'Efeito',
+                'asset_id' => $asset->id,
+                'file_path' => $asset->file_path,
+                'start_at' => (float) ($data['start_at'] ?? 0),
+                'volume' => 0.85,
+            ]);
+
+            return response()->json(array_merge($payload, ['sound_effect' => $effect->fresh()]), 201);
+        }
+
+        if ($target === 'audio_track') {
+            $slot = (int) ($data['track_slot'] ?? 0);
             $track = $project->audioTracks()->updateOrCreate(
-                ['type' => 'music'],
-                ['asset_id' => $asset->id, 'file_path' => $asset->file_path, 'volume' => 0.35, 'ducking_enabled' => true]
+                ['type' => 'music', 'track_slot' => $slot],
+                [
+                    'asset_id' => $asset->id,
+                    'file_path' => $asset->file_path,
+                    'volume' => 0.35,
+                    'ducking_enabled' => $slot === 0,
+                ]
             );
 
-            return response()->json(array_merge($payload, ['audio_track' => $track]), 201);
+            return response()->json(array_merge($payload, ['audio_track' => $track->fresh()]), 201);
         }
 
         return response()->json($payload, 201);

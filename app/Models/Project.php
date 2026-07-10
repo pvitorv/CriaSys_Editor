@@ -48,6 +48,11 @@ class Project extends Model
         return $this->hasMany(AudioTrack::class);
     }
 
+    public function soundEffects(): HasMany
+    {
+        return $this->hasMany(SoundEffect::class);
+    }
+
     public function renderJobs(): HasMany
     {
         return $this->hasMany(RenderJob::class);

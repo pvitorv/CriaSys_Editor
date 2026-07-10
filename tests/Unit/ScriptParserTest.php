@@ -27,7 +27,8 @@ class ScriptParserTest extends TestCase
         $result = $this->parser->parse("- Pedro: Cuidado!\n- Ana: Por quê?");
 
         $this->assertCount(2, $result['blocks']);
-        $this->assertStringContainsString('Pedro disse:', $result['blocks'][0]['narration_text']);
+        $this->assertSame('Pedro: Cuidado!', $result['blocks'][0]['narration_text']);
+        $this->assertSame('Ana: Por quê?', $result['blocks'][1]['narration_text']);
     }
 
     public function test_splits_character_name_on_next_line(): void
@@ -35,7 +36,18 @@ class ScriptParserTest extends TestCase
         $result = $this->parser->parse("JOÃO\nOlá, tudo bem?");
 
         $this->assertCount(1, $result['blocks']);
-        $this->assertSame('João disse: Olá, tudo bem?', $result['blocks'][0]['narration_text']);
+        $this->assertSame('Olá, tudo bem?', $result['blocks'][0]['narration_text']);
+        $this->assertSame('dialogue', $result['blocks'][0]['kind']);
+    }
+
+    public function test_em_dash_dialogue_never_uses_fala_label(): void
+    {
+        $result = $this->parser->parse("Narrativa.\n\u{2014} Moça? Precisa de ajuda?");
+
+        $this->assertCount(2, $result['blocks']);
+        $this->assertSame('dialogue', $result['blocks'][1]['kind']);
+        $this->assertStringContainsString('Moça? Precisa de ajuda?', $result['blocks'][1]['narration_text']);
+        $this->assertArrayNotHasKey('title', $result['blocks'][1]);
     }
 
     public function test_detects_refrain_section(): void
@@ -46,6 +58,18 @@ class ScriptParserTest extends TestCase
 
         $this->assertGreaterThanOrEqual(2, count($result['blocks']));
         $this->assertSame(1, $result['stats']['refrains']);
+        $refrain = collect($result['blocks'])->first(fn ($b) => $b['kind'] === 'refrain');
+        $this->assertNotNull($refrain);
+        $this->assertStringContainsString('Oh oh oh', $refrain['body_text']);
+    }
+
+    public function test_repartido_goes_to_body_with_lyric_kind(): void
+    {
+        $result = $this->parser->parse("REPARTIDO\nPrimeira linha\nSegunda linha");
+
+        $this->assertCount(1, $result['blocks']);
+        $this->assertSame('repartido', $result['blocks'][0]['kind']);
+        $this->assertStringContainsString('Primeira linha', $result['blocks'][0]['body_text']);
     }
 
     public function test_parses_continuous_horror_story_with_em_dash_dialogue(): void

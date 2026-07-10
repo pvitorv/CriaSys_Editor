@@ -23,8 +23,9 @@ class ScriptParser
         foreach ($blocks as $index => $block) {
             $mapped[] = [
                 'narration_text' => $block['narration_text'],
-                'title' => $block['title'] ?? ('Slide '.($index + 1)),
+                'body_text' => $block['body_text'] ?? $block['narration_text'],
                 'kind' => $block['kind'],
+                'section_title' => $this->isLyricKind($block['kind']) ? ($block['title'] ?? null) : null,
             ];
         }
 
@@ -67,7 +68,7 @@ class ScriptParser
             'slides' => count($blocks),
             'dialogues' => count(array_filter($blocks, fn ($b) => $b['kind'] === 'dialogue')),
             'verses' => count(array_filter($blocks, fn ($b) => $b['kind'] === 'verse')),
-            'refrains' => count(array_filter($blocks, fn ($b) => $b['kind'] === 'refrain')),
+            'refrains' => count(array_filter($blocks, fn ($b) => in_array($b['kind'], ['refrain', 'repartido'], true))),
             'prose' => count(array_filter($blocks, fn ($b) => $b['kind'] === 'prose')),
         ];
     }
@@ -107,13 +108,15 @@ class ScriptParser
             if ($proseBuffer === []) {
                 return;
             }
-            $kind = $currentKind === 'refrain' ? 'refrain' : 'prose';
+            $kind = in_array($currentKind, ['refrain', 'repartido'], true) ? $currentKind : 'prose';
             $text = implode(' ', array_map('trim', $proseBuffer));
             $proseBuffer = [];
             if ($text !== '') {
+                $narration = $this->formatProseLine($text);
                 $blocks[] = [
-                    'narration_text' => $this->formatProseLine($text),
+                    'narration_text' => $narration,
                     'title' => $currentTitle ?? $this->truncateTitle($text),
+                    'body_text' => $this->isLyricKind($kind) ? $this->buildLyricBody($narration, $currentTitle) : $narration,
                     'kind' => $kind,
                 ];
             }
@@ -123,12 +126,14 @@ class ScriptParser
             if ($verseBuffer === []) {
                 return;
             }
-            $kind = $currentKind === 'refrain' ? 'refrain' : 'verse';
+            $kind = in_array($currentKind, ['refrain', 'repartido'], true) ? $currentKind : 'verse';
             $lines = $verseBuffer;
             $verseBuffer = [];
+            $narration = $this->formatVerseLines($lines);
             $blocks[] = [
-                'narration_text' => $this->formatVerseLines($lines),
+                'narration_text' => $narration,
                 'title' => $currentTitle ?? $this->truncateTitle($lines[0] ?? ''),
+                'body_text' => $this->buildLyricBody($narration, $currentTitle),
                 'kind' => $kind,
             ];
         };
@@ -157,8 +162,7 @@ class ScriptParser
             if ($section) {
                 $flushAll();
                 $currentTitle = $section['title'];
-                $currentKind = preg_match('/^(REFRÃO|REFRAO|CORO)$/iu', $section['label']) ? 'refrain'
-                    : (preg_match('/^(VERSO|ESTROFE|ESTRÓFE)$/iu', $section['label']) ? 'verse' : 'prose');
+                $currentKind = $this->sectionKind($section);
 
                 continue;
             }
@@ -170,7 +174,7 @@ class ScriptParser
                 $flushVerse();
                 $blocks[] = [
                     'narration_text' => $this->formatDialogue($speaker, $line),
-                    'title' => $this->formatSpeaker($speaker) ?? $currentTitle,
+                    'title' => $currentTitle ?? $this->truncateTitle($line),
                     'kind' => 'dialogue',
                 ];
 
@@ -187,9 +191,10 @@ class ScriptParser
             if ($this->isEmDashLine($line)) {
                 $flushProse();
                 $flushVerse();
+                $narration = $this->formatEmDashDialogue($line);
                 $blocks[] = [
-                    'narration_text' => $this->formatEmDashDialogue($line),
-                    'title' => 'Fala',
+                    'narration_text' => $narration,
+                    'title' => $currentTitle ?? $this->truncateTitle($narration),
                     'kind' => 'dialogue',
                 ];
 
@@ -199,9 +204,10 @@ class ScriptParser
             $speaker = $this->parseSpeakerLine($line);
             if ($speaker) {
                 $flushAll();
+                $narration = $this->formatProseLine(preg_replace('/^[-–—•*]\s*/', '', trim($line)) ?? trim($line), false);
                 $blocks[] = [
-                    'narration_text' => $this->formatDialogue($speaker['speaker'], $speaker['text']),
-                    'title' => $this->formatSpeaker($speaker['speaker']) ?? $currentTitle,
+                    'narration_text' => $narration,
+                    'title' => $currentTitle ?? $this->truncateTitle($narration),
                     'kind' => 'dialogue',
                 ];
 
@@ -213,7 +219,7 @@ class ScriptParser
                 $flushProse();
             }
 
-            if (in_array($currentKind, ['refrain', 'verse'], true) || $this->isVerseLine($line)) {
+            if (in_array($currentKind, ['refrain', 'verse', 'repartido'], true) || $this->isVerseLine($line)) {
                 $flushProse();
                 $verseBuffer[] = $line;
 
@@ -241,12 +247,12 @@ class ScriptParser
             return ['label' => $line, 'title' => $this->titleFromMarker($line) ?? $line];
         }
 
-        if (! preg_match('/^(?:\[\s*)?(REFRÃO|REFRAO|CORO|VERSO|ESTROFE|ESTRÓFE|INTRO|PONTE|PARTE|CENA|NARRADOR|NARRAÇÃO|NARRACAO|LOCUÇÃO|LOCUCAO|FALA|SLIDE)\s*\d*\s*(?:[-–—:]\s*([^\]\n]+))?\s*(?:\])?\s*$/iu', $line, $m)) {
+        if (! preg_match('/^(?:\[\s*)?(REFRÃO|REFRAO|CORO|REPARTIDO|VERSO|ESTROFE|ESTRÓFE|INTRO|PONTE|PARTE|CENA|NARRADOR|NARRAÇÃO|NARRACAO|LOCUÇÃO|LOCUCAO|FALA|SLIDE)\s*\d*\s*(?:[-–—:]\s*([^\]\n]+))?\s*(?:\])?\s*$/iu', $line, $m)) {
             return null;
         }
 
         $label = $m[1];
-        $title = trim($m[2] ?? '') ?: (mb_strtoupper(mb_substr($label, 0, 1)).mb_strtolower(mb_substr($label, 1)));
+        $title = trim($m[2] ?? '') ?: null;
 
         return ['label' => $label, 'title' => $title];
     }
@@ -359,17 +365,7 @@ class ScriptParser
 
     private function formatDialogue(?string $speaker, string $text): string
     {
-        $name = $this->formatSpeaker($speaker);
-        $clean = $this->formatProseLine($text, false);
-        if ($clean === '') {
-            return '';
-        }
-        if (! $name) {
-            return $clean;
-        }
-        $verb = preg_match('/^(?:ele|ela|eles|elas)$/iu', $name) ? 'continuou' : 'disse';
-
-        return "{$name} {$verb}: {$clean}";
+        return $this->formatProseLine($text, false);
     }
 
     private function formatProseLine(string $text, bool $forceEnd = true): string
@@ -407,6 +403,45 @@ class ScriptParser
         }
 
         return implode(' ', $parts);
+    }
+
+    private function isLyricKind(string $kind): bool
+    {
+        return in_array($kind, ['refrain', 'verse', 'repartido'], true);
+    }
+
+    /**
+     * @param  array{label: string, title: ?string}  $section
+     */
+    private function sectionKind(array $section): string
+    {
+        $label = $section['label'] ?? '';
+
+        if (preg_match('/^(REFRÃO|REFRAO|CORO)$/iu', $label)) {
+            return 'refrain';
+        }
+        if (preg_match('/^REPARTIDO$/iu', $label)) {
+            return 'repartido';
+        }
+        if (preg_match('/^(VERSO|ESTROFE|ESTRÓFE)$/iu', $label)) {
+            return 'verse';
+        }
+
+        return 'prose';
+    }
+
+    private function buildLyricBody(string $narrationText, ?string $sectionTitle): string
+    {
+        $text = trim($narrationText);
+        $section = trim((string) $sectionTitle);
+        if ($section === '') {
+            return $text;
+        }
+        if ($text !== '' && mb_stripos($text, $section) !== false) {
+            return $text;
+        }
+
+        return $section."\n".$text;
     }
 
     private function titleFromMarker(string $marker): ?string
@@ -550,13 +585,6 @@ class ScriptParser
     private function formatEmDashDialogue(string $line): string
     {
         $t = preg_replace('/^[\x{2014}—]\s*/u', '', trim($line)) ?? trim($line);
-
-        if (preg_match('/^(.+?[.!?])\s+[\x{2014}—]\s+(ele|ela)\s+(.+)$/iu', $t, $m)) {
-            $tag = mb_strtoupper(mb_substr($m[2], 0, 1)).mb_strtolower(mb_substr($m[2], 1)).' '.rtrim($m[3], '.');
-
-            return $this->formatProseLine("{$tag}: {$m[1]}", false);
-        }
-
         $t = preg_replace('/\s+[\x{2014}—]\s+/u', ' ', $t) ?? $t;
 
         return $this->formatProseLine($t, false);

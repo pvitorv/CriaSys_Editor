@@ -35,6 +35,8 @@ class MediaImportService
             'file_path' => $path,
             'file_hash' => $hash,
             'source' => $source,
+            'item_title' => $item['title'] ?? null,
+            'item_external_id' => isset($item['id']) ? (string) $item['id'] : null,
             'license_type' => $item['license_type'] ?? LicenseType::Local->value,
             'requires_attribution' => $attribution['requires_attribution'],
             'attribution_text' => $attribution['attribution_text'],
@@ -52,6 +54,7 @@ class MediaImportService
             str_contains($host, 'pixabay') => 'pixabay',
             str_contains($host, 'unsplash') => 'unsplash',
             str_contains($host, 'mixkit') => 'mixkit',
+            str_contains($host, 'freesound') => 'freesound',
             str_contains($host, 'openverse') => 'openverse',
             default => null,
         };
@@ -90,6 +93,16 @@ class MediaImportService
 
     public function importAudio(Project $project, array $item): Asset
     {
+        return $this->importAudioFile($project, $item, 'audio');
+    }
+
+    public function importSfx(Project $project, array $item): Asset
+    {
+        return $this->importAudioFile($project, $item, 'audio');
+    }
+
+    private function importAudioFile(Project $project, array $item, string $type): Asset
+    {
         $this->storage->ensureStructure($project);
         $url = $item['download_url'] ?? null;
 
@@ -104,11 +117,13 @@ class MediaImportService
 
         File::put($path, $contents);
 
-        return $this->createAsset($project, $item, 'audio', $path, $hash, [
+        return $this->createAsset($project, $item, $type, $path, $hash, [
             'metadata' => [
                 'title' => $item['title'] ?? null,
                 'import_source' => $item['source'] ?? null,
                 'author' => $item['author'] ?? null,
+                'subtype' => $item['subtype'] ?? ($item['type'] ?? null),
+                'duration_seconds' => $item['duration_seconds'] ?? null,
             ],
         ]);
     }

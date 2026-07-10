@@ -17,6 +17,8 @@ class Slide extends Model
         'video_path',
         'text_style',
         'duration_seconds',
+        'duration_mode',
+        'video_duration_seconds',
         'transition_type',
         'narration_text',
     ];
@@ -26,6 +28,32 @@ class Slide extends Model
         return [
             'text_style' => 'array',
             'duration_seconds' => 'float',
+            'video_duration_seconds' => 'float',
+        ];
+    }
+
+    public function normalizeTextStyle(?array $style = null): array
+    {
+        $raw = is_array($style) ? $style : [];
+        $legacy = [20, 48];
+
+        $size = isset($raw['body_size']) ? (int) $raw['body_size'] : 0;
+        if ($size <= 0 || in_array($size, $legacy, true)) {
+            $size = isset($raw['title_size']) ? (int) $raw['title_size'] : 0;
+        }
+        if ($size <= 0 || in_array($size, $legacy, true)) {
+            $size = 12;
+        }
+
+        $color = $raw['body_color'] ?? $raw['title_color'] ?? '#ffffff';
+
+        return [
+            'body_color' => $color,
+            'title_color' => $color,
+            'body_size' => $size,
+            'title_size' => $size,
+            'align' => $raw['align'] ?? 'center',
+            'vertical_align' => $raw['vertical_align'] ?? 'center',
         ];
     }
 
@@ -36,19 +64,11 @@ class Slide extends Model
 
     public function defaultTextStyle(): array
     {
-        return [
-            'title_color' => '#ffffff',
-            'title_size' => 48,
-            'subtitle_color' => '#e5e7eb',
-            'subtitle_size' => 28,
-            'body_color' => '#f3f4f6',
-            'body_size' => 20,
-            'align' => 'center',
-        ];
+        return $this->normalizeTextStyle(null);
     }
 
     public function resolvedTextStyle(): array
     {
-        return array_merge($this->defaultTextStyle(), $this->text_style ?? []);
+        return $this->normalizeTextStyle($this->text_style ?? []);
     }
 }
