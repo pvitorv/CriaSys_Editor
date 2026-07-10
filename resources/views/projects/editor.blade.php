@@ -12,6 +12,8 @@
 <script type="application/json" id="criasys-image-studio-fonts">@json($imageStudioCatalog['fonts'] ?? [], JSON_UNESCAPED_UNICODE)</script>
 <script type="application/json" id="criasys-image-studio-icons">@json($imageStudioCatalog['icon_glyphs'] ?? [], JSON_UNESCAPED_UNICODE)</script>
 <script type="application/json" id="criasys-image-studio-icon-fonts">@json($imageStudioCatalog['icon_fonts'] ?? [], JSON_UNESCAPED_UNICODE)</script>
+<script type="application/json" id="criasys-image-studio-elements">@json(($imageStudioCatalog['elements'] ?? collect())->values(), JSON_UNESCAPED_UNICODE)</script>
+<script type="application/json" id="criasys-image-studio-element-groups">@json($imageStudioCatalog['element_groups'] ?? [], JSON_UNESCAPED_UNICODE)</script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap">
 <div
@@ -933,29 +935,24 @@ O narrador continua a história com calma."
                         </template>
                         <div class="pt-3 border-t border-zinc-800">
                             <p class="text-[10px] uppercase tracking-wide text-zinc-500 mb-2">Layouts prontos (<span x-text="imageStudioTemplates.length"></span>)</p>
-                            <div class="space-y-1">
+                            <div class="space-y-1 max-h-[min(420px,50vh)] overflow-y-auto">
                                 <template x-for="tpl in imageStudioTemplates" :key="'ist-' + tpl.slug">
-                                    <button type="button" @click="imageStudioApplyTemplate(tpl)" class="w-full text-left text-xs px-2 py-1.5 rounded border border-zinc-800 text-zinc-400 hover:border-violet-600 hover:text-violet-200 transition" :title="tpl.description">
-                                        <span x-text="tpl.name"></span>
+                                    <button type="button" @click="imageStudioApplyTemplate(tpl)" class="w-full text-left text-xs px-2 py-1.5 rounded border border-zinc-800 text-zinc-400 hover:border-violet-600 hover:text-violet-200 transition" :class="tpl.viral ? 'border-amber-900/30 hover:border-amber-700/50' : ''" :title="tpl.description">
+                                        <span x-show="tpl.viral" class="text-amber-400/90">🔥 </span><span x-text="tpl.name"></span>
                                         <span class="block text-[9px] text-zinc-600 truncate" x-text="tpl.description"></span>
                                     </button>
                                 </template>
                             </div>
                         </div>
                         <div class="pt-3 border-t border-zinc-800">
-                            <input type="search" x-model="imageStudioElementFilter" placeholder="Buscar ícone ou forma…" class="w-full text-xs px-2 py-1.5 rounded bg-zinc-900 border border-zinc-700 mb-2">
-                            <p class="text-[10px] uppercase tracking-wide text-zinc-500 mb-2">Elementos (<span x-text="imageStudioElements.length"></span>)</p>
-                            <template x-for="(items, groupName) in imageStudioElementsByGroup" :key="'elg-' + groupName">
-                                <p class="text-[9px] text-zinc-600 mb-1 mt-2" x-text="groupName"></p>
-                                <div class="grid grid-cols-4 gap-1 mb-1">
-                                    <template x-for="el in items" :key="el.slug">
-                                        <button type="button" @click="imageStudioAddElement(el)" class="aspect-square rounded border border-zinc-800 hover:border-violet-500 flex items-center justify-center p-1" :title="el.name">
-                                            <img x-show="el.type === 'svg_icon' && el.icon_url" :src="el.icon_url" alt="" class="w-5 h-5 invert opacity-90 pointer-events-none">
-                                            <span x-show="el.type !== 'svg_icon'" class="text-base leading-none" x-text="el.icon || '•'"></span>
-                                        </button>
-                                    </template>
-                                </div>
-                            </template>
+                            <button
+                                type="button"
+                                @click="imageStudioOpenElementsModal()"
+                                class="w-full text-left text-xs px-3 py-2.5 rounded-lg border border-violet-700/60 bg-violet-950/40 text-violet-100 hover:border-violet-500 hover:bg-violet-900/50 transition"
+                            >
+                                ★ Elementos & stickers
+                                <span class="block text-[10px] text-violet-300/80 mt-0.5" x-text="(imageStudioElements.length || 0) + ' prontos — emojis, formas, slimes…'"></span>
+                            </button>
                         </div>
                     </div>
 
@@ -965,8 +962,7 @@ O narrador continua a história com calma."
                             <button type="button" @click="imageStudioUndo()" :disabled="!imageStudioCanUndo" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40" title="Ctrl+Z">↶ Desfazer</button>
                             <button type="button" @click="imageStudioRedo()" :disabled="!imageStudioCanRedo" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40" title="Ctrl+Y">↷ Refazer</button>
                             <button type="button" @click="imageStudioAddText()" class="text-xs px-2 py-1 rounded bg-violet-800 hover:bg-violet-700">+ Texto</button>
-                            <button type="button" @click="imageStudioAddShape('rect')" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">+ Retângulo</button>
-                            <button type="button" @click="imageStudioAddShape('circle')" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">+ Círculo</button>
+                            <button type="button" @click="imageStudioOpenElementsModal()" class="text-xs px-2 py-1 rounded bg-violet-900 hover:bg-violet-800 border border-violet-700">★ Elementos</button>
                             <label class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 cursor-pointer">
                                 + Imagem
                                 <input type="file" accept="image/*" @change="imageStudioUploadImage($event)" class="hidden">
@@ -1017,7 +1013,7 @@ O narrador continua a história com calma."
                         </div>
                         <p class="text-[10px] text-violet-400" x-show="imageStudioCurrentPreset" x-text="'Formato ativo: ' + (imageStudioCurrentPreset?.name || '') + ' — ' + (imageStudioCurrentPreset?.width || 0) + '×' + (imageStudioCurrentPreset?.height || 0) + 'px (contorno violeta = corte · amarelo = sangria)'"></p>
 
-                        <div class="rounded-xl border border-zinc-700 bg-zinc-950 p-4 overflow-auto max-h-[70vh] flex justify-center items-start relative" x-ref="imageStudioCanvasWrap">
+                        <div class="rounded-xl border border-zinc-700 bg-zinc-950 p-6 overflow-auto max-h-[70vh] flex justify-center items-start relative" x-ref="imageStudioCanvasWrap">
                             <div
                                 x-show="imageStudioBgRemoving"
                                 x-cloak
@@ -1039,12 +1035,6 @@ O narrador continua a história com calma."
                             </div>
                             <div x-ref="imageStudioCanvasScaler" class="relative shadow-2xl shadow-black/40 ring-2 ring-violet-500/40 inline-block bg-zinc-900">
                                 <canvas x-ref="imageStudioCanvas" class="block"></canvas>
-                                <img
-                                    x-show="imageStudioFrameOverlayUrl && imageStudioFrameVisible !== false"
-                                    :src="imageStudioFrameOverlayUrl"
-                                    alt=""
-                                    class="absolute inset-0 w-full h-full pointer-events-none block z-10"
-                                >
                             </div>
                         </div>
 
@@ -1116,21 +1106,26 @@ O narrador continua a história com calma."
                             <div class="grid grid-cols-2 gap-2">
                                 <label class="text-[10px] text-zinc-400 block">
                                     Cor do texto
-                                    <input type="color" x-model="imageStudioTextFill" @input="imageStudioOnTextControlChange()" class="w-full mt-1 h-8 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                                    <input type="color" x-model="imageStudioTextFill" @input="imageStudioOnTextFillChange()" @change="imageStudioOnTextFillChange()" class="w-full mt-1 h-8 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
                                 </label>
                                 <label class="text-[10px] text-zinc-400 block">
-                                    Contorno
-                                    <input type="color" x-model="imageStudioTextStroke" @input="imageStudioOnTextControlChange()" class="w-full mt-1 h-8 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                                    Cor do contorno
+                                    <input type="color" x-model="imageStudioTextStroke" @input="imageStudioOnTextStrokeChange()" @change="imageStudioOnTextStrokeChange()" class="w-full mt-1 h-8 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                                    <span class="text-[9px] text-zinc-600" x-show="imageStudioTextStrokeWidth <= 0">Escolher cor ativa contorno fino (2px)</span>
                                 </label>
                             </div>
                             <label class="text-[10px] text-zinc-400 block">
                                 Tamanho <span class="text-zinc-500 tabular-nums" x-text="imageStudioTextSize + 'px'"></span>
                                 <input type="range" min="12" max="320" step="1" x-model.number="imageStudioTextSize" @input="imageStudioOnTextControlChange()" class="w-full mt-1 accent-violet-500">
                             </label>
-                            <label class="text-[10px] text-zinc-400 block">
-                                Espessura contorno
-                                <input type="range" min="0" max="24" step="1" x-model.number="imageStudioTextStrokeWidth" @input="imageStudioOnTextControlChange()" class="w-full mt-1 accent-violet-500">
-                            </label>
+                            <div class="flex flex-wrap items-end gap-2">
+                                <label class="text-[10px] text-zinc-400 block flex-1 min-w-[10rem]">
+                                    Espessura contorno
+                                    <span class="text-zinc-500 tabular-nums" x-text="imageStudioTextStrokeWidth <= 0 ? ' (sem contorno)' : ' (' + imageStudioTextStrokeWidth + 'px)'"></span>
+                                    <input type="range" min="0" max="24" step="1" x-model.number="imageStudioTextStrokeWidth" @input="imageStudioOnTextControlChange()" class="w-full mt-1 accent-violet-500">
+                                </label>
+                                <button type="button" @click="imageStudioRemoveTextOutline()" class="text-[10px] px-2 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 shrink-0" title="Zera espessura e remove contorno">Sem contorno</button>
+                            </div>
                             <label class="text-[10px] text-zinc-400 block">
                                 Espaçamento letras
                                 <input type="range" min="-50" max="400" step="5" x-model.number="imageStudioTextCharSpacing" @input="imageStudioOnTextControlChange()" class="w-full mt-1 accent-violet-500">
@@ -1204,6 +1199,21 @@ O narrador continua a história com calma."
                                 </label>
                                 <p class="text-[10px] text-zinc-500"><span x-text="imageStudioObjectScale"></span>% — arraste os cantos violetas ou use os botões</p>
                             </div>
+                            <div class="space-y-2 pb-2 border-b border-zinc-800">
+                                <p class="text-[10px] text-violet-400 font-medium">Rotação</p>
+                                <div class="flex items-center gap-1 flex-wrap">
+                                    <button type="button" @click="imageStudioNudgeObjectAngle(-90)" class="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-violet-800" title="Girar -90°">↺ 90°</button>
+                                    <button type="button" @click="imageStudioNudgeObjectAngle(-15)" class="text-[10px] px-1.5 py-1 rounded bg-zinc-800 hover:bg-violet-700" title="Girar -15°">−15°</button>
+                                    <button type="button" @click="imageStudioSetObjectAngle(0)" class="text-[10px] px-1.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700" title="Resetar rotação">0°</button>
+                                    <button type="button" @click="imageStudioNudgeObjectAngle(15)" class="text-[10px] px-1.5 py-1 rounded bg-zinc-800 hover:bg-violet-700" title="Girar +15°">+15°</button>
+                                    <button type="button" @click="imageStudioNudgeObjectAngle(90)" class="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-violet-800" title="Girar +90°">↻ 90°</button>
+                                </div>
+                                <label class="text-[10px] text-zinc-400 block">
+                                    Ângulo
+                                    <input type="range" min="0" max="359" step="1" x-model.number="imageStudioObjectAngle" @input="imageStudioSetObjectAngle(imageStudioObjectAngle)" class="w-full mt-1 accent-violet-500">
+                                </label>
+                                <p class="text-[10px] text-zinc-500"><span x-text="imageStudioObjectAngle"></span>° — arraste o círculo violeta acima do objeto ou use <kbd class="px-1 rounded bg-zinc-800">[</kbd> <kbd class="px-1 rounded bg-zinc-800">]</kbd></p>
+                            </div>
                             <label class="text-xs text-zinc-400 block">
                                 Opacidade
                                 <input type="range" min="0" max="100" :value="Math.round((imageStudioSelectedObject?.opacity ?? 1) * 100)" @input="imageStudioObjectOpacity($event.target.value)" class="w-full mt-1">
@@ -1216,6 +1226,29 @@ O narrador continua a história com calma."
                                 <button type="button" @click="imageStudioAlignObject('center-v')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800">↕</button>
                                 <button type="button" @click="imageStudioAlignObject('bottom')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800">⬇</button>
                             </div>
+                            <template x-if="imageStudioSelectedObject && imageStudioSelectedObject.type !== 'text' && imageStudioSelectedObject.type !== 'image'">
+                                <div class="space-y-2 pt-2 border-t border-zinc-800">
+                                    <p class="text-[10px] text-violet-400 font-medium">Cor & contorno</p>
+                                    <div class="grid grid-cols-2 gap-2" x-show="!imageStudioShapeIsLine">
+                                        <label class="text-[10px] text-zinc-400 block">
+                                            Preenchimento
+                                            <input type="color" x-model="imageStudioShapeFill" @input="imageStudioOnShapeFillChange()" class="w-full mt-1 h-8 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                                        </label>
+                                        <div class="flex flex-col justify-end">
+                                            <button type="button" @click="imageStudioClearShapeFill()" class="text-[10px] px-2 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300">Sem preenchimento</button>
+                                        </div>
+                                    </div>
+                                    <label class="text-[10px] text-zinc-400 block">
+                                        Cor do contorno
+                                        <input type="color" x-model="imageStudioShapeStroke" @input="imageStudioOnShapeStrokeChange()" class="w-full mt-1 h-8 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                                    </label>
+                                    <label class="text-[10px] text-zinc-400 block">
+                                        Espessura do contorno
+                                        <input type="range" min="0" max="80" step="1" x-model.number="imageStudioShapeStrokeWidth" @input="imageStudioOnShapeStrokeWidthChange()" class="w-full mt-1 accent-violet-500">
+                                    </label>
+                                    <p class="text-[10px] text-zinc-500">Ajuste cor e espessura aqui — use formas vazadas + contorno grosso para montar molduras.</p>
+                                </div>
+                            </template>
                             <template x-if="imageStudioSelectedObject?.type === 'text'">
                                 <p class="text-[10px] text-violet-400 pt-1">Texto selecionado — ajuste fonte/cor acima ou duplo-clique para editar no canvas.</p>
                             </template>
@@ -1242,43 +1275,6 @@ O narrador continua a história com calma."
                             </template>
                         </div>
 
-                        <div class="rounded-xl border border-zinc-800 bg-zinc-950/50 p-3 space-y-2">
-                            <p class="text-xs font-medium text-zinc-300">Molduras (mesmo motor do Thumbnail)</p>
-                            <select x-model="imageStudioFrameSlug" @change="onImageStudioFrameSlugChange()" class="w-full text-xs px-2 py-1.5 rounded bg-zinc-900 border border-zinc-700">
-                                <option value="none">Sem moldura</option>
-                                <template x-for="fr in imageStudioFrames.filter(f => f.slug && f.slug !== 'none')" :key="'isfm-' + fr.slug">
-                                    <option :value="fr.slug" x-text="fr.name"></option>
-                                </template>
-                            </select>
-                            <div class="grid grid-cols-2 gap-2">
-                                <label class="text-[10px] text-zinc-400 block">
-                                    Cor principal
-                                    <input type="color" x-model="imageStudioFrameColor" @input="scheduleImageStudioFrameReapply()" class="w-full mt-1 h-8 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
-                                </label>
-                                <label class="text-[10px] text-zinc-400 block">
-                                    Cor secundária
-                                    <input type="color" x-model="imageStudioFrameSecondaryColor" @input="scheduleImageStudioFrameReapply()" class="w-full mt-1 h-8 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
-                                </label>
-                            </div>
-                            <label class="text-[10px] text-zinc-400 block">
-                                Espessura
-                                <input type="range" min="8" max="160" step="2" x-model.number="imageStudioFrameWidth" @input="scheduleImageStudioFrameReapply()" class="w-full mt-1 accent-violet-500">
-                                <span class="text-[10px] text-zinc-500 tabular-nums" x-text="imageStudioFrameWidth"></span>
-                            </label>
-                            <label class="text-[10px] text-zinc-400 block">
-                                Recuo (inset)
-                                <input type="range" min="0" max="80" x-model.number="imageStudioFrameInset" @input="scheduleImageStudioFrameReapply()" class="w-full mt-1 accent-violet-500">
-                                <span class="text-[10px] text-zinc-500 tabular-nums" x-text="imageStudioFrameInset + 'px'"></span>
-                            </label>
-                            <label class="text-[10px] text-zinc-400 block">
-                                Opacidade
-                                <input type="range" min="0" max="100" x-model.number="imageStudioFrameOpacity" @input="scheduleImageStudioFrameReapply()" class="w-full mt-1 accent-violet-500">
-                                <span class="text-[10px] text-zinc-500 tabular-nums" x-text="imageStudioFrameOpacity + '%'"></span>
-                            </label>
-                            <button type="button" @click="imageStudioApplyFrame()" :disabled="imageStudioFrameSlug === 'none'" class="w-full text-xs py-1.5 rounded bg-zinc-800 hover:bg-violet-800 disabled:opacity-40">Aplicar moldura</button>
-                            <p class="text-[9px] text-zinc-500">A moldura aparece como overlay HTML (igual Thumbnail). Teste <strong class="text-zinc-400">Letterbox cinema</strong> ou <strong class="text-zinc-400">Borda grossa</strong> com cor contrastante.</p>
-                        </div>
-
                         <div class="rounded-xl border border-violet-900/40 bg-violet-950/20 p-3 space-y-2">
                             <p class="text-xs font-medium text-violet-200">Exportar</p>
                             <div class="flex flex-wrap gap-1.5">
@@ -1298,6 +1294,68 @@ O narrador continua a história com calma."
                             <p class="text-xs font-medium text-sky-200">Pasta local (Electron)</p>
                             <button type="button" @click="imageStudioPickLocalFolder()" class="w-full text-xs py-2 rounded-lg bg-sky-800 hover:bg-sky-700">Monitorar pasta de imagens</button>
                             <p x-show="imageStudioLocalWatch" class="text-[9px] text-zinc-500 break-all" x-text="imageStudioLocalWatch"></p>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Modal Elementos --}}
+                <div
+                    x-show="imageStudioElementsModalOpen"
+                    x-cloak
+                    class="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-6 bg-black/75"
+                    @keydown.escape.window="imageStudioCloseElementsModal()"
+                >
+                    <div
+                        class="w-full max-w-4xl max-h-[88vh] flex flex-col rounded-2xl border border-zinc-700 bg-zinc-950 shadow-2xl overflow-hidden"
+                        @click.outside="imageStudioCloseElementsModal()"
+                    >
+                        <div class="flex items-start justify-between gap-3 px-4 py-3 border-b border-zinc-800 bg-zinc-900/80">
+                            <div class="min-w-0">
+                                <h3 class="text-sm font-semibold text-violet-100">Elementos & stickers</h3>
+                                <p class="text-[11px] text-zinc-500 mt-0.5">
+                                    <span x-text="imageStudioElementsFilteredCount()"></span> de <span x-text="imageStudioElements.length"></span> — clique para inserir no canvas
+                                </p>
+                            </div>
+                            <button type="button" @click="imageStudioCloseElementsModal()" class="text-zinc-400 hover:text-white text-xl leading-none px-2" title="Fechar (Esc)">×</button>
+                        </div>
+                        <div class="px-4 py-3 border-b border-zinc-800 space-y-2">
+                            <input
+                                type="search"
+                                x-model="imageStudioElementFilter"
+                                placeholder="Buscar emoji, forma, slime…"
+                                class="w-full text-sm px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-700 focus:border-violet-500 outline-none"
+                            >
+                            <div class="flex flex-wrap gap-1.5">
+                                <template x-for="chip in imageStudioElementQuickGroups()" :key="'elchip-' + (chip.id || 'all')">
+                                    <button
+                                        type="button"
+                                        @click="imageStudioElementFilterGroup = chip.id"
+                                        class="text-[11px] px-2.5 py-1 rounded-full border transition"
+                                        :class="imageStudioElementFilterGroup === chip.id ? 'border-violet-500 bg-violet-900/50 text-violet-100' : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'"
+                                        x-text="chip.label"
+                                    ></button>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="flex-1 overflow-y-auto p-4 min-h-[50vh]">
+                            <p x-show="imageStudioElements.length && !imageStudioElementsFilteredCount()" class="text-sm text-amber-400 mb-3">Nada encontrado — limpe a busca ou clique em <strong>Todos</strong>.</p>
+                            <div class="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                                <template x-for="el in filterImageStudioElements()" :key="el.slug">
+                                    <button
+                                        type="button"
+                                        @click="imageStudioAddElementFromModal(el)"
+                                        class="aspect-square rounded-lg border border-zinc-800 hover:border-violet-500 hover:bg-violet-950/30 flex flex-col items-center justify-center p-1.5 gap-0.5 transition"
+                                        :class="el.type === 'emoji' ? 'bg-zinc-950' : 'bg-zinc-900/40'"
+                                        :title="el.name"
+                                    >
+                                        <img x-show="el.type === 'svg_icon' && el.icon_url" :src="el.icon_url" alt="" class="w-6 h-6 invert opacity-90 pointer-events-none">
+                                        <span x-show="el.type === 'emoji' || el.type === 'sticker'" class="text-3xl leading-none select-none pointer-events-none" x-text="el.char || el.icon"></span>
+                                        <span x-show="el.type === 'blob'" class="w-8 h-8 rounded-full pointer-events-none shadow-inner" :style="'background:' + (el.fill || '#4ade80')"></span>
+                                        <span x-show="el.type !== 'svg_icon' && el.type !== 'emoji' && el.type !== 'sticker' && el.type !== 'blob'" class="text-xl leading-none select-none pointer-events-none" :style="el.fill ? 'color:' + el.fill : ''" x-text="el.icon || '•'"></span>
+                                        <span class="text-[8px] text-zinc-500 truncate w-full text-center pointer-events-none" x-text="el.name"></span>
+                                    </button>
+                                </template>
+                            </div>
                         </div>
                     </div>
                 </div>

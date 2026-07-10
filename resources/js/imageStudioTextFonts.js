@@ -119,6 +119,44 @@ export function preloadStarterGoogleFonts(fonts = [], limit = 12) {
     google.forEach((f) => loadedGoogleFamilies.add(`${encodeURIComponent(f.family)}:preload`));
 }
 
+export function normalizeColorInput(color, fallback = '#ffffff') {
+    if (color == null || color === '') {
+        return fallback;
+    }
+
+    if (typeof color === 'object') {
+        return fallback;
+    }
+
+    const raw = String(color).trim();
+
+    if (raw.startsWith('#')) {
+        if (raw.length === 4) {
+            const r = raw[1];
+            const g = raw[2];
+            const b = raw[3];
+            return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+        }
+
+        if (raw.length === 7) {
+            return raw.toLowerCase();
+        }
+    }
+
+    const rgb = raw.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+    if (rgb) {
+        const hex = [rgb[1], rgb[2], rgb[3]]
+            .map((part) => Math.max(0, Math.min(255, Math.round(parseFloat(part))))
+                .toString(16)
+                .padStart(2, '0'))
+            .join('');
+
+        return `#${hex}`;
+    }
+
+    return raw || fallback;
+}
+
 export function findFontBySlug(fonts, slug) {
     return (fonts || []).find((f) => f.slug === slug) || null;
 }

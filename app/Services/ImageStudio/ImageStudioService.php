@@ -44,10 +44,14 @@ class ImageStudioService
                 ->values(),
             'frames' => $frameCatalog['frames'],
             'frame_categories' => $frameCatalog['categories'],
-            'elements' => collect(config('image_studio.elements', []))
+            'elements' => collect(config('image_studio_stickers.elements', []))
+                ->merge(config('image_studio_shapes.elements', []))
+                ->merge(config('image_studio.elements', []))
                 ->merge(config('image_studio_icons.elements', []))
                 ->values(),
             'element_groups' => array_merge(
+                config('image_studio_stickers.groups', []),
+                config('image_studio_shapes.groups', []),
                 config('image_studio.element_groups', []),
                 config('image_studio_icons.groups', [])
             ),

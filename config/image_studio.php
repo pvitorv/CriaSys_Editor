@@ -223,13 +223,14 @@ return [
     'templates' => [
         'story_quote' => [
             'name' => 'Story citação',
-            'description' => 'Overlay escuro + texto central',
+            'description' => 'Caixa preta + Bebas — frase de impacto',
             'preset' => 'ig_story',
             'group' => 'stories',
-            'background' => ['color' => '#18181b', 'opacity' => 100],
+            'viral' => true,
+            'background' => ['color' => '#09090b', 'opacity' => 100],
             'objects' => [
-                ['kind' => 'rect', 'name' => 'Faixa', 'x' => 0.05, 'y' => 0.38, 'w' => 0.9, 'h' => 0.24, 'fill' => '#000000', 'opacity' => 50],
-                ['kind' => 'text', 'name' => 'Citação', 'x' => 0.5, 'y' => 0.5, 'text' => 'Sua citação aqui', 'fontSize' => 48, 'fill' => '#ffffff', 'fontFamily' => 'Georgia, serif', 'originX' => 'center', 'originY' => 'center'],
+                ['kind' => 'rect', 'name' => 'Caixa citação', 'x' => 0.05, 'y' => 0.4, 'w' => 0.9, 'h' => 0.2, 'fill' => '#000000', 'opacity' => 88, 'rx' => 8, 'ry' => 8],
+                ['kind' => 'text', 'name' => 'Citação', 'x' => 0.5, 'y' => 0.5, 'text' => 'SUA FRASE AQUI', 'fontSize' => 64, 'fill' => '#ffffff', 'fontSlug' => 'bebas_neue', 'originX' => 'center', 'originY' => 'center', 'textAlign' => 'center', 'charSpacing' => 40],
             ],
         ],
         'ig_promo_sale' => [
@@ -306,13 +307,14 @@ return [
         ],
         'ig_reels_hook' => [
             'name' => 'Reels gancho',
-            'description' => 'Faixa topo + pergunta',
+            'description' => 'Caixa amarela + Bebas no topo',
             'preset' => 'ig_reels',
             'group' => 'instagram',
-            'background' => ['color' => '#09090b', 'opacity' => 100],
+            'viral' => true,
+            'background' => ['color' => '#000000', 'opacity' => 100],
             'objects' => [
-                ['kind' => 'rect', 'name' => 'Faixa topo', 'x' => 0, 'y' => 0.08, 'w' => 1, 'h' => 0.12, 'fill' => '#ef4444', 'opacity' => 90],
-                ['kind' => 'text', 'name' => 'Hook', 'x' => 0.5, 'y' => 0.14, 'text' => 'VOCÊ SABIA DISSO?', 'fontSize' => 42, 'fill' => '#ffffff', 'fontFamily' => 'Impact, Arial Black, sans-serif', 'originX' => 'center', 'originY' => 'center'],
+                ['kind' => 'rect', 'name' => 'Caixa hook', 'x' => 0.04, 'y' => 0.06, 'w' => 0.92, 'h' => 0.12, 'fill' => '#fde047', 'opacity' => 100, 'rx' => 6, 'ry' => 6],
+                ['kind' => 'text', 'name' => 'Hook', 'x' => 0.5, 'y' => 0.12, 'text' => 'VOCÊ SABIA DISSO?', 'fontSize' => 72, 'fill' => '#000000', 'fontSlug' => 'bebas_neue', 'originX' => 'center', 'originY' => 'center', 'textAlign' => 'center', 'charSpacing' => 30],
             ],
         ],
         'ig_feed_before_after' => [
@@ -367,13 +369,14 @@ return [
         ],
         'yt_shorts_vertical' => [
             'name' => 'Shorts título vertical',
-            'description' => 'Texto lateral + faixa',
+            'description' => 'Faixa vermelha + Bebas',
             'preset' => 'yt_shorts',
             'group' => 'youtube',
+            'viral' => true,
             'background' => ['color' => '#0f172a', 'opacity' => 100],
             'objects' => [
-                ['kind' => 'rect', 'name' => 'Faixa', 'x' => 0.05, 'y' => 0.4, 'w' => 0.9, 'h' => 0.2, 'fill' => '#ef4444', 'opacity' => 95],
-                ['kind' => 'text', 'name' => 'Título', 'x' => 0.5, 'y' => 0.5, 'text' => 'ASSISTA ATÉ O FIM', 'fontSize' => 44, 'fill' => '#ffffff', 'fontFamily' => 'Impact, Arial Black, sans-serif', 'originX' => 'center', 'originY' => 'center'],
+                ['kind' => 'rect', 'name' => 'Faixa', 'x' => 0.05, 'y' => 0.4, 'w' => 0.9, 'h' => 0.2, 'fill' => '#ef4444', 'opacity' => 95, 'rx' => 4, 'ry' => 4],
+                ['kind' => 'text', 'name' => 'Título', 'x' => 0.5, 'y' => 0.5, 'text' => 'ASSISTA ATÉ O FIM', 'fontSize' => 68, 'fill' => '#ffffff', 'fontSlug' => 'bebas_neue', 'originX' => 'center', 'originY' => 'center', 'textAlign' => 'center', 'charSpacing' => 24],
             ],
         ],
         'yt_banner_clean' => [
@@ -390,25 +393,39 @@ return [
         // —— TikTok / Shorts genérico ——
         'tt_viral_hook' => [
             'name' => 'TikTok hook viral',
-            'description' => 'Emoji + pergunta topo',
+            'description' => 'Caixa amarela + Bebas — gancho no topo',
             'preset' => 'tt_video',
             'group' => 'tiktok',
+            'viral' => true,
             'background' => ['color' => '#000000', 'opacity' => 100],
             'objects' => [
-                ['kind' => 'text', 'name' => 'Hook', 'x' => 0.5, 'y' => 0.12, 'text' => 'POV: você descobriu isso', 'fontSize' => 36, 'fill' => '#ffffff', 'fontFamily' => 'Arial, sans-serif', 'originX' => 'center', 'originY' => 'center'],
-                ['kind' => 'rect', 'name' => 'CTA', 'x' => 0.2, 'y' => 0.88, 'w' => 0.6, 'h' => 0.06, 'fill' => '#fe2c55', 'opacity' => 100],
-                ['kind' => 'text', 'name' => 'Seguir', 'x' => 0.5, 'y' => 0.91, 'text' => 'Segue para mais', 'fontSize' => 24, 'fill' => '#ffffff', 'fontFamily' => 'Arial, sans-serif', 'originX' => 'center', 'originY' => 'center'],
+                ['kind' => 'rect', 'name' => 'Caixa hook', 'x' => 0.04, 'y' => 0.055, 'w' => 0.92, 'h' => 0.11, 'fill' => '#fde047', 'opacity' => 100, 'rx' => 8, 'ry' => 8],
+                ['kind' => 'text', 'name' => 'Hook', 'x' => 0.5, 'y' => 0.105, 'text' => 'POV: VOCÊ DESCOBRIU ISSO', 'fontSize' => 68, 'fill' => '#000000', 'fontSlug' => 'bebas_neue', 'originX' => 'center', 'originY' => 'center', 'textAlign' => 'center', 'charSpacing' => 20],
+                ['kind' => 'rect', 'name' => 'CTA', 'x' => 0.2, 'y' => 0.88, 'w' => 0.6, 'h' => 0.06, 'fill' => '#fe2c55', 'opacity' => 100, 'rx' => 20, 'ry' => 20],
+                ['kind' => 'text', 'name' => 'Seguir', 'x' => 0.5, 'y' => 0.91, 'text' => 'SEGUIR PARA MAIS', 'fontSize' => 28, 'fill' => '#ffffff', 'fontSlug' => 'bebas_neue', 'originX' => 'center', 'originY' => 'center', 'textAlign' => 'center', 'charSpacing' => 40],
+            ],
+        ],
+        'tt_hook_black_box' => [
+            'name' => 'TikTok caixa preta',
+            'description' => 'Texto branco Bebas em caixa preta',
+            'preset' => 'tt_video',
+            'group' => 'tiktok',
+            'viral' => true,
+            'background' => ['color' => '#18181b', 'opacity' => 100],
+            'objects' => [
+                ['kind' => 'text', 'name' => 'Hook', 'x' => 0.5, 'y' => 0.14, 'text' => 'NINGUÉM TE CONTOU ISSO', 'fontSize' => 64, 'fill' => '#ffffff', 'fontSlug' => 'bebas_neue', 'originX' => 'center', 'originY' => 'center', 'textAlign' => 'center', 'charSpacing' => 24, 'textBackground' => ['fill' => '#000000', 'opacity' => 92, 'padX' => 20, 'padY' => 14, 'rx' => 8]],
             ],
         ],
         'short_announce' => [
             'name' => 'Short anúncio',
-            'description' => 'Vertical lançamento',
+            'description' => 'Vertical lançamento + Bebas',
             'preset' => 'short_9_16',
             'group' => 'shorts',
+            'viral' => true,
             'background' => ['color' => '#059669', 'opacity' => 100],
             'objects' => [
-                ['kind' => 'text', 'name' => 'Novo', 'x' => 0.5, 'y' => 0.35, 'text' => 'LANÇAMENTO', 'fontSize' => 64, 'fill' => '#ffffff', 'fontFamily' => 'Impact, Arial Black, sans-serif', 'originX' => 'center', 'originY' => 'center'],
-                ['kind' => 'text', 'name' => 'Data', 'x' => 0.5, 'y' => 0.48, 'text' => '15 · JUL · 2026', 'fontSize' => 32, 'fill' => '#d1fae5', 'fontFamily' => 'Arial, sans-serif', 'originX' => 'center', 'originY' => 'center'],
+                ['kind' => 'text', 'name' => 'Novo', 'x' => 0.5, 'y' => 0.35, 'text' => 'LANÇAMENTO', 'fontSize' => 88, 'fill' => '#ffffff', 'fontSlug' => 'bebas_neue', 'originX' => 'center', 'originY' => 'center', 'textAlign' => 'center', 'charSpacing' => 50, 'shadow' => true, 'shadowBlur' => 16],
+                ['kind' => 'text', 'name' => 'Data', 'x' => 0.5, 'y' => 0.48, 'text' => '15 · JUL · 2026', 'fontSize' => 32, 'fill' => '#d1fae5', 'fontSlug' => 'montserrat', 'originX' => 'center', 'originY' => 'center', 'textAlign' => 'center'],
             ],
         ],
         // —— Facebook / LinkedIn ——
@@ -595,45 +612,9 @@ return [
         ],
     ],
 
-    'element_groups' => [
-        'formas' => 'Formas básicas',
-        'linhas' => 'Linhas & divisores',
-    ],
+    'element_groups' => [],
 
-    'elements' => [
-        // Formas sólidas
-        ['slug' => 'rect_red', 'name' => 'Retângulo', 'group' => 'formas', 'type' => 'rect', 'icon' => '▭', 'fill' => '#ef4444'],
-        ['slug' => 'rect_blue', 'name' => 'Retângulo azul', 'group' => 'formas', 'type' => 'rect', 'icon' => '▭', 'fill' => '#3b82f6'],
-        ['slug' => 'rect_green', 'name' => 'Retângulo verde', 'group' => 'formas', 'type' => 'rect', 'icon' => '▭', 'fill' => '#22c55e'],
-        ['slug' => 'rect_yellow', 'name' => 'Retângulo amarelo', 'group' => 'formas', 'type' => 'rect', 'icon' => '▭', 'fill' => '#eab308'],
-        ['slug' => 'rect_dark', 'name' => 'Retângulo escuro', 'group' => 'formas', 'type' => 'rect', 'icon' => '▭', 'fill' => '#27272a'],
-        ['slug' => 'rect_white', 'name' => 'Retângulo branco', 'group' => 'formas', 'type' => 'rect', 'icon' => '▭', 'fill' => '#ffffff'],
-        ['slug' => 'rect_rounded', 'name' => 'Retângulo arredondado', 'group' => 'formas', 'type' => 'rounded_rect', 'icon' => '▢', 'fill' => '#8b5cf6', 'rx' => 24, 'ry' => 24],
-        ['slug' => 'rect_rounded_dark', 'name' => 'Arredondado escuro', 'group' => 'formas', 'type' => 'rounded_rect', 'icon' => '▢', 'fill' => '#18181b', 'rx' => 20, 'ry' => 20],
-        ['slug' => 'circle_red', 'name' => 'Círculo', 'group' => 'formas', 'type' => 'circle', 'icon' => '●', 'fill' => '#ef4444'],
-        ['slug' => 'circle_yellow', 'name' => 'Círculo amarelo', 'group' => 'formas', 'type' => 'circle', 'icon' => '●', 'fill' => '#eab308'],
-        ['slug' => 'circle_green', 'name' => 'Círculo verde', 'group' => 'formas', 'type' => 'circle', 'icon' => '●', 'fill' => '#22c55e'],
-        ['slug' => 'circle_blue', 'name' => 'Círculo azul', 'group' => 'formas', 'type' => 'circle', 'icon' => '●', 'fill' => '#3b82f6'],
-        ['slug' => 'circle_white', 'name' => 'Círculo branco', 'group' => 'formas', 'type' => 'circle', 'icon' => '●', 'fill' => '#ffffff'],
-        ['slug' => 'ellipse_violet', 'name' => 'Elipse', 'group' => 'formas', 'type' => 'ellipse', 'icon' => '⬭', 'fill' => '#8b5cf6'],
-        ['slug' => 'triangle_orange', 'name' => 'Triângulo', 'group' => 'formas', 'type' => 'triangle', 'icon' => '▲', 'fill' => '#f97316'],
-        ['slug' => 'triangle_white', 'name' => 'Triângulo branco', 'group' => 'formas', 'type' => 'triangle', 'icon' => '▲', 'fill' => '#ffffff'],
-        ['slug' => 'star_shape', 'name' => 'Estrela (forma)', 'group' => 'formas', 'type' => 'star', 'icon' => '★', 'fill' => '#fbbf24'],
-        ['slug' => 'star_shape_white', 'name' => 'Estrela branca', 'group' => 'formas', 'type' => 'star', 'icon' => '★', 'fill' => '#ffffff'],
-        ['slug' => 'hexagon', 'name' => 'Hexágono', 'group' => 'formas', 'type' => 'polygon', 'icon' => '⬡', 'fill' => '#06b6d4', 'sides' => 6],
-        ['slug' => 'pentagon', 'name' => 'Pentágono', 'group' => 'formas', 'type' => 'polygon', 'icon' => '⬠', 'fill' => '#a855f7', 'sides' => 5],
-        ['slug' => 'ring', 'name' => 'Anel / círculo vazio', 'group' => 'formas', 'type' => 'ring', 'icon' => '◯', 'stroke' => '#ffffff', 'strokeWidth' => 8],
-        ['slug' => 'ring_accent', 'name' => 'Anel violeta', 'group' => 'formas', 'type' => 'ring', 'icon' => '◯', 'stroke' => '#8b5cf6', 'strokeWidth' => 10],
-        // Linhas
-        ['slug' => 'line_white', 'name' => 'Linha branca', 'group' => 'linhas', 'type' => 'line', 'icon' => '—', 'stroke' => '#ffffff', 'strokeWidth' => 8],
-        ['slug' => 'line_black', 'name' => 'Linha preta', 'group' => 'linhas', 'type' => 'line', 'icon' => '—', 'stroke' => '#18181b', 'strokeWidth' => 8],
-        ['slug' => 'line_accent', 'name' => 'Linha violeta', 'group' => 'linhas', 'type' => 'line', 'icon' => '—', 'stroke' => '#8b5cf6', 'strokeWidth' => 10],
-        ['slug' => 'line_red', 'name' => 'Linha vermelha', 'group' => 'linhas', 'type' => 'line', 'icon' => '—', 'stroke' => '#ef4444', 'strokeWidth' => 8],
-        ['slug' => 'line_thin_white', 'name' => 'Linha fina branca', 'group' => 'linhas', 'type' => 'line', 'icon' => '—', 'stroke' => '#ffffff', 'strokeWidth' => 3],
-        ['slug' => 'line_thick_white', 'name' => 'Linha grossa branca', 'group' => 'linhas', 'type' => 'line', 'icon' => '—', 'stroke' => '#ffffff', 'strokeWidth' => 16],
-        ['slug' => 'line_vertical', 'name' => 'Linha vertical', 'group' => 'linhas', 'type' => 'line_vertical', 'icon' => '|', 'stroke' => '#ffffff', 'strokeWidth' => 8],
-        ['slug' => 'arrow_right', 'name' => 'Seta direita', 'group' => 'linhas', 'type' => 'arrow', 'icon' => '→', 'stroke' => '#ffffff', 'strokeWidth' => 8],
-    ],
+    'elements' => [],
 
     'frame_presets' => [
         'thin_white' => ['name' => 'Fina branca', 'category' => 'basico'],

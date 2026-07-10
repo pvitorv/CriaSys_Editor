@@ -1,6 +1,12 @@
-import { Canvas, FabricText, IText, FabricImage, Rect, Circle, Ellipse, Line, loadSVGFromURL, util, filters, Shadow } from 'fabric';
+import { Canvas, FabricText, IText, FabricImage, Rect, Circle, Ellipse, Line, loadSVGFromURL, util, filters, Shadow, ActiveSelection } from 'fabric';
 import { writePsdBuffer } from 'ag-psd';
 import { jsPDF } from 'jspdf';
+import {
+    EMOJI_FONT_STACK,
+    addCanvasObject,
+    centerObjectOnCanvas,
+    createShapeFromSpec,
+} from './imageStudioShapes';
 import {
     buildTextStyleFromFont,
     ensureFontLoaded,
@@ -8,6 +14,7 @@ import {
     resolveFontWeight,
     fontCssFamily,
     isTextLikeType,
+    normalizeColorInput,
     preloadIconFontCdns,
     preloadStarterGoogleFonts,
     FALLBACK_FONTS,
@@ -26,6 +33,14 @@ function isFabricText(obj) {
 
 function isFabricImage(obj) {
     return !!obj && (obj instanceof FabricImage || normalizeFabricType(obj) === 'image');
+}
+
+function isFabricShape(obj) {
+    if (!obj || obj.criasysGuide) {
+        return false;
+    }
+
+    return !isFabricText(obj) && !isFabricImage(obj);
 }
 
 const DEFAULT_FILTER_STATE = {
@@ -113,10 +128,11 @@ export class ImageStudioEngine {
             cornerStrokeColor: '#ffffff',
             borderColor: '#a78bfa',
             cornerSize,
-            padding: 6,
+            padding: 8,
             transparentCorners: false,
             hasControls: true,
             hasBorders: true,
+            centeredRotation: true,
             lockScalingFlip: false,
             lockRotation: false,
             lockScalingX: false,
@@ -129,6 +145,11 @@ export class ImageStudioEngine {
                 tl: true, tr: true, bl: true, br: true,
                 ml: true, mt: true, mr: true, mb: true, mtr: true,
             });
+        }
+        const rotateOffset = Math.min(72, Math.max(36, Math.round(48 / z)));
+        if (obj.controls?.mtr) {
+            obj.controls.mtr.offsetY = -rotateOffset;
+            obj.controls.mtr.withConnection = true;
         }
         if (isFabricImage(obj)) {
             obj.set({
@@ -159,11 +180,13 @@ export class ImageStudioEngine {
             enableRetinaScaling: false,
             uniformScaling: false,
             stopContextMenu: true,
+            controlsAboveOverlay: true,
         });
         this.canvas.on('object:scaling', () => {
             this.canvas?.requestRenderAll();
             this.notifyChange();
         });
+        this.canvas.on('object:rotating', () => this.notifyChange());
         this.canvas.on('object:modified', () => this.emitChange());
         this.canvas.on('object:added', (e) => {
             if (e.target) {
@@ -416,6 +439,42 @@ export class ImageStudioEngine {
         this.setActiveObjectScalePercent(this.getActiveObjectScalePercent() + deltaPercent);
     }
 
+    normalizeObjectAngle(degrees) {
+        let angle = Math.round(Number(degrees) || 0);
+        while (angle < 0) {
+            angle += 360;
+        }
+        while (angle >= 360) {
+            angle -= 360;
+        }
+
+        return angle;
+    }
+
+    getActiveObjectAngle() {
+        const obj = this.canvas?.getActiveObject();
+        if (!obj || obj.criasysGuide) {
+            return 0;
+        }
+
+        return this.normalizeObjectAngle(obj.angle ?? 0);
+    }
+
+    setActiveObjectAngle(degrees) {
+        const obj = this.canvas?.getActiveObject();
+        if (!obj || obj.criasysGuide) {
+            return;
+        }
+        obj.set({ angle: this.normalizeObjectAngle(degrees) });
+        obj.setCoords();
+        this.canvas.requestRenderAll();
+        this.emitChange();
+    }
+
+    nudgeActiveObjectAngle(deltaDegrees) {
+        this.setActiveObjectAngle(this.getActiveObjectAngle() + (Number(deltaDegrees) || 0));
+    }
+
     alignActiveObject(mode) {
         const obj = this.canvas?.getActiveObject();
         if (!obj) {
@@ -627,12 +686,12 @@ export class ImageStudioEngine {
             top: (this.designHeight / 2) - 30,
             fontFamily: options.fontFamily || 'Impact, Arial Black, sans-serif',
             fontSize: options.fontSize || 64,
-            fill: options.fill || '#ffffff',
+            fill: normalizeColorInput(options.fill, '#ffffff'),
             fontWeight: options.fontWeight ?? 'bold',
             fontStyle: options.fontStyle || 'normal',
             underline: !!options.underline,
             linethrough: !!options.linethrough,
-            stroke: options.strokeWidth > 0 ? (options.stroke || '#000000') : '',
+            stroke: (options.strokeWidth || 0) > 0 ? normalizeColorInput(options.stroke, '#000000') : null,
             strokeWidth: options.strokeWidth || 0,
             textAlign: options.textAlign || 'left',
             lineHeight: options.lineHeight || 1.16,
@@ -669,9 +728,9 @@ export class ImageStudioEngine {
             fontSlug: obj.criasysFontSlug || 'bebas_neue',
             content: obj.text || '',
             fontSize: obj.fontSize || 48,
-            fill: obj.fill || '#ffffff',
-            stroke: obj.stroke || '#000000',
-            strokeWidth: obj.strokeWidth || 0,
+            fill: normalizeColorInput(obj.fill, '#ffffff'),
+            stroke: normalizeColorInput(obj.stroke, '#000000'),
+            strokeWidth: Math.max(0, parseFloat(obj.strokeWidth) || 0),
             bold,
             italic: obj.fontStyle === 'italic',
             underline: !!obj.underline,
@@ -704,12 +763,11 @@ export class ImageStudioEngine {
             object.criasysFontSlug = style.fontSlug;
         }
 
+        this.applyTextPaint(object, style);
+
         object.set({
             fontStyle,
             fontWeight,
-            fill: style.fill,
-            stroke: (style.strokeWidth || 0) > 0 ? (style.stroke || '#000000') : '',
-            strokeWidth: style.strokeWidth || 0,
             fontSize: style.fontSize,
             textAlign: style.align || 'left',
             lineHeight: style.lineHeight || 1.16,
@@ -740,8 +798,10 @@ export class ImageStudioEngine {
 
     addRect(color = '#ef4444', opacity = 80) {
         const rect = new Rect({
-            left: this.designWidth * 0.15,
-            top: this.designHeight * 0.2,
+            originX: 'center',
+            originY: 'center',
+            left: this.designWidth / 2,
+            top: this.designHeight / 2,
             width: this.designWidth * 0.7,
             height: this.designHeight * 0.25,
             fill: color,
@@ -749,6 +809,7 @@ export class ImageStudioEngine {
             name: 'Retângulo',
             criasysId: 'rect_' + Date.now(),
         });
+        this.configureSelectableObject(rect);
         this.canvas.add(rect);
         this.canvas.setActiveObject(rect);
         this.canvas.requestRenderAll();
@@ -758,14 +819,17 @@ export class ImageStudioEngine {
     addCircle(color = '#3b82f6', opacity = 80) {
         const size = Math.min(this.designWidth, this.designHeight) * 0.25;
         const circle = new Circle({
-            left: this.designWidth / 2 - size / 2,
-            top: this.designHeight / 2 - size / 2,
+            originX: 'center',
+            originY: 'center',
+            left: this.designWidth / 2,
+            top: this.designHeight / 2,
             radius: size / 2,
             fill: color,
             opacity: opacity / 100,
             name: 'Círculo',
             criasysId: 'circle_' + Date.now(),
         });
+        this.configureSelectableObject(circle);
         this.canvas.add(circle);
         this.canvas.setActiveObject(circle);
         this.canvas.requestRenderAll();
@@ -808,76 +872,54 @@ export class ImageStudioEngine {
     }
 
     async addElementFromCatalog(spec) {
-        if (!spec || !this.canvas) return;
+        if (!spec || !this.canvas) {
+            return;
+        }
+
         const type = spec.type || spec.kind;
-        if (type === 'svg_icon') return this.addSvgIconFromSpec(spec);
-        if (type === 'rect') {
-            this.addRect(spec.fill || '#ef4444', spec.opacity ?? 80);
+
+        if (type === 'svg_icon') {
+            return this.addSvgIconFromSpec(spec);
+        }
+
+        if (type === 'emoji' || type === 'sticker') {
+            const char = spec.char || spec.icon || '★';
+            const isColorEmoji = /[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/u.test(char);
+            this.addText(char, {
+                fontSize: spec.fontSize || 120,
+                fill: spec.fill || '#ffffff',
+                fontFamily: isColorEmoji ? EMOJI_FONT_STACK : 'Impact, Arial Black, sans-serif',
+                fontWeight: isColorEmoji ? 'normal' : 'bold',
+                textAlign: 'center',
+                name: spec.name || 'Emoji',
+                fontSlug: null,
+                charSpacing: spec.charSpacing || 0,
+            });
+            const active = this.getActiveObject();
+            if (active && isFabricText(active)) {
+                centerObjectOnCanvas(active, this.designWidth, this.designHeight);
+                this.canvas.requestRenderAll();
+            }
             return;
         }
-        if (type === 'rounded_rect') {
-            const rect = new Rect({
-                left: this.designWidth * 0.2,
-                top: this.designHeight * 0.25,
-                width: this.designWidth * 0.6,
-                height: this.designHeight * 0.2,
-                fill: spec.fill || '#8b5cf6',
-                opacity: (spec.opacity ?? 100) / 100,
-                rx: spec.rx || 24,
-                ry: spec.ry || spec.rx || 24,
-                name: spec.name || 'Retângulo arredondado',
-                criasysId: 'rect_r_' + Date.now(),
-            });
-            this.canvas.add(rect);
-            this.configureSelectableObject(rect);
-            this.canvas.setActiveObject(rect);
-            this.canvas.requestRenderAll();
+
+        const shape = createShapeFromSpec(spec, this.designWidth, this.designHeight);
+        if (shape) {
+            addCanvasObject(
+                this.canvas,
+                shape,
+                this.designWidth,
+                this.designHeight,
+                (obj) => this.configureSelectableObject(obj),
+            );
             this.emitChange();
             return;
         }
-        if (type === 'circle') {
-            this.addCircle(spec.fill || '#3b82f6', spec.opacity ?? 80);
-            return;
-        }
-        if (type === 'ellipse') {
-            const ew = this.designWidth * 0.35;
-            const eh = this.designHeight * 0.18;
-            const ellipse = new Ellipse({
-                left: (this.designWidth - ew) / 2,
-                top: (this.designHeight - eh) / 2,
-                rx: ew / 2,
-                ry: eh / 2,
-                fill: spec.fill || '#8b5cf6',
-                opacity: (spec.opacity ?? 100) / 100,
-                name: spec.name || 'Elipse',
-                criasysId: 'ellipse_' + Date.now(),
-            });
-            this.canvas.add(ellipse);
-            this.configureSelectableObject(ellipse);
-            this.canvas.setActiveObject(ellipse);
-            this.canvas.requestRenderAll();
-            this.emitChange();
-            return;
-        }
-        if (type === 'line') {
-            const y = this.designHeight / 2;
-            const line = new Line([this.designWidth * 0.12, y, this.designWidth * 0.88, y], {
-                stroke: spec.stroke || spec.fill || '#fff',
-                strokeWidth: spec.strokeWidth || 6,
-                name: spec.name || 'Linha',
-                criasysId: 'line_' + Date.now(),
-            });
-            this.canvas.add(line);
-            this.configureSelectableObject(line);
-            this.canvas.setActiveObject(line);
-            this.canvas.requestRenderAll();
-            this.emitChange();
-        } else if (type === 'sticker' || type === 'emoji') {
-            this.addText(spec.char || '★', { fontSize: spec.fontSize || 80, fill: spec.fill || '#fff', name: spec.name || 'Ícone' });
-        }
+
+        this.emitChange();
     }
 
-    applyTemplate(template) {
+    async applyTemplate(template, fontMap = {}) {
         if (!this.canvas || !template) {
             return;
         }
@@ -887,8 +929,12 @@ export class ImageStudioEngine {
         const bg = template.background || {};
         this.setBackgroundColor(bg.color || '#ffffff', bg.opacity ?? 100);
 
-        (template.objects || []).forEach((spec, idx) => {
+        const fontList = Object.values(fontMap || {});
+
+        for (let idx = 0; idx < (template.objects || []).length; idx += 1) {
+            const spec = template.objects[idx];
             const kind = spec.kind || spec.type;
+
             if (kind === 'rect') {
                 const rect = new Rect({
                     left: (spec.x ?? 0) * width,
@@ -897,11 +943,16 @@ export class ImageStudioEngine {
                     height: (spec.h ?? 0.5) * height,
                     fill: spec.fill || '#ef4444',
                     opacity: (spec.opacity ?? 100) / 100,
+                    rx: spec.rx ?? 0,
+                    ry: spec.ry ?? spec.rx ?? 0,
                     name: spec.name || 'Retângulo',
                     criasysId: 'tpl_rect_' + idx + '_' + Date.now(),
                 });
                 this.canvas.add(rect);
-            } else if (kind === 'circle') {
+                continue;
+            }
+
+            if (kind === 'circle') {
                 const r = (spec.r ?? 0.1) * Math.min(width, height);
                 const circle = new Circle({
                     left: (spec.x ?? 0.5) * width - r,
@@ -913,25 +964,93 @@ export class ImageStudioEngine {
                     criasysId: 'tpl_circle_' + idx + '_' + Date.now(),
                 });
                 this.canvas.add(circle);
-            } else if (kind === 'text') {
-                const textObj = new IText(spec.text || 'Texto', {
-                    left: (spec.x ?? 0.5) * width,
-                    top: (spec.y ?? 0.5) * height,
-                    fontFamily: spec.fontFamily || 'Impact, Arial Black, sans-serif',
-                    fontSize: spec.fontSize || 48,
-                    fill: spec.fill || '#ffffff',
-                    originX: spec.originX || 'left',
-                    originY: spec.originY || 'top',
-                    fontWeight: spec.fontWeight || 'bold',
-                    name: spec.name || 'Texto',
-                    criasysId: 'tpl_text_' + idx + '_' + Date.now(),
-                });
-                this.canvas.add(textObj);
+                continue;
             }
-        });
+
+            if (kind === 'text') {
+                await this.addTemplateTextObject(spec, idx, width, height, fontMap, fontList);
+            }
+        }
+
         this.configureAllObjects();
         this.canvas.requestRenderAll();
         this.emitChange();
+    }
+
+    async addTemplateTextObject(spec, idx, width, height, fontMap, fontList) {
+        const fontMeta = spec.fontSlug
+            ? (fontMap[spec.fontSlug] || findFontBySlug(fontList, spec.fontSlug))
+            : null;
+        const bold = spec.fontWeight === 'bold' || spec.fontWeight === 700 || spec.fontWeight === '700';
+
+        if (fontMeta) {
+            await ensureFontLoaded(fontMeta, { bold, italic: spec.italic });
+        }
+
+        const fontFamily = fontMeta
+            ? fontCssFamily(fontMeta)
+            : (spec.fontFamily || 'Impact, Arial Black, sans-serif');
+
+        const textObj = new IText(spec.text || 'Texto', {
+            left: (spec.x ?? 0.5) * width,
+            top: (spec.y ?? 0.5) * height,
+            fontFamily,
+            fontSize: spec.fontSize || 48,
+            fill: spec.fill || '#ffffff',
+            originX: spec.originX || 'left',
+            originY: spec.originY || 'top',
+            fontWeight: fontMeta ? resolveFontWeight(fontMeta, bold) : (spec.fontWeight || 'bold'),
+            fontStyle: spec.italic ? 'italic' : 'normal',
+            textAlign: spec.textAlign || 'center',
+            charSpacing: spec.charSpacing ?? 0,
+            lineHeight: spec.lineHeight ?? 1.05,
+            stroke: (spec.strokeWidth || 0) > 0 ? (spec.stroke || '#000000') : '',
+            strokeWidth: spec.strokeWidth || 0,
+            name: spec.name || 'Texto',
+            criasysId: 'tpl_text_' + idx + '_' + Date.now(),
+            criasysFontSlug: spec.fontSlug || null,
+        });
+
+        if (fontMeta) {
+            textObj.set(buildTextStyleFromFont(fontMeta, { bold, italic: spec.italic }));
+        }
+
+        if (spec.shadow) {
+            textObj.set('shadow', new Shadow({
+                color: spec.shadowColor || '#000000',
+                blur: spec.shadowBlur ?? 10,
+                offsetX: spec.shadowOffsetX ?? 2,
+                offsetY: spec.shadowOffsetY ?? 2,
+            }));
+        }
+
+        this.canvas.add(textObj);
+        textObj.setCoords();
+
+        if (spec.textBackground) {
+            this.addTemplateTextBackground(textObj, spec.textBackground, idx);
+        }
+    }
+
+    addTemplateTextBackground(textObj, bgSpec, idx) {
+        const bounds = textObj.getBoundingRect();
+        const padX = bgSpec.padX ?? 16;
+        const padY = bgSpec.padY ?? 10;
+        const rect = new Rect({
+            left: bounds.left - padX,
+            top: bounds.top - padY,
+            width: bounds.width + (padX * 2),
+            height: bounds.height + (padY * 2),
+            fill: bgSpec.fill || '#fde047',
+            opacity: (bgSpec.opacity ?? 100) / 100,
+            rx: bgSpec.rx ?? 6,
+            ry: bgSpec.ry ?? bgSpec.rx ?? 6,
+            name: (textObj.name || 'Texto') + ' · fundo',
+            criasysId: 'tpl_tbg_' + idx + '_' + Date.now(),
+        });
+        this.configureSelectableObject(rect);
+        const textIndex = this.canvas.getObjects().indexOf(textObj);
+        this.canvas.insertAt(Math.max(0, textIndex), rect);
     }
 
     async replaceActiveImageSource(url) {
@@ -974,8 +1093,10 @@ export class ImageStudioEngine {
         const maxH = this.designHeight * 0.85;
         const scale = Math.min(maxW / (img.width || 1), maxH / (img.height || 1), 1);
         img.set({
-            left: (this.designWidth - (img.width || 1) * scale) / 2,
-            top: (this.designHeight - (img.height || 1) * scale) / 2,
+            originX: 'center',
+            originY: 'center',
+            left: this.designWidth / 2,
+            top: this.designHeight / 2,
             scaleX: scale,
             scaleY: scale,
             name,
@@ -1006,8 +1127,97 @@ export class ImageStudioEngine {
         this.emitChange();
     }
 
+    getShapeStyleFromObject(obj) {
+        if (!isFabricShape(obj)) {
+            return null;
+        }
+        const isLine = String(obj.type || '').toLowerCase() === 'line';
+        const strokeWidth = Math.max(0, parseFloat(obj.strokeWidth) || 0);
+        let fill = obj.fill;
+        if (fill === null || fill === undefined || fill === 'transparent') {
+            fill = '';
+        } else {
+            fill = normalizeColorInput(fill, '#ffffff');
+        }
+
+        return {
+            fill,
+            stroke: normalizeColorInput(obj.stroke, '#ffffff'),
+            strokeWidth,
+            isLine,
+        };
+    }
+
+    applyShapePaint(object, style) {
+        if (!isFabricShape(object) || !style) {
+            return;
+        }
+        const strokeWidth = Math.max(0, parseFloat(style.strokeWidth) || 0);
+        const stroke = strokeWidth > 0
+            ? normalizeColorInput(style.stroke, '#ffffff')
+            : '';
+        const updates = { stroke, strokeWidth };
+
+        if (!style.isLine) {
+            updates.fill = style.fill
+                ? normalizeColorInput(style.fill, '#ffffff')
+                : 'transparent';
+        }
+
+        object.set(updates);
+        object.setCoords();
+        this.canvas.requestRenderAll();
+        this.emitChange();
+    }
+
     getActiveObject() {
         return this.canvas?.getActiveObject() ?? null;
+    }
+
+    getActiveTextObject() {
+        const obj = this.getActiveObject();
+        if (!obj) {
+            return null;
+        }
+
+        if (isFabricText(obj)) {
+            return obj;
+        }
+
+        if (obj instanceof ActiveSelection || String(obj.type || '').toLowerCase() === 'activeselection') {
+            const nested = typeof obj.getObjects === 'function' ? obj.getObjects() : [];
+            return nested.find((item) => isFabricText(item)) ?? null;
+        }
+
+        return null;
+    }
+
+    applyTextPaint(object, style) {
+        if (!isFabricText(object) || !style) {
+            return;
+        }
+
+        const fill = normalizeColorInput(style.fill, '#ffffff');
+        const strokeWidth = Math.max(0, parseFloat(style.strokeWidth) || 0);
+        const stroke = strokeWidth > 0
+            ? normalizeColorInput(style.stroke, '#000000')
+            : null;
+
+        object.set({
+            fill,
+            stroke,
+            strokeWidth,
+        });
+
+        if (typeof object.setSelectionStyles === 'function' && object.text?.length) {
+            object.setSelectionStyles({
+                fill,
+                stroke,
+                strokeWidth,
+            }, 0, object.text.length);
+        }
+
+        object.set('styles', {});
     }
 
     async exportBlob(format = 'png', quality = 0.92, options = {}) {
@@ -1194,6 +1404,11 @@ export function imageStudioMethods() {
         imageStudioBgOpacity: 100,
         imageStudioSelectedObject: null,
         imageStudioObjectScale: 100,
+        imageStudioObjectAngle: 0,
+        imageStudioShapeFill: '#ffffff',
+        imageStudioShapeStroke: '#ffffff',
+        imageStudioShapeStrokeWidth: 0,
+        imageStudioShapeIsLine: false,
         imageStudioZoom: 100,
         imageStudioShowFormatGuides: true,
         imageStudioBgRemoving: false,
@@ -1203,20 +1418,97 @@ export function imageStudioMethods() {
         imageStudioGridSize: 20,
         imageStudioCanUndo: false,
         imageStudioCanRedo: false,
-        imageStudioFrameSlug: 'none',
-        imageStudioFrameColor: '#ffffff',
-        imageStudioFrameSecondaryColor: '#ef4444',
-        imageStudioFrameWidth: 56,
-        imageStudioFrameOpacity: 100,
-        imageStudioFrameInset: 12,
-        imageStudioFrameOverlayUrl: null,
-        imageStudioFrameVisible: true,
-        imageStudioFrameApplyTimeout: null,
-        imageStudioFrames: [],
         imageStudioElements: [],
         imageStudioElementGroups: {},
         imageStudioElementFilter: '',
+        imageStudioElementFilterGroup: '',
+        imageStudioElementsModalOpen: false,
+        _imageStudioElementsModalShown: false,
         imageStudioLocalWatch: null,
+
+        normalizeImageStudioElementList(source) {
+            if (Array.isArray(source)) {
+                return source;
+            }
+            if (source && typeof source === 'object') {
+                return Object.values(source);
+            }
+
+            return [];
+        },
+
+        filterImageStudioElements() {
+            const list = this.normalizeImageStudioElementList(this.imageStudioElements);
+            const q = (this.imageStudioElementFilter || '').trim().toLowerCase();
+            const groupFilter = (this.imageStudioElementFilterGroup || '').trim();
+
+            return list.filter((el) => {
+                if (!el || typeof el !== 'object') {
+                    return false;
+                }
+                if (groupFilter) {
+                    const matchesGroup = groupFilter === 'formas'
+                        ? String(el.group || '').startsWith('formas')
+                        : el.group === groupFilter;
+                    if (!matchesGroup) {
+                        return false;
+                    }
+                }
+                if (q) {
+                    const hay = `${el.name || ''} ${el.group || ''} ${el.char || ''} ${el.icon || ''}`.toLowerCase();
+                    if (!hay.includes(q)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+        },
+
+        imageStudioElementGroupList() {
+            const groups = {};
+            this.filterImageStudioElements().forEach((el) => {
+                const key = this.imageStudioElementGroups?.[el.group] || el.group || 'Outros';
+                if (!groups[key]) {
+                    groups[key] = [];
+                }
+                groups[key].push(el);
+            });
+
+            return Object.entries(groups).map(([name, items]) => ({ name, items }));
+        },
+
+        imageStudioElementsFilteredCount() {
+            return this.filterImageStudioElements().length;
+        },
+
+        imageStudioElementQuickGroups() {
+            return [
+                { id: '', label: 'Todos' },
+                { id: 'emojis', label: 'Emojis' },
+                { id: 'blobs', label: 'Slimes' },
+                { id: 'formas', label: 'Formas' },
+                { id: 'formas_molduras', label: 'Molduras' },
+                { id: 'formas_3d', label: '3D' },
+                { id: 'formas_extras', label: 'Decor' },
+                { id: 'adesivos', label: 'Adesivos' },
+                { id: 'linhas', label: 'Linhas' },
+            ];
+        },
+
+        imageStudioOpenElementsModal() {
+            this.imageStudioElementFilter = '';
+            this.imageStudioElementFilterGroup = '';
+            this.imageStudioElementsModalOpen = true;
+        },
+
+        imageStudioCloseElementsModal() {
+            this.imageStudioElementsModalOpen = false;
+        },
+
+        async imageStudioAddElementFromModal(el) {
+            await this.imageStudioAddElement(el);
+        },
 
         get filteredImageStudioPresets() {
             const q = (this.imageStudioPresetFilter || '').trim().toLowerCase();
@@ -1237,21 +1529,6 @@ export function imageStudioMethods() {
                 const key = p.group_label || p.group || 'Outros';
                 if (!groups[key]) groups[key] = [];
                 groups[key].push(p);
-            });
-            return groups;
-        },
-
-        get imageStudioElementsByGroup() {
-            const q = (this.imageStudioElementFilter || '').trim().toLowerCase();
-            const groups = {};
-            (this.imageStudioElements || []).forEach((el) => {
-                if (q) {
-                    const hay = `${el.name || ''} ${el.group || ''}`.toLowerCase();
-                    if (!hay.includes(q)) return;
-                }
-                const key = this.imageStudioElementGroups[el.group] || el.group || 'Outros';
-                if (!groups[key]) groups[key] = [];
-                groups[key].push(el);
             });
             return groups;
         },
@@ -1332,6 +1609,8 @@ export function imageStudioMethods() {
             let fonts = meta.imageStudioFonts;
             let icons = meta.imageStudioIconGlyphs;
             let iconFonts = meta.imageStudioIconFonts;
+            let elements = meta.imageStudioElements;
+            let elementGroups = meta.imageStudioElementGroups;
 
             if (!Array.isArray(fonts) || !fonts.length) {
                 fonts = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-fonts');
@@ -1342,6 +1621,12 @@ export function imageStudioMethods() {
             if (!Array.isArray(iconFonts) || !iconFonts.length) {
                 iconFonts = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-icon-fonts');
             }
+            if (!Array.isArray(elements) || !elements.length) {
+                elements = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-elements');
+            }
+            if (!elementGroups || !Object.keys(elementGroups).length) {
+                elementGroups = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-element-groups');
+            }
 
             if (Array.isArray(fonts) && fonts.length) {
                 this.imageStudioFonts = fonts;
@@ -1350,6 +1635,12 @@ export function imageStudioMethods() {
             }
             if (Array.isArray(icons) && icons.length) {
                 this.imageStudioIconGlyphs = icons;
+            }
+            if (Array.isArray(elements) && elements.length) {
+                this.imageStudioElements = elements;
+            }
+            if (elementGroups && typeof elementGroups === 'object') {
+                this.imageStudioElementGroups = elementGroups;
             }
             this.buildImageStudioFontMap();
             preloadIconFontCdns(iconFonts || []);
@@ -1381,8 +1672,7 @@ export function imageStudioMethods() {
                 this.imageStudioGroups = data.groups || {};
                 this.imageStudioExportFormats = data.export_formats || [];
                 this.imageStudioTemplates = data.templates || [];
-                this.imageStudioFrames = data.frames || [];
-                this.imageStudioElements = data.elements || [];
+                this.imageStudioElements = this.normalizeImageStudioElementList(data.elements);
                 this.imageStudioElementGroups = data.element_groups || {};
                 this.imageStudioFonts = data.fonts?.length ? data.fonts : FALLBACK_FONTS;
                 this.imageStudioFontGroups = data.font_groups || {};
@@ -1408,6 +1698,17 @@ export function imageStudioMethods() {
         },
 
         async initImageStudio() {
+            if (!this.imageStudioElements?.length) {
+                const embedded = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-elements');
+                if (Array.isArray(embedded) && embedded.length) {
+                    this.imageStudioElements = embedded;
+                }
+                const embeddedGroups = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-element-groups');
+                if (embeddedGroups && typeof embeddedGroups === 'object') {
+                    this.imageStudioElementGroups = embeddedGroups;
+                }
+            }
+
             await this.loadImageStudioCatalog();
             if (this.imageStudioReady && this.imageStudioEngine?.canvas) {
                 this.imageStudioEngine.setScaleWrapper(this.$refs.imageStudioCanvasScaler);
@@ -1449,6 +1750,10 @@ export function imageStudioMethods() {
             this.setupImageStudioLocalWatch();
             this.setupImageStudioWheelZoom();
             this.fitImageStudioCanvas();
+            if (!this._imageStudioElementsModalShown) {
+                this._imageStudioElementsModalShown = true;
+                this.imageStudioOpenElementsModal();
+            }
         },
 
         async loadImageStudioDesign() {
@@ -1530,20 +1835,8 @@ export function imageStudioMethods() {
         },
 
         refreshImageStudioLayers() {
-            let layers = this.imageStudioEngine?.getLayers() || [];
-            if (this.imageStudioFrameOverlayUrl) {
-                layers = [{
-                    id: 'criasys_frame_overlay',
-                    name: 'Moldura',
-                    type: 'image',
-                    visible: this.imageStudioFrameVisible !== false,
-                    locked: true,
-                    isFrameLayer: true,
-                    object: { criasysFrameLayer: true },
-                }, ...layers];
-            }
-            this.imageStudioLayers = layers;
-            const raw = this.imageStudioEngine?.getActiveObject();
+            this.imageStudioLayers = this.imageStudioEngine?.getLayers() || [];
+            const raw = this.imageStudioEngine?.getActiveTextObject() || this.imageStudioEngine?.getActiveObject();
             this.imageStudioSelectedObject = raw
                 ? { type: normalizeFabricType(raw), opacity: raw.opacity ?? 1 }
                 : null;
@@ -1573,11 +1866,50 @@ export function imageStudioMethods() {
                 });
             }
             this.imageStudioObjectScale = this.imageStudioEngine?.getActiveObjectScalePercent() ?? 100;
+            this.imageStudioObjectAngle = this.imageStudioEngine?.getActiveObjectAngle() ?? 0;
             this.imageStudioCanUndo = this.imageStudioEngine?.canUndo() ?? false;
             this.imageStudioCanRedo = this.imageStudioEngine?.canRedo() ?? false;
             if (raw && isFabricImage(raw)) {
                 this.imageStudioFilters = this.imageStudioEngine.getFilterState(raw);
             }
+            if (raw && isFabricShape(raw)) {
+                const shapeStyle = this.imageStudioEngine.getShapeStyleFromObject(raw);
+                if (shapeStyle) {
+                    this.imageStudioShapeFill = shapeStyle.fill || '#ffffff';
+                    this.imageStudioShapeStroke = shapeStyle.stroke || '#ffffff';
+                    this.imageStudioShapeStrokeWidth = shapeStyle.strokeWidth;
+                    this.imageStudioShapeIsLine = shapeStyle.isLine;
+                }
+            }
+        },
+
+        imageStudioOnShapeFillChange() {
+            const obj = this.imageStudioEngine?.getActiveObject();
+            if (!isFabricShape(obj)) {
+                return;
+            }
+            this.imageStudioEngine.applyShapePaint(obj, {
+                fill: this.imageStudioShapeFill,
+                stroke: this.imageStudioShapeStroke,
+                strokeWidth: this.imageStudioShapeStrokeWidth,
+                isLine: this.imageStudioShapeIsLine,
+            });
+        },
+
+        imageStudioOnShapeStrokeChange() {
+            this.imageStudioOnShapeFillChange();
+        },
+
+        imageStudioOnShapeStrokeWidthChange() {
+            if (this.imageStudioShapeStrokeWidth > 0 && !this.imageStudioShapeStroke) {
+                this.imageStudioShapeStroke = '#ffffff';
+            }
+            this.imageStudioOnShapeFillChange();
+        },
+
+        imageStudioClearShapeFill() {
+            this.imageStudioShapeFill = '';
+            this.imageStudioOnShapeFillChange();
         },
 
         imageStudioSetObjectScale(percent) {
@@ -1589,6 +1921,18 @@ export function imageStudioMethods() {
         imageStudioNudgeObjectScale(delta) {
             this.imageStudioEngine?.nudgeActiveObjectScale(delta);
             this.imageStudioObjectScale = this.imageStudioEngine?.getActiveObjectScalePercent() ?? 100;
+            this.refreshImageStudioLayers();
+        },
+
+        imageStudioSetObjectAngle(degrees) {
+            this.imageStudioEngine?.setActiveObjectAngle(degrees);
+            this.imageStudioObjectAngle = this.imageStudioEngine?.getActiveObjectAngle() ?? 0;
+            this.refreshImageStudioLayers();
+        },
+
+        imageStudioNudgeObjectAngle(delta) {
+            this.imageStudioEngine?.nudgeActiveObjectAngle(delta);
+            this.imageStudioObjectAngle = this.imageStudioEngine?.getActiveObjectAngle() ?? 0;
             this.refreshImageStudioLayers();
         },
 
@@ -1615,6 +1959,10 @@ export function imageStudioMethods() {
                 if (this.activeTab !== 'image_studio') {
                     return;
                 }
+                const tag = (e.target?.tagName || '').toLowerCase();
+                if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) {
+                    return;
+                }
                 const mod = e.ctrlKey || e.metaKey;
                 if (mod && e.key === 'z' && !e.shiftKey) {
                     e.preventDefault();
@@ -1622,6 +1970,12 @@ export function imageStudioMethods() {
                 } else if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
                     e.preventDefault();
                     this.imageStudioRedo();
+                } else if (!mod && this.imageStudioSelectedObject && e.key === '[') {
+                    e.preventDefault();
+                    this.imageStudioNudgeObjectAngle(e.shiftKey ? -15 : -5);
+                } else if (!mod && this.imageStudioSelectedObject && e.key === ']') {
+                    e.preventDefault();
+                    this.imageStudioNudgeObjectAngle(e.shiftKey ? 15 : 5);
                 }
             };
             window.addEventListener('keydown', this._imageStudioKeyHandler);
@@ -1652,87 +2006,6 @@ export function imageStudioMethods() {
         imageStudioAlignObject(mode) {
             this.imageStudioEngine?.alignActiveObject(mode);
             this.refreshImageStudioLayers();
-        },
-
-        async imageStudioApplyFrame() {
-            if (this.imageStudioFrameSlug === 'none' || !this.imageStudioFrameSlug) {
-                this.imageStudioFrameOverlayUrl = null;
-                this.imageStudioFrameVisible = true;
-                this.refreshImageStudioLayers();
-                return;
-            }
-            await this.initImageStudio();
-            if (!this.imageStudioEngine?.canvas) {
-                this.error = 'Canvas não carregou — aguarde ou recarregue a página';
-                return;
-            }
-            const preset = this.imageStudioCurrentPreset;
-            if (!preset) {
-                this.error = 'Selecione um formato de canvas antes de aplicar a moldura';
-                return;
-            }
-            try {
-                this.error = null;
-                this.message = 'Gerando moldura…';
-                const { data } = await api.get(`/projects/${this.projectId}/image-studio/frame-preview`, {
-                    params: {
-                        slug: this.imageStudioFrameSlug,
-                        width: preset.width,
-                        height: preset.height,
-                        color: this.imageStudioFrameColor,
-                        secondary_color: this.imageStudioFrameSecondaryColor,
-                        frame_width: this.imageStudioFrameWidth,
-                        opacity: this.imageStudioFrameOpacity,
-                        inset: this.imageStudioFrameInset,
-                    },
-                });
-                let imageSrc = data?.data_url || null;
-                if (!imageSrc && data?.url) {
-                    const fetchUrl = data.url.startsWith('http')
-                        ? data.url.replace(/^https?:\/\/[^/]+/, '')
-                        : data.url;
-                    const fileRes = await fetch(fetchUrl, { credentials: 'same-origin' });
-                    if (!fileRes.ok) {
-                        throw new Error('Não foi possível carregar o PNG da moldura (HTTP ' + fileRes.status + ')');
-                    }
-                    const blob = await fileRes.blob();
-                    imageSrc = await new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = () => resolve(reader.result);
-                        reader.onerror = () => reject(new Error('Erro ao ler PNG da moldura'));
-                        reader.readAsDataURL(blob);
-                    });
-                }
-                if (!imageSrc) {
-                    this.error = 'Servidor não retornou a imagem da moldura';
-                    return;
-                }
-                this.imageStudioFrameOverlayUrl = imageSrc;
-                this.imageStudioFrameVisible = true;
-                this.refreshImageStudioLayers();
-                const frameName = (this.imageStudioFrames || []).find((f) => f.slug === this.imageStudioFrameSlug)?.name
-                    || this.imageStudioFrameSlug;
-                this.message = `Moldura "${frameName}" aplicada — visível sobre o canvas`;
-            } catch (e) {
-                this.error = e.response?.data?.message || e.message || 'Erro ao aplicar moldura';
-            }
-        },
-
-        onImageStudioFrameSlugChange() {
-            if (this.imageStudioFrameSlug === 'none') {
-                this.imageStudioFrameOverlayUrl = null;
-                this.imageStudioFrameVisible = true;
-                this.refreshImageStudioLayers();
-            }
-        },
-
-        scheduleImageStudioFrameReapply() {
-            clearTimeout(this.imageStudioFrameApplyTimeout);
-            this.imageStudioFrameApplyTimeout = setTimeout(() => {
-                if (this.imageStudioFrameOverlayUrl && this.imageStudioFrameSlug !== 'none') {
-                    this.imageStudioApplyFrame();
-                }
-            }, 450);
         },
 
         async imageStudioPickLocalFolder() {
@@ -1816,9 +2089,6 @@ export function imageStudioMethods() {
                 this.imageStudioEngine.setSize(preset.width, preset.height);
                 this.fitImageStudioCanvas();
                 this.message = `Formato: ${preset.name} (${preset.width}×${preset.height})`;
-                if (this.imageStudioFrameOverlayUrl && this.imageStudioFrameSlug !== 'none') {
-                    await this.imageStudioApplyFrame();
-                }
             }
             this.refreshImageStudioLayers();
         },
@@ -1843,15 +2113,46 @@ export function imageStudioMethods() {
             if (this._syncingTextUi) {
                 return;
             }
-            const obj = this.imageStudioEngine?.getActiveObject();
-            if (isFabricText(obj)) {
-                await this.imageStudioEngine.applyTextStyle(
-                    obj,
-                    this.imageStudioTextStylePayload(),
-                    this.imageStudioFontMap
-                );
-                this.refreshImageStudioLayers();
+            const obj = this.imageStudioEngine?.getActiveTextObject();
+            if (!isFabricText(obj)) {
+                return;
             }
+            await this.imageStudioEngine.applyTextStyle(
+                obj,
+                this.imageStudioTextStylePayload(),
+                this.imageStudioFontMap
+            );
+            this._syncingTextUi = true;
+            const st = this.imageStudioEngine.getTextStyleFromObject(obj);
+            if (st) {
+                this.imageStudioTextFill = st.fill;
+                this.imageStudioTextStroke = st.stroke;
+                this.imageStudioTextStrokeWidth = st.strokeWidth;
+            }
+            this.$nextTick(() => {
+                this._syncingTextUi = false;
+            });
+            this.imageStudioObjectScale = this.imageStudioEngine?.getActiveObjectScalePercent() ?? 100;
+            this.imageStudioCanUndo = this.imageStudioEngine?.canUndo() ?? false;
+            this.imageStudioCanRedo = this.imageStudioEngine?.canRedo() ?? false;
+        },
+
+        imageStudioOnTextFillChange() {
+            this.imageStudioTextFill = normalizeColorInput(this.imageStudioTextFill, '#ffffff');
+            this.imageStudioOnTextControlChange();
+        },
+
+        imageStudioOnTextStrokeChange() {
+            this.imageStudioTextStroke = normalizeColorInput(this.imageStudioTextStroke, '#000000');
+            if ((this.imageStudioTextStrokeWidth || 0) <= 0) {
+                this.imageStudioTextStrokeWidth = 2;
+            }
+            this.imageStudioOnTextControlChange();
+        },
+
+        imageStudioRemoveTextOutline() {
+            this.imageStudioTextStrokeWidth = 0;
+            this.imageStudioOnTextControlChange();
         },
 
         async imageStudioAddText() {
@@ -2085,25 +2386,11 @@ export function imageStudioMethods() {
         },
 
         imageStudioSelectLayer(layer) {
-            if (layer?.isFrameLayer) {
-                return;
-            }
             this.imageStudioEngine?.selectLayer(layer.object);
             this.refreshImageStudioLayers();
         },
 
         imageStudioLayerAction(layer, action) {
-            if (layer?.isFrameLayer) {
-                if (action === 'visibility') {
-                    this.imageStudioFrameVisible = !this.imageStudioFrameVisible;
-                } else if (action === 'delete') {
-                    this.imageStudioFrameOverlayUrl = null;
-                    this.imageStudioFrameVisible = true;
-                    this.imageStudioFrameSlug = 'none';
-                }
-                this.refreshImageStudioLayers();
-                return;
-            }
             if (action === 'visibility') {
                 this.imageStudioEngine?.toggleLayerVisibility(layer.object);
             } else if (action === 'lock') {
@@ -2128,10 +2415,7 @@ export function imageStudioMethods() {
                 return;
             }
             try {
-                const blob = await this.imageStudioEngine.exportBlob(format, 0.92, {
-                    frameOverlayUrl: this.imageStudioFrameOverlayUrl,
-                    frameVisible: this.imageStudioFrameVisible,
-                });
+                const blob = await this.imageStudioEngine.exportBlob(format, 0.92);
                 if (!blob) {
                     return;
                 }
@@ -2210,15 +2494,20 @@ export function imageStudioMethods() {
                     this.imageStudioEngine.setSize(presetMeta.width, presetMeta.height);
                 }
             }
-            this.imageStudioEngine.applyTemplate(full);
+            await this.imageStudioEngine.applyTemplate(full, this.imageStudioFontMap);
             if (full.background?.color) {
                 this.imageStudioBgColor = full.background.color;
                 this.imageStudioBgOpacity = full.background.opacity ?? 100;
             }
+            const hookFont = (full.objects || []).find((o) => o.fontSlug)?.fontSlug;
+            if (hookFont && this.imageStudioFontMap[hookFont]) {
+                this.imageStudioTextFontSlug = hookFont;
+            }
             this.fitImageStudioCanvas();
             this.refreshImageStudioLayers();
             this.scheduleImageStudioSave();
-            this.message = `Layout "${full.name}" aplicado — veja contorno e sangrias no canvas`;
+            const extras = full.viral ? ' — fonte de impacto, caixa de destaque e formato prontos' : '';
+            this.message = `Layout "${full.name}" aplicado${extras}`;
         },
 
         async imageStudioImportFromLibrary(item) {
