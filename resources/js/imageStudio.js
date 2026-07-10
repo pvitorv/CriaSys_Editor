@@ -1,12 +1,27 @@
-import { Canvas, FabricText, FabricImage, Rect, Circle, Ellipse, Line, loadSVGFromURL, util, filters } from 'fabric';
+import { Canvas, FabricText, IText, FabricImage, Rect, Circle, Ellipse, Line, loadSVGFromURL, util, filters, Shadow } from 'fabric';
 import { writePsdBuffer } from 'ag-psd';
 import { jsPDF } from 'jspdf';
+import {
+    buildTextStyleFromFont,
+    ensureFontLoaded,
+    findFontBySlug,
+    resolveFontWeight,
+    fontCssFamily,
+    isTextLikeType,
+    preloadIconFontCdns,
+    preloadStarterGoogleFonts,
+    FALLBACK_FONTS,
+} from './imageStudioTextFonts';
 
 function normalizeFabricType(obj) {
     const t = String(obj?.type || '').toLowerCase();
     if (t === 'image') return 'image';
-    if (t === 'text' || t === 'i-text') return 'text';
+    if (isTextLikeType(t)) return 'text';
     return t;
+}
+
+function isFabricText(obj) {
+    return !!obj && (obj instanceof IText || obj instanceof FabricText || isTextLikeType(obj?.type));
 }
 
 function isFabricImage(obj) {
@@ -22,7 +37,46 @@ const DEFAULT_FILTER_STATE = {
     vignette: 0,
 };
 
+function loadHtmlImage(url) {
+    return new Promise((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error('Navegador não conseguiu decodificar a imagem'));
+        el.src = url;
+    });
+}
+
+async function compositeFrameOnCanvasDataUrl(canvas, frameUrl, frameVisible = true) {
+    const w = canvas.getWidth();
+    const h = canvas.getHeight();
+    const baseUrl = canvas.toDataURL({ format: 'png', multiplier: 1 });
+    if (!frameUrl || frameVisible === false) {
+        return baseUrl;
+    }
+    const off = document.createElement('canvas');
+    off.width = w;
+    off.height = h;
+    const ctx = off.getContext('2d');
+    const base = await loadHtmlImage(baseUrl);
+    ctx.drawImage(base, 0, 0, w, h);
+    const frame = await loadHtmlImage(frameUrl);
+    ctx.drawImage(frame, 0, 0, w, h);
+    return off.toDataURL('image/png');
+}
+
 export class ImageStudioEngine {
+    static readEmbeddedJson(elementId) {
+        const el = document.getElementById(elementId);
+        if (!el?.textContent?.trim()) {
+            return null;
+        }
+        try {
+            return JSON.parse(el.textContent);
+        } catch {
+            return null;
+        }
+    }
+
     constructor(canvasEl) {
         this.canvasEl = canvasEl;
         this.canvas = null;
@@ -51,12 +105,14 @@ export class ImageStudioEngine {
         if (!obj || obj.criasysGuide) {
             return;
         }
+        const z = Math.max(0.08, this.viewportZoom || 1);
+        const cornerSize = Math.min(48, Math.max(14, Math.round(14 / z)));
         obj.set({
             cornerStyle: 'circle',
             cornerColor: '#a78bfa',
             cornerStrokeColor: '#ffffff',
             borderColor: '#a78bfa',
-            cornerSize: 14,
+            cornerSize,
             padding: 6,
             transparentCorners: false,
             hasControls: true,
@@ -65,7 +121,8 @@ export class ImageStudioEngine {
             lockRotation: false,
             lockScalingX: false,
             lockScalingY: false,
-            lockUniScaling: false,
+            selectable: true,
+            evented: true,
         });
         if (typeof obj.setControlsVisibility === 'function') {
             obj.setControlsVisibility({
@@ -100,8 +157,13 @@ export class ImageStudioEngine {
             preserveObjectStacking: true,
             selection: true,
             enableRetinaScaling: false,
+            uniformScaling: false,
+            stopContextMenu: true,
         });
-        this.canvas.on('object:scaling', () => this.canvas?.requestRenderAll());
+        this.canvas.on('object:scaling', () => {
+            this.canvas?.requestRenderAll();
+            this.notifyChange();
+        });
         this.canvas.on('object:modified', () => this.emitChange());
         this.canvas.on('object:added', (e) => {
             if (e.target) {
@@ -114,6 +176,8 @@ export class ImageStudioEngine {
         this.canvas.on('selection:updated', () => this.notifyChange());
         this.canvas.on('selection:cleared', () => this.notifyChange());
         this.canvas.on('object:moving', (e) => this.handleObjectMoving(e));
+        this.canvas.on('text:changed', () => this.emitChange(false));
+        this.canvas.on('mouse:down', () => this.canvas?.calcOffset());
         this.canvas.on('after:render', () => {
             this.drawGridOverlay();
             this.drawFormatGuidesOverlay();
@@ -310,10 +374,46 @@ export class ImageStudioEngine {
             this.scaleWrapper.style.transformOrigin = 'top center';
         }
         requestAnimationFrame(() => {
+            this.configureAllObjects();
             this.canvas?.calcOffset();
             this.canvas?.requestRenderAll();
         });
         return z;
+    }
+
+    getActiveObjectScalePercent() {
+        const obj = this.canvas?.getActiveObject();
+        if (!obj) {
+            return 100;
+        }
+        const sx = Math.abs(obj.scaleX ?? 1);
+        const sy = Math.abs(obj.scaleY ?? 1);
+        return Math.round(((sx + sy) / 2) * 100);
+    }
+
+    setActiveObjectScalePercent(percent) {
+        const obj = this.canvas?.getActiveObject();
+        if (!obj || obj.criasysGuide) {
+            return;
+        }
+        const sx = Math.abs(obj.scaleX ?? 1) || 1;
+        const sy = Math.abs(obj.scaleY ?? 1) || 1;
+        const ratio = sy / sx;
+        const p = Math.max(5, Math.min(400, Number(percent) || 100)) / 100;
+        const signX = (obj.scaleX ?? 1) < 0 ? -1 : 1;
+        const signY = (obj.scaleY ?? 1) < 0 ? -1 : 1;
+        if (Math.abs(ratio - 1) < 0.02) {
+            obj.set({ scaleX: signX * p, scaleY: signY * p });
+        } else {
+            obj.set({ scaleX: signX * p, scaleY: signY * p * ratio });
+        }
+        obj.setCoords();
+        this.canvas.requestRenderAll();
+        this.emitChange();
+    }
+
+    nudgeActiveObjectScale(deltaPercent) {
+        this.setActiveObjectScalePercent(this.getActiveObjectScalePercent() + deltaPercent);
     }
 
     alignActiveObject(mode) {
@@ -522,18 +622,118 @@ export class ImageStudioEngine {
     }
 
     addText(text = 'Seu texto', options = {}) {
-        const textObj = new FabricText(text, {
+        const textObj = new IText(text, {
             left: (this.designWidth / 2) - 120,
             top: (this.designHeight / 2) - 30,
             fontFamily: options.fontFamily || 'Impact, Arial Black, sans-serif',
             fontSize: options.fontSize || 64,
             fill: options.fill || '#ffffff',
-            fontWeight: 'bold',
-            name: 'Texto',
-            criasysId: 'text_' + Date.now(),
+            fontWeight: options.fontWeight ?? 'bold',
+            fontStyle: options.fontStyle || 'normal',
+            underline: !!options.underline,
+            linethrough: !!options.linethrough,
+            stroke: options.strokeWidth > 0 ? (options.stroke || '#000000') : '',
+            strokeWidth: options.strokeWidth || 0,
+            textAlign: options.textAlign || 'left',
+            lineHeight: options.lineHeight || 1.16,
+            charSpacing: options.charSpacing || 0,
+            editable: true,
+            name: options.name || 'Texto',
+            criasysId: options.criasysId || ('text_' + Date.now()),
+            criasysFontSlug: options.fontSlug || null,
+            criasysIconGlyph: options.iconGlyph || null,
         });
+        if (options.shadow) {
+            textObj.set('shadow', new Shadow({
+                color: options.shadowColor || '#000000',
+                blur: options.shadowBlur ?? 8,
+                offsetX: 2,
+                offsetY: 2,
+            }));
+        }
+        this.configureSelectableObject(textObj);
         this.canvas.add(textObj);
         this.canvas.setActiveObject(textObj);
+        this.canvas.requestRenderAll();
+        this.emitChange();
+        return textObj;
+    }
+
+    getTextStyleFromObject(obj) {
+        if (!isFabricText(obj)) {
+            return null;
+        }
+        const fw = obj.fontWeight;
+        const bold = fw === 'bold' || fw === 700 || fw === '700' || Number(fw) >= 600;
+        return {
+            fontSlug: obj.criasysFontSlug || 'bebas_neue',
+            content: obj.text || '',
+            fontSize: obj.fontSize || 48,
+            fill: obj.fill || '#ffffff',
+            stroke: obj.stroke || '#000000',
+            strokeWidth: obj.strokeWidth || 0,
+            bold,
+            italic: obj.fontStyle === 'italic',
+            underline: !!obj.underline,
+            linethrough: !!obj.linethrough,
+            align: obj.textAlign || 'left',
+            lineHeight: obj.lineHeight || 1.16,
+            charSpacing: obj.charSpacing || 0,
+            shadow: !!obj.shadow,
+            shadowColor: obj.shadow?.color || '#000000',
+            shadowBlur: obj.shadow?.blur ?? 8,
+        };
+    }
+
+    async applyTextStyle(object, style, fontMap = {}) {
+        if (!isFabricText(object) || !style) {
+            return;
+        }
+        const fontMeta = fontMap[style.fontSlug]
+            || findFontBySlug(Object.values(fontMap), style.fontSlug)
+            || null;
+        const isIcon = fontMeta?.source === 'icon';
+        const fontStyle = !isIcon && style.italic ? 'italic' : 'normal';
+        const fontWeight = fontMeta
+            ? resolveFontWeight(fontMeta, style.bold)
+            : (style.bold ? 'bold' : 'normal');
+
+        if (fontMeta) {
+            await ensureFontLoaded(fontMeta, { bold: style.bold, italic: style.italic });
+            object.set(buildTextStyleFromFont(fontMeta, { bold: style.bold, italic: style.italic }));
+            object.criasysFontSlug = style.fontSlug;
+        }
+
+        object.set({
+            fontStyle,
+            fontWeight,
+            fill: style.fill,
+            stroke: (style.strokeWidth || 0) > 0 ? (style.stroke || '#000000') : '',
+            strokeWidth: style.strokeWidth || 0,
+            fontSize: style.fontSize,
+            textAlign: style.align || 'left',
+            lineHeight: style.lineHeight || 1.16,
+            charSpacing: style.charSpacing || 0,
+            underline: !!style.underline,
+            linethrough: !!style.linethrough,
+        });
+        if (style.content != null && style.content !== object.text) {
+            object.set('text', style.content);
+        }
+        if (style.shadow) {
+            object.set('shadow', new Shadow({
+                color: style.shadowColor || '#000000',
+                blur: style.shadowBlur ?? 8,
+                offsetX: 2,
+                offsetY: 2,
+            }));
+        } else {
+            object.set('shadow', null);
+        }
+        if (typeof object.initDimensions === 'function') {
+            object.initDimensions();
+        }
+        object.set('dirty', true);
         this.canvas.requestRenderAll();
         this.emitChange();
     }
@@ -714,7 +914,7 @@ export class ImageStudioEngine {
                 });
                 this.canvas.add(circle);
             } else if (kind === 'text') {
-                const textObj = new FabricText(spec.text || 'Texto', {
+                const textObj = new IText(spec.text || 'Texto', {
                     left: (spec.x ?? 0.5) * width,
                     top: (spec.y ?? 0.5) * height,
                     fontFamily: spec.fontFamily || 'Impact, Arial Black, sans-serif',
@@ -810,10 +1010,11 @@ export class ImageStudioEngine {
         return this.canvas?.getActiveObject() ?? null;
     }
 
-    async exportBlob(format = 'png', quality = 0.92) {
+    async exportBlob(format = 'png', quality = 0.92, options = {}) {
         if (!this.canvas) {
             return null;
         }
+        const { frameOverlayUrl = null, frameVisible = true } = options;
         if (format === 'svg') {
             const svg = this.canvas.toSVG();
             return new Blob([svg], { type: 'image/svg+xml' });
@@ -822,22 +1023,38 @@ export class ImageStudioEngine {
             return new Blob([JSON.stringify(this.toJSON(), null, 2)], { type: 'application/json' });
         }
         if (format === 'psd') {
-            return this.exportPsdBlob();
+            return await this.exportPsdBlob(frameOverlayUrl, frameVisible);
         }
         if (format === 'pdf') {
-            return this.exportPdfBlob(quality);
+            return this.exportPdfBlob(quality, frameOverlayUrl, frameVisible);
         }
         const mime = format === 'jpg' ? 'image/jpeg' : 'image/png';
-        const dataUrl = this.canvas.toDataURL({
-            format: format === 'jpg' ? 'jpeg' : 'png',
-            quality,
-            multiplier: 1,
-        });
+        let dataUrl;
+        if (frameOverlayUrl && frameVisible !== false) {
+            dataUrl = await compositeFrameOnCanvasDataUrl(this.canvas, frameOverlayUrl, frameVisible);
+            if (format === 'jpg') {
+                const jpegOff = document.createElement('canvas');
+                jpegOff.width = this.canvas.getWidth();
+                jpegOff.height = this.canvas.getHeight();
+                const ctx = jpegOff.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, jpegOff.width, jpegOff.height);
+                const img = await loadHtmlImage(dataUrl);
+                ctx.drawImage(img, 0, 0);
+                dataUrl = jpegOff.toDataURL('image/jpeg', quality);
+            }
+        } else {
+            dataUrl = this.canvas.toDataURL({
+                format: format === 'jpg' ? 'jpeg' : 'png',
+                quality,
+                multiplier: 1,
+            });
+        }
         const res = await fetch(dataUrl);
-        return res.blob();
+        return new Blob([await res.blob()], { type: mime });
     }
 
-    exportPsdBlob() {
+    async exportPsdBlob(frameOverlayUrl = null, frameVisible = true) {
         const w = this.canvas.getWidth();
         const h = this.canvas.getHeight();
         const layers = [];
@@ -873,18 +1090,45 @@ export class ImageStudioEngine {
             });
         });
 
+        if (frameOverlayUrl && frameVisible !== false) {
+            const frameCanvas = document.createElement('canvas');
+            frameCanvas.width = w;
+            frameCanvas.height = h;
+            const fctx = frameCanvas.getContext('2d');
+            const frameImg = await loadHtmlImage(frameOverlayUrl);
+            fctx.drawImage(frameImg, 0, 0, w, h);
+            layers.unshift({
+                name: 'Moldura',
+                canvas: frameCanvas,
+            });
+        }
+
         const buffer = writePsdBuffer({ width: w, height: h, children: layers });
         return new Blob([buffer], { type: 'application/vnd.adobe.photoshop' });
     }
 
-    async exportPdfBlob(quality = 0.92) {
+    async exportPdfBlob(quality = 0.92, frameOverlayUrl = null, frameVisible = true) {
         const w = this.canvas.getWidth();
         const h = this.canvas.getHeight();
-        const dataUrl = this.canvas.toDataURL({
-            format: 'jpeg',
-            quality,
-            multiplier: 1,
-        });
+        let dataUrl;
+        if (frameOverlayUrl && frameVisible !== false) {
+            const pngUrl = await compositeFrameOnCanvasDataUrl(this.canvas, frameOverlayUrl, frameVisible);
+            const jpegOff = document.createElement('canvas');
+            jpegOff.width = w;
+            jpegOff.height = h;
+            const ctx = jpegOff.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            const img = await loadHtmlImage(pngUrl);
+            ctx.drawImage(img, 0, 0);
+            dataUrl = jpegOff.toDataURL('image/jpeg', quality);
+        } else {
+            dataUrl = this.canvas.toDataURL({
+                format: 'jpeg',
+                quality,
+                multiplier: 1,
+            });
+        }
         const orientation = w >= h ? 'landscape' : 'portrait';
         const pdf = new jsPDF({
             orientation,
@@ -917,6 +1161,28 @@ export function imageStudioMethods() {
         imageStudioExportFormats: [],
         imageStudioTemplates: [],
         imageStudioFonts: [],
+        imageStudioFontGroups: {},
+        imageStudioIconGlyphs: [],
+        imageStudioFontMap: {},
+        imageStudioFontFilter: '',
+        imageStudioIconFilter: '',
+        imageStudioTextFontSlug: 'bebas_neue',
+        imageStudioTextContent: 'Seu título aqui',
+        imageStudioTextSize: 64,
+        imageStudioTextFill: '#ffffff',
+        imageStudioTextStroke: '#000000',
+        imageStudioTextStrokeWidth: 0,
+        imageStudioTextBold: true,
+        imageStudioTextItalic: false,
+        imageStudioTextUnderline: false,
+        imageStudioTextLinethrough: false,
+        imageStudioTextAlign: 'center',
+        imageStudioTextLineHeight: 1.16,
+        imageStudioTextCharSpacing: 0,
+        imageStudioTextShadow: false,
+        imageStudioTextShadowColor: '#000000',
+        imageStudioTextShadowBlur: 8,
+        _syncingTextUi: false,
         imageStudioBgRemoval: false,
         imageStudioPreset: 'ig_feed_square',
         imageStudioPresetFilter: '',
@@ -927,6 +1193,7 @@ export function imageStudioMethods() {
         imageStudioBgColor: '#ffffff',
         imageStudioBgOpacity: 100,
         imageStudioSelectedObject: null,
+        imageStudioObjectScale: 100,
         imageStudioZoom: 100,
         imageStudioShowFormatGuides: true,
         imageStudioBgRemoving: false,
@@ -938,6 +1205,13 @@ export function imageStudioMethods() {
         imageStudioCanRedo: false,
         imageStudioFrameSlug: 'none',
         imageStudioFrameColor: '#ffffff',
+        imageStudioFrameSecondaryColor: '#ef4444',
+        imageStudioFrameWidth: 56,
+        imageStudioFrameOpacity: 100,
+        imageStudioFrameInset: 12,
+        imageStudioFrameOverlayUrl: null,
+        imageStudioFrameVisible: true,
+        imageStudioFrameApplyTimeout: null,
         imageStudioFrames: [],
         imageStudioElements: [],
         imageStudioElementGroups: {},
@@ -986,6 +1260,120 @@ export function imageStudioMethods() {
             return (this.imageStudioPresets || []).find((p) => p.slug === this.imageStudioPreset) || null;
         },
 
+        get filteredImageStudioFonts() {
+            const q = (this.imageStudioFontFilter || '').trim().toLowerCase();
+            let list = this.imageStudioFonts || [];
+            if (q) {
+                list = list.filter((f) =>
+                    (f.label || '').toLowerCase().includes(q)
+                    || (f.group_label || '').toLowerCase().includes(q)
+                    || (f.slug || '').toLowerCase().includes(q)
+                );
+            }
+            return list;
+        },
+
+        get imageStudioFontsGrouped() {
+            const groups = {};
+            (this.filteredImageStudioFonts || []).forEach((f) => {
+                const key = f.group_label || f.group || 'Outros';
+                if (!groups[key]) {
+                    groups[key] = [];
+                }
+                groups[key].push(f);
+            });
+            return groups;
+        },
+
+        get filteredImageStudioIcons() {
+            const q = (this.imageStudioIconFilter || '').trim().toLowerCase();
+            let list = this.imageStudioIconGlyphs || [];
+            if (q) {
+                list = list.filter((g) =>
+                    (g.label || '').toLowerCase().includes(q)
+                    || (g.group || '').toLowerCase().includes(q)
+                );
+            }
+            return list;
+        },
+
+        imageStudioTextStylePayload() {
+            return {
+                fontSlug: this.imageStudioTextFontSlug,
+                content: this.imageStudioTextContent,
+                fontSize: this.imageStudioTextSize,
+                fill: this.imageStudioTextFill,
+                stroke: this.imageStudioTextStroke,
+                strokeWidth: this.imageStudioTextStrokeWidth,
+                bold: this.imageStudioTextBold,
+                italic: this.imageStudioTextItalic,
+                underline: this.imageStudioTextUnderline,
+                linethrough: this.imageStudioTextLinethrough,
+                align: this.imageStudioTextAlign,
+                lineHeight: this.imageStudioTextLineHeight,
+                charSpacing: this.imageStudioTextCharSpacing,
+                shadow: this.imageStudioTextShadow,
+                shadowColor: this.imageStudioTextShadowColor,
+                shadowBlur: this.imageStudioTextShadowBlur,
+            };
+        },
+
+        buildImageStudioFontMap() {
+            const map = {};
+            (this.imageStudioFonts || []).forEach((f) => {
+                if (f.slug) {
+                    map[f.slug] = f;
+                }
+            });
+            this.imageStudioFontMap = map;
+        },
+
+        seedImageStudioFromEmbedded(meta = {}) {
+            let fonts = meta.imageStudioFonts;
+            let icons = meta.imageStudioIconGlyphs;
+            let iconFonts = meta.imageStudioIconFonts;
+
+            if (!Array.isArray(fonts) || !fonts.length) {
+                fonts = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-fonts');
+            }
+            if (!Array.isArray(icons) || !icons.length) {
+                icons = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-icons');
+            }
+            if (!Array.isArray(iconFonts) || !iconFonts.length) {
+                iconFonts = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-icon-fonts');
+            }
+
+            if (Array.isArray(fonts) && fonts.length) {
+                this.imageStudioFonts = fonts;
+            } else if (!this.imageStudioFonts?.length) {
+                this.imageStudioFonts = FALLBACK_FONTS;
+            }
+            if (Array.isArray(icons) && icons.length) {
+                this.imageStudioIconGlyphs = icons;
+            }
+            this.buildImageStudioFontMap();
+            preloadIconFontCdns(iconFonts || []);
+            preloadStarterGoogleFonts(this.imageStudioFonts);
+            if (!this.imageStudioFontMap[this.imageStudioTextFontSlug]) {
+                this.imageStudioTextFontSlug = this.imageStudioFonts[0]?.slug || 'bebas_neue';
+            }
+        },
+
+        imageStudioFilterFontList() {
+            const q = (this.imageStudioFontFilter || '').trim().toLowerCase();
+            const list = this.$refs.imageStudioFontList;
+            if (!list) {
+                return;
+            }
+            list.querySelectorAll('.is-font-row').forEach((btn) => {
+                const label = (btn.dataset.fontLabel || '').toLowerCase();
+                const group = (btn.dataset.fontGroup || '').toLowerCase();
+                const slug = (btn.dataset.fontSlug || '').toLowerCase();
+                const show = !q || label.includes(q) || group.includes(q) || slug.includes(q);
+                btn.style.display = show ? '' : 'none';
+            });
+        },
+
         async loadImageStudioCatalog() {
             try {
                 const { data } = await api.get('/image-studio/catalog');
@@ -996,17 +1384,31 @@ export function imageStudioMethods() {
                 this.imageStudioFrames = data.frames || [];
                 this.imageStudioElements = data.elements || [];
                 this.imageStudioElementGroups = data.element_groups || {};
-                this.imageStudioFonts = data.fonts || [];
+                this.imageStudioFonts = data.fonts?.length ? data.fonts : FALLBACK_FONTS;
+                this.imageStudioFontGroups = data.font_groups || {};
+                this.imageStudioIconGlyphs = data.icon_glyphs || [];
+                this.buildImageStudioFontMap();
+                preloadIconFontCdns(data.icon_fonts || []);
+                preloadStarterGoogleFonts(this.imageStudioFonts);
                 this.imageStudioBgRemoval = true;
                 if (data.defaults?.preset) {
                     this.imageStudioPreset = data.defaults.preset;
                 }
-            } catch (_) {
-                /* opcional */
+                if (!this.imageStudioFontMap[this.imageStudioTextFontSlug]) {
+                    this.imageStudioTextFontSlug = this.imageStudioFonts[0]?.slug || 'bebas_neue';
+                }
+            } catch (e) {
+                console.error('Image Studio catalog:', e);
+                if (!this.imageStudioFonts?.length) {
+                    this.imageStudioFonts = FALLBACK_FONTS;
+                    this.buildImageStudioFontMap();
+                }
+                this.error = e.response?.data?.message || 'Não foi possível carregar catálogo do Image Studio';
             }
         },
 
         async initImageStudio() {
+            await this.loadImageStudioCatalog();
             if (this.imageStudioReady && this.imageStudioEngine?.canvas) {
                 this.imageStudioEngine.setScaleWrapper(this.$refs.imageStudioCanvasScaler);
                 this.imageStudioEngine.setFormatGuidesVisible(this.imageStudioShowFormatGuides);
@@ -1014,7 +1416,6 @@ export function imageStudioMethods() {
                 this.fitImageStudioCanvas();
                 return;
             }
-            await this.loadImageStudioCatalog();
             await this.$nextTick();
 
             const el = this.$refs.imageStudioCanvas;
@@ -1129,16 +1530,66 @@ export function imageStudioMethods() {
         },
 
         refreshImageStudioLayers() {
-            this.imageStudioLayers = this.imageStudioEngine?.getLayers() || [];
+            let layers = this.imageStudioEngine?.getLayers() || [];
+            if (this.imageStudioFrameOverlayUrl) {
+                layers = [{
+                    id: 'criasys_frame_overlay',
+                    name: 'Moldura',
+                    type: 'image',
+                    visible: this.imageStudioFrameVisible !== false,
+                    locked: true,
+                    isFrameLayer: true,
+                    object: { criasysFrameLayer: true },
+                }, ...layers];
+            }
+            this.imageStudioLayers = layers;
             const raw = this.imageStudioEngine?.getActiveObject();
             this.imageStudioSelectedObject = raw
                 ? { type: normalizeFabricType(raw), opacity: raw.opacity ?? 1 }
                 : null;
+            if (raw && isFabricText(raw)) {
+                this._syncingTextUi = true;
+                const st = this.imageStudioEngine.getTextStyleFromObject(raw);
+                if (st) {
+                    this.imageStudioTextFontSlug = st.fontSlug;
+                    this.imageStudioTextContent = st.content;
+                    this.imageStudioTextSize = st.fontSize;
+                    this.imageStudioTextFill = st.fill;
+                    this.imageStudioTextStroke = st.stroke;
+                    this.imageStudioTextStrokeWidth = st.strokeWidth;
+                    this.imageStudioTextBold = st.bold;
+                    this.imageStudioTextItalic = st.italic;
+                    this.imageStudioTextUnderline = st.underline;
+                    this.imageStudioTextLinethrough = st.linethrough;
+                    this.imageStudioTextAlign = st.align;
+                    this.imageStudioTextLineHeight = st.lineHeight;
+                    this.imageStudioTextCharSpacing = st.charSpacing;
+                    this.imageStudioTextShadow = st.shadow;
+                    this.imageStudioTextShadowColor = st.shadowColor;
+                    this.imageStudioTextShadowBlur = st.shadowBlur;
+                }
+                this.$nextTick(() => {
+                    this._syncingTextUi = false;
+                });
+            }
+            this.imageStudioObjectScale = this.imageStudioEngine?.getActiveObjectScalePercent() ?? 100;
             this.imageStudioCanUndo = this.imageStudioEngine?.canUndo() ?? false;
             this.imageStudioCanRedo = this.imageStudioEngine?.canRedo() ?? false;
             if (raw && isFabricImage(raw)) {
                 this.imageStudioFilters = this.imageStudioEngine.getFilterState(raw);
             }
+        },
+
+        imageStudioSetObjectScale(percent) {
+            this.imageStudioEngine?.setActiveObjectScalePercent(percent);
+            this.imageStudioObjectScale = this.imageStudioEngine?.getActiveObjectScalePercent() ?? 100;
+            this.refreshImageStudioLayers();
+        },
+
+        imageStudioNudgeObjectScale(delta) {
+            this.imageStudioEngine?.nudgeActiveObjectScale(delta);
+            this.imageStudioObjectScale = this.imageStudioEngine?.getActiveObjectScalePercent() ?? 100;
+            this.refreshImageStudioLayers();
         },
 
         imageStudioApplyFilters() {
@@ -1204,36 +1655,84 @@ export function imageStudioMethods() {
         },
 
         async imageStudioApplyFrame() {
-            if (!this.imageStudioEngine || this.imageStudioFrameSlug === 'none') {
+            if (this.imageStudioFrameSlug === 'none' || !this.imageStudioFrameSlug) {
+                this.imageStudioFrameOverlayUrl = null;
+                this.imageStudioFrameVisible = true;
+                this.refreshImageStudioLayers();
+                return;
+            }
+            await this.initImageStudio();
+            if (!this.imageStudioEngine?.canvas) {
+                this.error = 'Canvas não carregou — aguarde ou recarregue a página';
                 return;
             }
             const preset = this.imageStudioCurrentPreset;
             if (!preset) {
+                this.error = 'Selecione um formato de canvas antes de aplicar a moldura';
                 return;
             }
             try {
+                this.error = null;
+                this.message = 'Gerando moldura…';
                 const { data } = await api.get(`/projects/${this.projectId}/image-studio/frame-preview`, {
                     params: {
                         slug: this.imageStudioFrameSlug,
                         width: preset.width,
                         height: preset.height,
                         color: this.imageStudioFrameColor,
+                        secondary_color: this.imageStudioFrameSecondaryColor,
+                        frame_width: this.imageStudioFrameWidth,
+                        opacity: this.imageStudioFrameOpacity,
+                        inset: this.imageStudioFrameInset,
                     },
                 });
-                if (data.url) {
-                    await this.imageStudioEngine.addImageFromUrl(data.url, 'Moldura');
-                    const layers = this.imageStudioEngine.getLayers();
-                    const frameLayer = layers[0];
-                    if (frameLayer?.object) {
-                        this.imageStudioEngine.moveLayer(frameLayer.object, 'top');
-                        frameLayer.object.set({ name: 'Moldura', selectable: true });
+                let imageSrc = data?.data_url || null;
+                if (!imageSrc && data?.url) {
+                    const fetchUrl = data.url.startsWith('http')
+                        ? data.url.replace(/^https?:\/\/[^/]+/, '')
+                        : data.url;
+                    const fileRes = await fetch(fetchUrl, { credentials: 'same-origin' });
+                    if (!fileRes.ok) {
+                        throw new Error('Não foi possível carregar o PNG da moldura (HTTP ' + fileRes.status + ')');
                     }
-                    this.refreshImageStudioLayers();
-                    this.message = 'Moldura aplicada';
+                    const blob = await fileRes.blob();
+                    imageSrc = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.onerror = () => reject(new Error('Erro ao ler PNG da moldura'));
+                        reader.readAsDataURL(blob);
+                    });
                 }
+                if (!imageSrc) {
+                    this.error = 'Servidor não retornou a imagem da moldura';
+                    return;
+                }
+                this.imageStudioFrameOverlayUrl = imageSrc;
+                this.imageStudioFrameVisible = true;
+                this.refreshImageStudioLayers();
+                const frameName = (this.imageStudioFrames || []).find((f) => f.slug === this.imageStudioFrameSlug)?.name
+                    || this.imageStudioFrameSlug;
+                this.message = `Moldura "${frameName}" aplicada — visível sobre o canvas`;
             } catch (e) {
-                this.error = e.response?.data?.message || 'Erro ao aplicar moldura';
+                this.error = e.response?.data?.message || e.message || 'Erro ao aplicar moldura';
             }
+        },
+
+        onImageStudioFrameSlugChange() {
+            if (this.imageStudioFrameSlug === 'none') {
+                this.imageStudioFrameOverlayUrl = null;
+                this.imageStudioFrameVisible = true;
+                this.refreshImageStudioLayers();
+            }
+        },
+
+        scheduleImageStudioFrameReapply() {
+            clearTimeout(this.imageStudioFrameApplyTimeout);
+            this.imageStudioFrameApplyTimeout = setTimeout(() => {
+                if (this.imageStudioFrameOverlayUrl && this.imageStudioFrameSlug !== 'none') {
+                    this.imageStudioApplyFrame();
+                }
+            }, 450);
         },
 
         async imageStudioPickLocalFolder() {
@@ -1317,6 +1816,9 @@ export function imageStudioMethods() {
                 this.imageStudioEngine.setSize(preset.width, preset.height);
                 this.fitImageStudioCanvas();
                 this.message = `Formato: ${preset.name} (${preset.width}×${preset.height})`;
+                if (this.imageStudioFrameOverlayUrl && this.imageStudioFrameSlug !== 'none') {
+                    await this.imageStudioApplyFrame();
+                }
             }
             this.refreshImageStudioLayers();
         },
@@ -1325,16 +1827,161 @@ export function imageStudioMethods() {
             this.imageStudioEngine?.setBackgroundColor(this.imageStudioBgColor, this.imageStudioBgOpacity);
         },
 
-        imageStudioAddText() {
+        async imageStudioSelectFont(slug) {
+            this.imageStudioTextFontSlug = slug;
+            const fontMeta = this.imageStudioFontMap[slug];
+            if (fontMeta) {
+                await ensureFontLoaded(fontMeta, {
+                    bold: this.imageStudioTextBold,
+                    italic: this.imageStudioTextItalic,
+                });
+            }
+            await this.imageStudioOnTextControlChange();
+        },
+
+        async imageStudioOnTextControlChange() {
+            if (this._syncingTextUi) {
+                return;
+            }
+            const obj = this.imageStudioEngine?.getActiveObject();
+            if (isFabricText(obj)) {
+                await this.imageStudioEngine.applyTextStyle(
+                    obj,
+                    this.imageStudioTextStylePayload(),
+                    this.imageStudioFontMap
+                );
+                this.refreshImageStudioLayers();
+            }
+        },
+
+        async imageStudioAddText() {
             if (!this.imageStudioEngine?.canvas) {
                 this.error = 'Abra o Image Studio e aguarde o canvas carregar';
                 return;
             }
-            const font = this.imageStudioFonts.find((f) => f.slug === 'impact') || this.imageStudioFonts[0];
-            const family = font?.label ? `${font.label}, Impact, sans-serif` : 'Impact, sans-serif';
-            this.imageStudioEngine.addText('Seu título aqui', { fontFamily: family });
+            const fontMeta = this.imageStudioFontMap[this.imageStudioTextFontSlug]
+                || findFontBySlug(this.imageStudioFonts, this.imageStudioTextFontSlug)
+                || findFontBySlug(this.imageStudioFonts, 'bebas_neue')
+                || this.imageStudioFonts[0];
+            if (fontMeta) {
+                await ensureFontLoaded(fontMeta, {
+                    bold: this.imageStudioTextBold,
+                    italic: this.imageStudioTextItalic,
+                });
+            }
+            const style = buildTextStyleFromFont(fontMeta, {
+                bold: this.imageStudioTextBold,
+                italic: this.imageStudioTextItalic,
+            });
+            const text = this.imageStudioTextContent || 'Seu título aqui';
+            this.imageStudioEngine.addText(text, {
+                ...style,
+                fontSize: this.imageStudioTextSize,
+                fill: this.imageStudioTextFill,
+                stroke: this.imageStudioTextStroke,
+                strokeWidth: this.imageStudioTextStrokeWidth,
+                underline: this.imageStudioTextUnderline,
+                linethrough: this.imageStudioTextLinethrough,
+                textAlign: this.imageStudioTextAlign,
+                lineHeight: this.imageStudioTextLineHeight,
+                charSpacing: this.imageStudioTextCharSpacing,
+                fontSlug: fontMeta?.slug || this.imageStudioTextFontSlug,
+                shadow: this.imageStudioTextShadow,
+                shadowColor: this.imageStudioTextShadowColor,
+                shadowBlur: this.imageStudioTextShadowBlur,
+            });
             this.refreshImageStudioLayers();
-            this.message = 'Texto adicionado';
+            this.message = `Texto adicionado — ${fontMeta?.label || 'fonte'}`;
+        },
+
+        async imageStudioAddIconGlyph(glyph) {
+            if (!glyph?.char) {
+                return;
+            }
+            if (!this.imageStudioEngine?.canvas) {
+                await this.initImageStudio();
+            }
+            if (!this.imageStudioEngine?.canvas) {
+                this.error = 'Canvas não carregou';
+                return;
+            }
+            const fontMeta = this.imageStudioFontMap[glyph.font]
+                || findFontBySlug(this.imageStudioFonts, glyph.font);
+            if (fontMeta) {
+                await ensureFontLoaded(fontMeta);
+            }
+            const style = buildTextStyleFromFont(fontMeta, { bold: false, italic: false });
+            this.imageStudioEngine.addText(glyph.char, {
+                ...style,
+                fontSize: this.imageStudioTextSize || 96,
+                fill: this.imageStudioTextFill || '#ffffff',
+                stroke: this.imageStudioTextStroke,
+                strokeWidth: this.imageStudioTextStrokeWidth,
+                textAlign: 'center',
+                fontSlug: glyph.font,
+                iconGlyph: glyph.slug,
+                name: glyph.label || 'Ícone',
+            });
+            this.refreshImageStudioLayers();
+            this.message = `Ícone "${glyph.label || glyph.slug}" adicionado`;
+        },
+
+        imageStudioAddIconGlyphBySlug(slug) {
+            if (!slug) {
+                return;
+            }
+            let glyph = (this.imageStudioIconGlyphs || []).find((g) => g.slug === slug);
+            if (!glyph) {
+                const embedded = ImageStudioEngine.readEmbeddedJson('criasys-image-studio-icons');
+                if (Array.isArray(embedded)) {
+                    this.imageStudioIconGlyphs = embedded;
+                    glyph = embedded.find((g) => g.slug === slug);
+                }
+            }
+            if (!glyph) {
+                this.error = `Ícone "${slug}" não encontrado no catálogo`;
+                return;
+            }
+            void this.imageStudioAddIconGlyph(glyph);
+        },
+
+        imageStudioFilterIconList() {
+            const q = (this.imageStudioIconFilter || '').trim().toLowerCase();
+            const list = this.$refs.imageStudioIconList;
+            if (!list) {
+                return;
+            }
+            list.querySelectorAll('.is-icon-row').forEach((btn) => {
+                const label = (btn.dataset.iconLabel || '').toLowerCase();
+                const group = (btn.dataset.iconGroup || '').toLowerCase();
+                const show = !q || label.includes(q) || group.includes(q);
+                btn.style.display = show ? '' : 'none';
+            });
+        },
+
+        imageStudioToggleTextBold() {
+            this.imageStudioTextBold = !this.imageStudioTextBold;
+            void this.imageStudioOnTextControlChange();
+        },
+
+        imageStudioToggleTextItalic() {
+            this.imageStudioTextItalic = !this.imageStudioTextItalic;
+            void this.imageStudioOnTextControlChange();
+        },
+
+        imageStudioToggleTextUnderline() {
+            this.imageStudioTextUnderline = !this.imageStudioTextUnderline;
+            void this.imageStudioOnTextControlChange();
+        },
+
+        imageStudioToggleTextLinethrough() {
+            this.imageStudioTextLinethrough = !this.imageStudioTextLinethrough;
+            void this.imageStudioOnTextControlChange();
+        },
+
+        imageStudioSetTextAlign(align) {
+            this.imageStudioTextAlign = align;
+            this.imageStudioOnTextControlChange();
         },
 
         imageStudioAddShape(type) {
@@ -1434,11 +2081,25 @@ export function imageStudioMethods() {
         },
 
         imageStudioSelectLayer(layer) {
+            if (layer?.isFrameLayer) {
+                return;
+            }
             this.imageStudioEngine?.selectLayer(layer.object);
             this.refreshImageStudioLayers();
         },
 
         imageStudioLayerAction(layer, action) {
+            if (layer?.isFrameLayer) {
+                if (action === 'visibility') {
+                    this.imageStudioFrameVisible = !this.imageStudioFrameVisible;
+                } else if (action === 'delete') {
+                    this.imageStudioFrameOverlayUrl = null;
+                    this.imageStudioFrameVisible = true;
+                    this.imageStudioFrameSlug = 'none';
+                }
+                this.refreshImageStudioLayers();
+                return;
+            }
             if (action === 'visibility') {
                 this.imageStudioEngine?.toggleLayerVisibility(layer.object);
             } else if (action === 'lock') {
@@ -1463,7 +2124,10 @@ export function imageStudioMethods() {
                 return;
             }
             try {
-                const blob = await this.imageStudioEngine.exportBlob(format);
+                const blob = await this.imageStudioEngine.exportBlob(format, 0.92, {
+                    frameOverlayUrl: this.imageStudioFrameOverlayUrl,
+                    frameVisible: this.imageStudioFrameVisible,
+                });
                 if (!blob) {
                     return;
                 }

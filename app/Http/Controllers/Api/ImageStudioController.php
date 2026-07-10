@@ -14,9 +14,9 @@ use Illuminate\Support\Str;
 
 class ImageStudioController extends Controller
 {
-    public function catalog(ImageStudioService $studio): JsonResponse
+    public function catalog(Request $request, ImageStudioService $studio): JsonResponse
     {
-        return response()->json($studio->catalog());
+        return response()->json($studio->catalog($request->user()));
     }
 
     public function show(Project $project, Request $request, ImageStudioService $studio): JsonResponse
@@ -148,7 +148,7 @@ class ImageStudioController extends Controller
             'height' => ['required', 'integer', 'min:100', 'max:8000'],
             'color' => ['nullable', 'string', 'max:32'],
             'secondary_color' => ['nullable', 'string', 'max:32'],
-            'frame_width' => ['nullable', 'integer', 'min:4', 'max:120'],
+            'frame_width' => ['nullable', 'integer', 'min:4', 'max:200'],
             'opacity' => ['nullable', 'integer', 'min:0', 'max:100'],
             'inset' => ['nullable', 'integer', 'min:0', 'max:80'],
         ]);
@@ -161,7 +161,7 @@ class ImageStudioController extends Controller
             [
                 'color' => $data['color'] ?? null,
                 'secondary_color' => $data['secondary_color'] ?? null,
-                'width' => $data['frame_width'] ?? null,
+                'frame_width' => $data['frame_width'] ?? null,
                 'opacity' => $data['opacity'] ?? null,
                 'inset' => $data['inset'] ?? null,
             ]

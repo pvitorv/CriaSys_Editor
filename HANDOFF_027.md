@@ -1,41 +1,53 @@
-# Handoff — Branch `027` (Image Studio Fase 11 — UX editor)
+# Handoff — Branch `027` (Image Studio — tipografia & ícones)
 
-> Base: `026` — **branch de trabalho para próximas melhorias**
+> Base: `026` · **concluída e mergeável**
 
-## Fase 11 — estabilização UX (início em 027)
+## Entregue na `027`
 
-Itens **estáveis na base `026`** (commit anterior):
+### Texto & tipografia (Image Studio)
 
-- Remover fundo via arquivo **e** da imagem selecionada no canvas (`@imgly/background-removal` no cliente)
-- Layouts prontos aplicam preset + conteúdo; canvas redimensiona ao formato do layout
-- Guias de formato: contorno violeta (corte), sangria amarela tracejada, área segura em verticais
-- Zoom via wrapper CSS (− / slider / + / 100% / Ajustar + scroll) sem quebrar hit-test dos handles
-- Catálogo expandido de formatos (~158 presets) e elementos (formas + 176 ícones Bootstrap Icons)
-- Script `npm run icons:sync` → `config/image_studio_icons.php` + `public/icons/bootstrap/`
+- Catálogo **91 fontes**: sistema (Windows), Google Fonts, Font Awesome / Material como fontes
+- Config `config/image_studio_fonts.php` + loader `resources/js/imageStudioTextFonts.js`
+- Painel **Texto & ícones**: negrito, itálico, sublinhado, tachado, cor, contorno, sombra, alinhamento
+- Texto editável no canvas (`IText`) — duplo-clique
+- **Lista de fontes renderizada no PHP** (não depende de Alpine/API) — corrige lista vazia
+- Catálogo embutido na página via `<script type="application/json">` + seed no `init()`
 
-## Pendente (trabalhar em `027`)
+### Ícones como fonte
 
-- [ ] Redimensionamento pelos cantos 100% confiável em todas as imagens
-- [ ] Elementos: validar clique → canvas em todos os tipos (ícone SVG, formas, stickers)
-- [ ] Preview visual mais claro ao trocar formato (fora só guias internas)
-- [ ] Demais pedidos do editor visual (movimentação livre, zoom persistente, etc.)
+- **62 ícones** (Font Awesome solid/brands + Material Symbols)
+- Grade renderizada no PHP; clique → `imageStudioAddIconGlyphBySlug()`
+- CDN Font Awesome + Material Symbols no editor
 
-## Testar base estável (`026`)
+### Backend
+
+- `ImageStudioService::fontCatalog()` — merge thumbnail + Google + ícones
+- `ProjectWebController@editor` — passa `$imageStudioCatalog` para a view
+- API `/api/image-studio/catalog` com fontes/ícones expandidos
+
+### Molduras (tentativas — **não estável visualmente**)
+
+- Overlay HTML `<img>` (mesmo padrão Thumbnail), export composto
+- **Usuário confirmou que ainda não aparece no canvas** — não priorizar até Opus/revisão dedicada
+
+## Testar o que funciona
 
 ```bash
 npm run build
+php artisan view:clear
 php artisan config:clear
 php artisan serve
 ```
 
-1. Image Studio → upload imagem → remover fundo da seleção
-2. Aplicar layout → ver guias e proporção correta
-3. Trocar formato na coluna esquerda → canvas muda tamanho
-4. Zoom slider + scroll → handles ainda redimensionam
+1. Image Studio → **Texto & ícones** → ver **91 fontes** na lista
+2. Selecionar Montserrat/Roboto → **+ Adicionar** → duplo-clique para editar
+3. Clicar no texto no canvas → **B** / **I** / cor
+4. Rolar ícones → clicar estrela/coração/YouTube → aparece no canvas
 
 ## Branches
 
 | Branch | Estado |
 |--------|--------|
-| `026` | **Estável** — remover fundo, layouts, guias, zoom, catálogo |
-| `027` | **Atual** — próximas correções UX |
+| `026` | Estável — rembg, layouts, guias, zoom |
+| `027` | **Concluída** — tipografia, ícones, catálogo fontes |
+| `028` | **Próxima** — continuar Image Studio |

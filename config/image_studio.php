@@ -641,13 +641,13 @@ return [
         'double_line' => ['name' => 'Linha dupla', 'category' => 'basico'],
         'rounded_modern' => ['name' => 'Cantos arredondados', 'category' => 'moderno'],
         'gradient_border' => ['name' => 'Borda degradê', 'category' => 'moderno'],
-        'neon_glow' => ['name' => 'Neon glow', 'category' => 'neon'],
+        'neon_solid' => ['name' => 'Neon glow', 'category' => 'neon'],
         'letterbox_frame' => ['name' => 'Letterbox cinema', 'category' => 'cinema'],
         'polaroid' => ['name' => 'Polaroid', 'category' => 'vintage'],
-        'ig_gradient_ring' => ['name' => 'Anel Instagram', 'category' => 'social'],
-        'yt_accent' => ['name' => 'Accent YouTube', 'category' => 'social'],
+        'instagram_round' => ['name' => 'Anel Instagram', 'category' => 'social'],
+        'youtube_red' => ['name' => 'Accent YouTube', 'category' => 'social'],
         'corner_brackets' => ['name' => 'Cantoneiras', 'category' => 'tech'],
-        'gold_double' => ['name' => 'Dourado duplo', 'category' => 'luxo'],
+        'gold_classic' => ['name' => 'Dourado duplo', 'category' => 'luxo'],
     ],
 
     'defaults' => [

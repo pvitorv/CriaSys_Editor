@@ -472,6 +472,9 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         async init() {
+            if (typeof this.seedImageStudioFromEmbedded === 'function') {
+                this.seedImageStudioFromEmbedded({});
+            }
             await Promise.all([
                 this.loadSlides(),
                 this.loadNarration(),

@@ -27,7 +27,7 @@ class ThumbnailFrameDrawer
         $secondary = $this->hexToRgbArray($settings['frame_secondary_color'] ?? $settings['accent_color'] ?? '#ef4444');
         $opacity = max(0, min(100, (int) ($settings['frame_opacity'] ?? 100)));
         $alpha = (int) round(127 * (1 - $opacity / 100));
-        $baseWeight = max(0.2, min(2.5, ((int) ($settings['frame_width'] ?? 28)) / 25));
+        $baseWeight = max(0.3, min(4.0, ((int) ($settings['frame_width'] ?? 28)) / 20));
         $inset = max(0, min(80, (int) ($settings['frame_inset'] ?? 12)));
         $ref = min($width, $height);
         $border = max(2, (int) round($ref * 0.008 * $baseWeight));

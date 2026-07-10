@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Project;
 use App\Models\ProjectTemplate;
+use App\Services\ImageStudio\ImageStudioService;
 use App\Services\ProjectStorageService;
 use App\Services\ProjectTemplateService;
 use Illuminate\Http\RedirectResponse;
@@ -53,11 +54,13 @@ class ProjectWebController extends Controller
         return redirect()->route('projects.editor', $project);
     }
 
-    public function editor(Project $project): View
+    public function editor(Project $project, ImageStudioService $imageStudio): View
     {
         $this->authorize('view', $project);
         $project->load('slides');
 
-        return view('projects.editor', compact('project'));
+        $imageStudioCatalog = $imageStudio->catalog(auth()->user());
+
+        return view('projects.editor', compact('project', 'imageStudioCatalog'));
     }
 }
