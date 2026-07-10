@@ -38,7 +38,15 @@ class ImageStudioService
             'frames' => collect(config('image_studio.frame_presets', []))
                 ->map(fn (array $meta, string $slug) => array_merge($meta, ['slug' => $slug]))
                 ->values(),
-            'background_removal_available' => app(BackgroundRemovalService::class)->isAvailable(),
+            'elements' => collect(config('image_studio.elements', []))
+                ->merge(config('image_studio_icons.elements', []))
+                ->values(),
+            'element_groups' => array_merge(
+                config('image_studio.element_groups', []),
+                config('image_studio_icons.groups', [])
+            ),
+            'background_removal_available' => true,
+            'background_removal_client' => true,
         ];
     }
 

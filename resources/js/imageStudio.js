@@ -1,6 +1,17 @@
-import { Canvas, FabricText, FabricImage, Rect, Circle, filters } from 'fabric';
+import { Canvas, FabricText, FabricImage, Rect, Circle, Ellipse, Line, loadSVGFromURL, util, filters } from 'fabric';
 import { writePsdBuffer } from 'ag-psd';
 import { jsPDF } from 'jspdf';
+
+function normalizeFabricType(obj) {
+    const t = String(obj?.type || '').toLowerCase();
+    if (t === 'image') return 'image';
+    if (t === 'text' || t === 'i-text') return 'text';
+    return t;
+}
+
+function isFabricImage(obj) {
+    return !!obj && (obj instanceof FabricImage || normalizeFabricType(obj) === 'image');
+}
 
 const DEFAULT_FILTER_STATE = {
     brightness: 50,
@@ -24,27 +35,90 @@ export class ImageStudioEngine {
         this.showGrid = false;
         this.snapToGrid = false;
         this.gridSize = 20;
+        this.designWidth = 1080;
+        this.designHeight = 1080;
+        this.viewportZoom = 1;
+        this.scaleWrapper = null;
+        this.showFormatGuides = true;
+    }
+
+    setScaleWrapper(el) {
+        this.scaleWrapper = el || null;
+        this.applyViewportZoom(this.viewportZoom || 1);
+    }
+
+    configureSelectableObject(obj) {
+        if (!obj || obj.criasysGuide) {
+            return;
+        }
+        obj.set({
+            cornerStyle: 'circle',
+            cornerColor: '#a78bfa',
+            cornerStrokeColor: '#ffffff',
+            borderColor: '#a78bfa',
+            cornerSize: 14,
+            padding: 6,
+            transparentCorners: false,
+            hasControls: true,
+            hasBorders: true,
+            lockScalingFlip: false,
+            lockRotation: false,
+            lockScalingX: false,
+            lockScalingY: false,
+            lockUniScaling: false,
+        });
+        if (typeof obj.setControlsVisibility === 'function') {
+            obj.setControlsVisibility({
+                tl: true, tr: true, bl: true, br: true,
+                ml: true, mt: true, mr: true, mb: true, mtr: true,
+            });
+        }
+        if (isFabricImage(obj)) {
+            obj.set({
+                objectCaching: false,
+                lockScalingX: false,
+                lockScalingY: false,
+            });
+        }
+    }
+
+    configureAllObjects() {
+        this.canvas?.getObjects().forEach((obj) => this.configureSelectableObject(obj));
     }
 
     init(width, height, backgroundColor = '#ffffff') {
         if (this.canvas) {
             this.canvas.dispose();
         }
+        this.designWidth = width;
+        this.designHeight = height;
+        this.viewportZoom = 1;
         this.canvas = new Canvas(this.canvasEl, {
             width,
             height,
             backgroundColor,
             preserveObjectStacking: true,
             selection: true,
+            enableRetinaScaling: false,
         });
+        this.canvas.on('object:scaling', () => this.canvas?.requestRenderAll());
         this.canvas.on('object:modified', () => this.emitChange());
-        this.canvas.on('object:added', () => this.emitChange());
+        this.canvas.on('object:added', (e) => {
+            if (e.target) {
+                this.configureSelectableObject(e.target);
+            }
+            this.emitChange();
+        });
         this.canvas.on('object:removed', () => this.emitChange());
         this.canvas.on('selection:created', () => this.notifyChange());
         this.canvas.on('selection:updated', () => this.notifyChange());
         this.canvas.on('selection:cleared', () => this.notifyChange());
         this.canvas.on('object:moving', (e) => this.handleObjectMoving(e));
-        this.canvas.on('after:render', () => this.drawGridOverlay());
+        this.canvas.on('after:render', () => {
+            this.drawGridOverlay();
+            this.drawFormatGuidesOverlay();
+        });
+        this.applyViewportZoom(1);
         this.history = [];
         this.historyIndex = -1;
         return this.canvas;
@@ -115,7 +189,8 @@ export class ImageStudioEngine {
         this.historyPaused = true;
         await this.canvas.loadFromJSON(JSON.parse(jsonStr));
         this.canvas.getObjects().forEach((obj) => {
-            if (obj.criasysFilters && obj.type === 'image') {
+            this.configureSelectableObject(obj);
+            if (obj.criasysFilters && isFabricImage(obj)) {
                 this.applyFiltersToObject(obj, obj.criasysFilters);
             }
         });
@@ -178,6 +253,69 @@ export class ImageStudioEngine {
         ctx.restore();
     }
 
+    drawFormatGuidesOverlay() {
+        if (!this.canvas || !this.showFormatGuides) {
+            return;
+        }
+        const ctx = this.canvas.contextTop;
+        if (!ctx) {
+            return;
+        }
+        const w = this.designWidth || this.canvas.getWidth();
+        const h = this.designHeight || this.canvas.getHeight();
+        const zoom = this.canvas.getZoom() || 1;
+        ctx.save();
+        ctx.lineWidth = 2 / zoom;
+        ctx.strokeStyle = '#8b5cf6';
+        ctx.strokeRect(1, 1, w - 2, h - 2);
+        const margin = Math.max(24, Math.round(Math.min(w, h) * 0.05));
+        ctx.setLineDash([8 / zoom, 6 / zoom]);
+        ctx.strokeStyle = 'rgba(251, 191, 36, 0.85)';
+        ctx.strokeRect(margin, margin, w - margin * 2, h - margin * 2);
+        ctx.setLineDash([]);
+        if (h >= w * 1.4) {
+            const safe = Math.min(250, Math.round(h * 0.12));
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.55)';
+            ctx.lineWidth = 1 / zoom;
+            ctx.beginPath();
+            ctx.moveTo(0, safe);
+            ctx.lineTo(w, safe);
+            ctx.moveTo(0, h - safe);
+            ctx.lineTo(w, h - safe);
+            ctx.stroke();
+        }
+        ctx.fillStyle = 'rgba(167, 139, 250, 0.9)';
+        ctx.font = `${Math.max(10, Math.round(11 / zoom))}px sans-serif`;
+        ctx.fillText(`${w} × ${h}px`, 8, h - 8);
+        ctx.restore();
+    }
+
+    setFormatGuidesVisible(visible) {
+        this.showFormatGuides = !!visible;
+        this.canvas?.requestRenderAll();
+    }
+
+    applyViewportZoom(zoom) {
+        if (!this.canvas) {
+            return 1;
+        }
+        const z = Math.max(0.08, Math.min(4, zoom));
+        this.viewportZoom = z;
+        this.canvas.setZoom(1);
+        this.canvas.setDimensions({ width: this.designWidth, height: this.designHeight });
+        if (this.scaleWrapper) {
+            this.scaleWrapper.style.width = `${this.designWidth}px`;
+            this.scaleWrapper.style.height = `${this.designHeight}px`;
+            this.scaleWrapper.style.transform = `scale(${z})`;
+            this.scaleWrapper.style.transformOrigin = 'top center';
+        }
+        requestAnimationFrame(() => {
+            this.canvas?.calcOffset();
+            this.canvas?.requestRenderAll();
+        });
+        return z;
+    }
+
     alignActiveObject(mode) {
         const obj = this.canvas?.getActiveObject();
         if (!obj) {
@@ -208,10 +346,13 @@ export class ImageStudioEngine {
         if (!this.canvas) {
             return this.init(width, height, backgroundColor);
         }
+        this.designWidth = width;
+        this.designHeight = height;
         this.canvas.setDimensions({ width, height });
         if (backgroundColor) {
             this.canvas.backgroundColor = backgroundColor;
         }
+        this.applyViewportZoom(this.viewportZoom || 1);
         this.canvas.requestRenderAll();
         this.emitChange();
     }
@@ -242,7 +383,8 @@ export class ImageStudioEngine {
         this.historyPaused = true;
         await this.canvas.loadFromJSON(json);
         this.canvas.getObjects().forEach((obj) => {
-            if (obj.criasysFilters && (obj.type === 'image' || obj instanceof FabricImage)) {
+            this.configureSelectableObject(obj);
+            if (obj.criasysFilters && isFabricImage(obj)) {
                 this.applyFiltersToObject(obj, obj.criasysFilters);
             }
         });
@@ -256,7 +398,7 @@ export class ImageStudioEngine {
     }
 
     applyFiltersToObject(object, state) {
-        if (!object || object.type !== 'image') {
+        if (!isFabricImage(object)) {
             return;
         }
 
@@ -297,7 +439,7 @@ export class ImageStudioEngine {
     }
 
     clearFilters(object) {
-        if (!object || object.type !== 'image') {
+        if (!isFabricImage(object)) {
             return;
         }
         object.criasysFilters = { ...DEFAULT_FILTER_STATE };
@@ -381,8 +523,8 @@ export class ImageStudioEngine {
 
     addText(text = 'Seu texto', options = {}) {
         const textObj = new FabricText(text, {
-            left: (this.canvas.width / 2) - 120,
-            top: (this.canvas.height / 2) - 30,
+            left: (this.designWidth / 2) - 120,
+            top: (this.designHeight / 2) - 30,
             fontFamily: options.fontFamily || 'Impact, Arial Black, sans-serif',
             fontSize: options.fontSize || 64,
             fill: options.fill || '#ffffff',
@@ -398,10 +540,10 @@ export class ImageStudioEngine {
 
     addRect(color = '#ef4444', opacity = 80) {
         const rect = new Rect({
-            left: this.canvas.width * 0.15,
-            top: this.canvas.height * 0.2,
-            width: this.canvas.width * 0.7,
-            height: this.canvas.height * 0.25,
+            left: this.designWidth * 0.15,
+            top: this.designHeight * 0.2,
+            width: this.designWidth * 0.7,
+            height: this.designHeight * 0.25,
             fill: color,
             opacity: opacity / 100,
             name: 'Retângulo',
@@ -414,10 +556,10 @@ export class ImageStudioEngine {
     }
 
     addCircle(color = '#3b82f6', opacity = 80) {
-        const size = Math.min(this.canvas.width, this.canvas.height) * 0.25;
+        const size = Math.min(this.designWidth, this.designHeight) * 0.25;
         const circle = new Circle({
-            left: this.canvas.width / 2 - size / 2,
-            top: this.canvas.height / 2 - size / 2,
+            left: this.designWidth / 2 - size / 2,
+            top: this.designHeight / 2 - size / 2,
             radius: size / 2,
             fill: color,
             opacity: opacity / 100,
@@ -428,6 +570,111 @@ export class ImageStudioEngine {
         this.canvas.setActiveObject(circle);
         this.canvas.requestRenderAll();
         this.emitChange();
+    }
+
+    async addSvgIconFromSpec(spec) {
+        let url = spec.icon_url || spec.url;
+        if (!url || !this.canvas) {
+            return;
+        }
+        if (url.startsWith('/')) {
+            url = `${window.location.origin}${url}`;
+        }
+        const { objects, options } = await loadSVGFromURL(url);
+        const grouped = util.groupSVGElements(objects, options);
+        const color = spec.fill || '#ffffff';
+        const applyFill = (obj) => {
+            if (!obj) return;
+            if (obj._objects?.length) obj._objects.forEach(applyFill);
+            else if (obj.fill && obj.fill !== 'none') obj.set('fill', color);
+        };
+        applyFill(grouped);
+        const size = spec.size || 100;
+        const base = Math.max(grouped.width || 16, grouped.height || 16, 1);
+        const scale = size / base;
+        grouped.set({
+            left: (this.designWidth - size) / 2,
+            top: (this.designHeight - size) / 2,
+            scaleX: scale,
+            scaleY: scale,
+            name: spec.name || 'Ícone',
+            criasysId: 'icon_' + Date.now(),
+        });
+        this.canvas.add(grouped);
+        this.configureSelectableObject(grouped);
+        this.canvas.setActiveObject(grouped);
+        this.canvas.requestRenderAll();
+        this.emitChange();
+    }
+
+    async addElementFromCatalog(spec) {
+        if (!spec || !this.canvas) return;
+        const type = spec.type || spec.kind;
+        if (type === 'svg_icon') return this.addSvgIconFromSpec(spec);
+        if (type === 'rect') {
+            this.addRect(spec.fill || '#ef4444', spec.opacity ?? 80);
+            return;
+        }
+        if (type === 'rounded_rect') {
+            const rect = new Rect({
+                left: this.designWidth * 0.2,
+                top: this.designHeight * 0.25,
+                width: this.designWidth * 0.6,
+                height: this.designHeight * 0.2,
+                fill: spec.fill || '#8b5cf6',
+                opacity: (spec.opacity ?? 100) / 100,
+                rx: spec.rx || 24,
+                ry: spec.ry || spec.rx || 24,
+                name: spec.name || 'Retângulo arredondado',
+                criasysId: 'rect_r_' + Date.now(),
+            });
+            this.canvas.add(rect);
+            this.configureSelectableObject(rect);
+            this.canvas.setActiveObject(rect);
+            this.canvas.requestRenderAll();
+            this.emitChange();
+            return;
+        }
+        if (type === 'circle') {
+            this.addCircle(spec.fill || '#3b82f6', spec.opacity ?? 80);
+            return;
+        }
+        if (type === 'ellipse') {
+            const ew = this.designWidth * 0.35;
+            const eh = this.designHeight * 0.18;
+            const ellipse = new Ellipse({
+                left: (this.designWidth - ew) / 2,
+                top: (this.designHeight - eh) / 2,
+                rx: ew / 2,
+                ry: eh / 2,
+                fill: spec.fill || '#8b5cf6',
+                opacity: (spec.opacity ?? 100) / 100,
+                name: spec.name || 'Elipse',
+                criasysId: 'ellipse_' + Date.now(),
+            });
+            this.canvas.add(ellipse);
+            this.configureSelectableObject(ellipse);
+            this.canvas.setActiveObject(ellipse);
+            this.canvas.requestRenderAll();
+            this.emitChange();
+            return;
+        }
+        if (type === 'line') {
+            const y = this.designHeight / 2;
+            const line = new Line([this.designWidth * 0.12, y, this.designWidth * 0.88, y], {
+                stroke: spec.stroke || spec.fill || '#fff',
+                strokeWidth: spec.strokeWidth || 6,
+                name: spec.name || 'Linha',
+                criasysId: 'line_' + Date.now(),
+            });
+            this.canvas.add(line);
+            this.configureSelectableObject(line);
+            this.canvas.setActiveObject(line);
+            this.canvas.requestRenderAll();
+            this.emitChange();
+        } else if (type === 'sticker' || type === 'emoji') {
+            this.addText(spec.char || '★', { fontSize: spec.fontSize || 80, fill: spec.fill || '#fff', name: spec.name || 'Ícone' });
+        }
     }
 
     applyTemplate(template) {
@@ -482,23 +729,59 @@ export class ImageStudioEngine {
                 this.canvas.add(textObj);
             }
         });
+        this.configureAllObjects();
         this.canvas.requestRenderAll();
         this.emitChange();
     }
 
+    async replaceActiveImageSource(url) {
+        const obj = this.canvas?.getActiveObject();
+        if (!isFabricImage(obj)) {
+            return null;
+        }
+        const props = {
+            left: obj.left,
+            top: obj.top,
+            scaleX: obj.scaleX,
+            scaleY: obj.scaleY,
+            angle: obj.angle,
+            name: obj.name,
+            criasysFilters: obj.criasysFilters,
+        };
+        this.canvas.remove(obj);
+        const img = await FabricImage.fromURL(url, { crossOrigin: 'anonymous' });
+        img.set({ ...props, criasysId: 'img_' + Date.now() });
+        this.configureSelectableObject(img);
+        if (props.criasysFilters) {
+            this.applyFiltersToObject(img, props.criasysFilters);
+        }
+        this.canvas.add(img);
+        this.canvas.setActiveObject(img);
+        this.canvas.requestRenderAll();
+        this.emitChange();
+        return img;
+    }
+
+    async removeBackgroundFromBlob(blob) {
+        const { removeBackground } = await import('@imgly/background-removal');
+        const result = await removeBackground(blob);
+        return URL.createObjectURL(result);
+    }
+
     async addImageFromUrl(url, name = 'Imagem') {
         const img = await FabricImage.fromURL(url, { crossOrigin: 'anonymous' });
-        const maxW = this.canvas.width * 0.85;
-        const maxH = this.canvas.height * 0.85;
-        const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+        const maxW = this.designWidth * 0.85;
+        const maxH = this.designHeight * 0.85;
+        const scale = Math.min(maxW / (img.width || 1), maxH / (img.height || 1), 1);
         img.set({
-            left: (this.canvas.width - img.width * scale) / 2,
-            top: (this.canvas.height - img.height * scale) / 2,
+            left: (this.designWidth - (img.width || 1) * scale) / 2,
+            top: (this.designHeight - (img.height || 1) * scale) / 2,
             scaleX: scale,
             scaleY: scale,
             name,
             criasysId: 'img_' + Date.now(),
         });
+        this.configureSelectableObject(img);
         this.canvas.add(img);
         this.canvas.setActiveObject(img);
         this.canvas.requestRenderAll();
@@ -614,21 +897,15 @@ export class ImageStudioEngine {
     }
 
     zoomToFit(containerWidth, containerHeight) {
-        if (!this.canvas) {
-            return 1;
+        if (!this.canvas || !containerWidth || !containerHeight) {
+            return this.viewportZoom || 1;
         }
-        const pad = 24;
+        const pad = 32;
         const scale = Math.min(
-            (containerWidth - pad) / this.canvas.getWidth(),
-            (containerHeight - pad) / this.canvas.getHeight(),
-            1
+            (containerWidth - pad) / this.designWidth,
+            (containerHeight - pad) / this.designHeight
         );
-        this.canvas.setZoom(scale);
-        this.canvas.setDimensions({
-            width: this.canvas.getWidth() * scale,
-            height: this.canvas.getHeight() * scale,
-        });
-        return scale;
+        return this.applyViewportZoom(scale);
     }
 }
 
@@ -650,7 +927,9 @@ export function imageStudioMethods() {
         imageStudioBgColor: '#ffffff',
         imageStudioBgOpacity: 100,
         imageStudioSelectedObject: null,
-        imageStudioZoom: 1,
+        imageStudioZoom: 100,
+        imageStudioShowFormatGuides: true,
+        imageStudioBgRemoving: false,
         imageStudioFilters: { ...DEFAULT_FILTER_STATE },
         imageStudioShowGrid: false,
         imageStudioSnapGrid: false,
@@ -660,6 +939,9 @@ export function imageStudioMethods() {
         imageStudioFrameSlug: 'none',
         imageStudioFrameColor: '#ffffff',
         imageStudioFrames: [],
+        imageStudioElements: [],
+        imageStudioElementGroups: {},
+        imageStudioElementFilter: '',
         imageStudioLocalWatch: null,
 
         get filteredImageStudioPresets() {
@@ -679,10 +961,23 @@ export function imageStudioMethods() {
             const groups = {};
             (this.filteredImageStudioPresets || []).forEach((p) => {
                 const key = p.group_label || p.group || 'Outros';
-                if (!groups[key]) {
-                    groups[key] = [];
-                }
+                if (!groups[key]) groups[key] = [];
                 groups[key].push(p);
+            });
+            return groups;
+        },
+
+        get imageStudioElementsByGroup() {
+            const q = (this.imageStudioElementFilter || '').trim().toLowerCase();
+            const groups = {};
+            (this.imageStudioElements || []).forEach((el) => {
+                if (q) {
+                    const hay = `${el.name || ''} ${el.group || ''}`.toLowerCase();
+                    if (!hay.includes(q)) return;
+                }
+                const key = this.imageStudioElementGroups[el.group] || el.group || 'Outros';
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(el);
             });
             return groups;
         },
@@ -699,8 +994,10 @@ export function imageStudioMethods() {
                 this.imageStudioExportFormats = data.export_formats || [];
                 this.imageStudioTemplates = data.templates || [];
                 this.imageStudioFrames = data.frames || [];
+                this.imageStudioElements = data.elements || [];
+                this.imageStudioElementGroups = data.element_groups || {};
                 this.imageStudioFonts = data.fonts || [];
-                this.imageStudioBgRemoval = Boolean(data.background_removal_available);
+                this.imageStudioBgRemoval = true;
                 if (data.defaults?.preset) {
                     this.imageStudioPreset = data.defaults.preset;
                 }
@@ -710,8 +1007,11 @@ export function imageStudioMethods() {
         },
 
         async initImageStudio() {
-            if (this.imageStudioReady) {
+            if (this.imageStudioReady && this.imageStudioEngine?.canvas) {
+                this.imageStudioEngine.setScaleWrapper(this.$refs.imageStudioCanvasScaler);
+                this.imageStudioEngine.setFormatGuidesVisible(this.imageStudioShowFormatGuides);
                 this.refreshImageStudioLayers();
+                this.fitImageStudioCanvas();
                 return;
             }
             await this.loadImageStudioCatalog();
@@ -722,40 +1022,61 @@ export function imageStudioMethods() {
                 return;
             }
 
-            this.imageStudioEngine = new ImageStudioEngine(el);
-            this.imageStudioEngine.onChange = () => {
-                this.refreshImageStudioLayers();
-                this.scheduleImageStudioSave();
-            };
+            if (!this.imageStudioEngine) {
+                this.imageStudioEngine = new ImageStudioEngine(el);
+                this.imageStudioEngine.onChange = () => {
+                    this.refreshImageStudioLayers();
+                    this.scheduleImageStudioSave();
+                };
+            }
+
+            this.imageStudioEngine.setScaleWrapper(this.$refs.imageStudioCanvasScaler);
+            this.imageStudioEngine.setFormatGuidesVisible(this.imageStudioShowFormatGuides);
 
             await this.loadImageStudioDesign();
+
+            if (!this.imageStudioEngine?.canvas) {
+                const p = this.imageStudioPresets.find((x) => x.slug === this.imageStudioPreset)
+                    || { width: 1080, height: 1080 };
+                this.imageStudioEngine.init(p.width, p.height, this.imageStudioBgColor);
+                this.imageStudioEngine.setBackgroundColor(this.imageStudioBgColor, this.imageStudioBgOpacity);
+            }
+
             this.imageStudioEngine.pushHistory();
             this.imageStudioReady = true;
             this.setupImageStudioKeyboard();
             this.setupImageStudioLocalWatch();
+            this.setupImageStudioWheelZoom();
+            this.fitImageStudioCanvas();
         },
 
         async loadImageStudioDesign() {
+            const fallback = this.imageStudioPresets.find((p) => p.slug === this.imageStudioPreset)
+                || { width: 1080, height: 1080 };
+            let w = fallback.width || 1080;
+            let h = fallback.height || 1080;
+            let canvasJson = null;
             try {
                 const { data } = await api.get(`/projects/${this.projectId}/image-studio`, {
                     params: { preset: this.imageStudioPreset },
                 });
-                const preset = this.imageStudioPresets.find((p) => p.slug === data.preset)
-                    || { width: data.width, height: data.height };
-                const w = preset.width || data.width || 1080;
-                const h = preset.height || data.height || 1080;
-
-                this.imageStudioEngine.init(w, h, this.imageStudioBgColor);
-                this.imageStudioEngine.setBackgroundColor(this.imageStudioBgColor, this.imageStudioBgOpacity);
-
-                if (data.canvas) {
-                    await this.imageStudioEngine.loadFromJSON(data.canvas);
-                }
-                this.fitImageStudioCanvas();
-                this.refreshImageStudioLayers();
+                const preset = this.imageStudioPresets.find((p) => p.slug === data.preset) || fallback;
+                w = preset.width || data.width || w;
+                h = preset.height || data.height || h;
+                canvasJson = data.canvas;
             } catch (e) {
-                this.error = e.response?.data?.message || 'Erro ao carregar design';
+                this.error = e.response?.data?.message || null;
             }
+            this.imageStudioEngine.init(w, h, this.imageStudioBgColor);
+            this.imageStudioEngine.setBackgroundColor(this.imageStudioBgColor, this.imageStudioBgOpacity);
+            if (canvasJson) {
+                try {
+                    await this.imageStudioEngine.loadFromJSON(canvasJson);
+                } catch {
+                    /* canvas vazio ok */
+                }
+            }
+            this.refreshImageStudioLayers();
         },
 
         fitImageStudioCanvas() {
@@ -763,36 +1084,73 @@ export function imageStudioMethods() {
             if (!wrap || !this.imageStudioEngine?.canvas) {
                 return;
             }
-            const preset = this.imageStudioCurrentPreset;
-            if (!preset) {
+            const z = this.imageStudioEngine.zoomToFit(wrap.clientWidth, wrap.clientHeight);
+            this.imageStudioZoom = Math.round(z * 100);
+        },
+
+        imageStudioSetZoomPercent(percent) {
+            if (!this.imageStudioEngine?.canvas) {
                 return;
             }
-            const c = this.imageStudioEngine.canvas;
-            c.setZoom(1);
-            c.setDimensions({ width: preset.width, height: preset.height });
-            this.imageStudioZoom = this.imageStudioEngine.zoomToFit(wrap.clientWidth, wrap.clientHeight);
+            const z = this.imageStudioEngine.applyViewportZoom(percent / 100);
+            this.imageStudioZoom = Math.round(z * 100);
+        },
+
+        imageStudioZoomIn() {
+            this.imageStudioSetZoomPercent(Math.min(400, this.imageStudioZoom + 10));
+        },
+
+        imageStudioZoomOut() {
+            this.imageStudioSetZoomPercent(Math.max(8, this.imageStudioZoom - 10));
+        },
+
+        imageStudioZoomReset() {
+            this.imageStudioSetZoomPercent(100);
+        },
+
+        setupImageStudioWheelZoom() {
+            const wrap = this.$refs.imageStudioCanvasWrap;
+            if (!wrap || wrap._criasysWheelZoom) {
+                return;
+            }
+            wrap._criasysWheelZoom = true;
+            wrap.addEventListener('wheel', (e) => {
+                if (this.activeTab !== 'image_studio') {
+                    return;
+                }
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -8 : 8;
+                this.imageStudioSetZoomPercent(this.imageStudioZoom + delta);
+            }, { passive: false });
+        },
+
+        onImageStudioFormatGuidesChange() {
+            this.imageStudioEngine?.setFormatGuidesVisible(this.imageStudioShowFormatGuides);
         },
 
         refreshImageStudioLayers() {
             this.imageStudioLayers = this.imageStudioEngine?.getLayers() || [];
-            this.imageStudioSelectedObject = this.imageStudioEngine?.getActiveObject() || null;
+            const raw = this.imageStudioEngine?.getActiveObject();
+            this.imageStudioSelectedObject = raw
+                ? { type: normalizeFabricType(raw), opacity: raw.opacity ?? 1 }
+                : null;
             this.imageStudioCanUndo = this.imageStudioEngine?.canUndo() ?? false;
             this.imageStudioCanRedo = this.imageStudioEngine?.canRedo() ?? false;
-            if (this.imageStudioSelectedObject?.type === 'image') {
-                this.imageStudioFilters = this.imageStudioEngine.getFilterState(this.imageStudioSelectedObject);
+            if (raw && isFabricImage(raw)) {
+                this.imageStudioFilters = this.imageStudioEngine.getFilterState(raw);
             }
         },
 
         imageStudioApplyFilters() {
             const obj = this.imageStudioEngine?.getActiveObject();
-            if (obj?.type === 'image') {
+            if (isFabricImage(obj)) {
                 this.imageStudioEngine.applyFiltersToObject(obj, this.imageStudioFilters);
             }
         },
 
         imageStudioClearFilters() {
             const obj = this.imageStudioEngine?.getActiveObject();
-            if (obj?.type === 'image') {
+            if (isFabricImage(obj)) {
                 this.imageStudioEngine.clearFilters(obj);
                 this.imageStudioFilters = { ...DEFAULT_FILTER_STATE };
             }
@@ -949,10 +1307,18 @@ export function imageStudioMethods() {
             if (slug === this.imageStudioPreset) {
                 return;
             }
+            if (!this.imageStudioEngine?.canvas) {
+                await this.initImageStudio();
+            }
             await this.saveImageStudioDesign();
             this.imageStudioPreset = slug;
-            this.imageStudioReady = false;
-            await this.initImageStudio();
+            const preset = this.imageStudioPresets.find((p) => p.slug === slug);
+            if (preset && this.imageStudioEngine?.canvas) {
+                this.imageStudioEngine.setSize(preset.width, preset.height);
+                this.fitImageStudioCanvas();
+                this.message = `Formato: ${preset.name} (${preset.width}×${preset.height})`;
+            }
+            this.refreshImageStudioLayers();
         },
 
         onImageStudioBgChange() {
@@ -960,39 +1326,66 @@ export function imageStudioMethods() {
         },
 
         imageStudioAddText() {
+            if (!this.imageStudioEngine?.canvas) {
+                this.error = 'Abra o Image Studio e aguarde o canvas carregar';
+                return;
+            }
             const font = this.imageStudioFonts.find((f) => f.slug === 'impact') || this.imageStudioFonts[0];
             const family = font?.label ? `${font.label}, Impact, sans-serif` : 'Impact, sans-serif';
-            this.imageStudioEngine?.addText('Seu título aqui', { fontFamily: family });
+            this.imageStudioEngine.addText('Seu título aqui', { fontFamily: family });
+            this.refreshImageStudioLayers();
+            this.message = 'Texto adicionado';
         },
 
         imageStudioAddShape(type) {
+            if (!this.imageStudioEngine?.canvas) {
+                this.error = 'Canvas não carregou — clique Image Studio de novo';
+                return;
+            }
             if (type === 'circle') {
-                this.imageStudioEngine?.addCircle();
+                this.imageStudioEngine.addCircle();
             } else {
-                this.imageStudioEngine?.addRect();
+                this.imageStudioEngine.addRect();
+            }
+            this.refreshImageStudioLayers();
+            this.message = 'Forma adicionada';
+        },
+
+        async imageStudioAddElement(el) {
+            if (!this.imageStudioEngine?.canvas) {
+                await this.initImageStudio();
+            }
+            if (!this.imageStudioEngine?.canvas) {
+                this.error = 'Canvas não carregou';
+                return;
+            }
+            try {
+                await this.imageStudioEngine.addElementFromCatalog(el);
+                this.refreshImageStudioLayers();
+                this.message = (el.name || 'Elemento') + ' adicionado';
+            } catch (e) {
+                this.error = e.message || 'Erro ao adicionar elemento';
             }
         },
 
         async imageStudioUploadImage(event) {
             const file = event?.target?.files?.[0];
-            if (!file) {
+            if (!file) return;
+            if (!this.imageStudioEngine?.canvas) {
+                await this.initImageStudio();
+            }
+            if (!this.imageStudioEngine?.canvas) {
+                this.error = 'Canvas não carregou — recarregue a página (F5)';
+                event.target.value = '';
                 return;
             }
-            const form = new FormData();
-            form.append('file', file);
-            form.append('type', 'image');
-            form.append('attach_to_slide', '0');
             try {
-                const { data } = await api.post(`/projects/${this.projectId}/assets/upload`, form, {
-                    headers: { 'Content-Type': 'multipart/form-data' },
-                });
-                const assetId = data.id;
-                if (assetId) {
-                    const url = `/api/projects/${this.projectId}/assets/${assetId}`;
-                    await this.imageStudioEngine?.addImageFromUrl(url, file.name);
-                }
+                const localUrl = URL.createObjectURL(file);
+                await this.imageStudioEngine.addImageFromUrl(localUrl, file.name);
+                this.refreshImageStudioLayers();
+                this.message = 'Imagem adicionada ao canvas';
             } catch (e) {
-                this.error = e.response?.data?.message || 'Erro ao importar imagem';
+                this.error = e.message || 'Erro ao adicionar imagem';
             } finally {
                 event.target.value = '';
             }
@@ -1000,22 +1393,43 @@ export function imageStudioMethods() {
 
         async imageStudioRemoveBackground(event) {
             const file = event?.target?.files?.[0];
-            if (!file) {
+            if (!file) return;
+            if (!this.imageStudioEngine?.canvas) await this.initImageStudio();
+            try {
+                this.imageStudioBgRemoving = true;
+                this.message = 'Removendo fundo…';
+                const url = await this.imageStudioEngine.removeBackgroundFromBlob(file);
+                await this.imageStudioEngine.addImageFromUrl(url, 'Sem fundo');
+                this.refreshImageStudioLayers();
+                this.message = 'Fundo removido — imagem adicionada';
+            } catch (e) {
+                this.error = e.message || 'Erro ao remover fundo';
+            } finally {
+                this.imageStudioBgRemoving = false;
+                if (event?.target) event.target.value = '';
+            }
+        },
+
+        async imageStudioRemoveBgFromSelection() {
+            const obj = this.imageStudioEngine?.getActiveObject();
+            if (!isFabricImage(obj)) {
+                this.error = 'Selecione uma imagem no canvas (clique nela primeiro)';
                 return;
             }
-            const form = new FormData();
-            form.append('image', file);
             try {
-                this.message = 'Removendo fundo…';
-                const { data } = await api.post(`/projects/${this.projectId}/image-studio/remove-background`, form, {
-                    headers: { 'Content-Type': 'multipart/form-data' },
-                });
-                await this.imageStudioEngine?.addImageFromUrl(data.url, 'Sem fundo');
-                this.message = 'Fundo removido';
+                this.imageStudioBgRemoving = true;
+                this.message = 'Removendo fundo da imagem selecionada…';
+                const dataUrl = obj.toDataURL({ format: 'png', multiplier: 1 });
+                const res = await fetch(dataUrl);
+                const blob = await res.blob();
+                const url = await this.imageStudioEngine.removeBackgroundFromBlob(blob);
+                await this.imageStudioEngine.replaceActiveImageSource(url);
+                this.refreshImageStudioLayers();
+                this.message = 'Fundo removido da imagem selecionada';
             } catch (e) {
-                this.error = e.response?.data?.message || 'Instale rembg: pip install rembg pillow';
+                this.error = e.message || 'Erro ao remover fundo';
             } finally {
-                event.target.value = '';
+                this.imageStudioBgRemoving = false;
             }
         },
 
@@ -1114,25 +1528,29 @@ export function imageStudioMethods() {
             if (!template?.slug) {
                 return;
             }
-            const full = (this.imageStudioTemplates || []).find((t) => t.slug === template.slug) || template;
-            if (full.preset && full.preset !== this.imageStudioPreset) {
-                this.imageStudioPreset = full.preset;
+            if (!this.imageStudioEngine?.canvas) {
                 await this.initImageStudio();
             }
-            if (!this.imageStudioEngine?.canvas) {
+            const full = (this.imageStudioTemplates || []).find((t) => t.slug === template.slug) || template;
+            if (this.imageStudioLayers?.length && !confirm('Aplicar layout substitui o conteúdo do canvas. Continuar?')) {
                 return;
             }
-            if (this.imageStudioLayers?.length && !confirm('Aplicar template substitui o conteúdo atual do canvas. Continuar?')) {
-                return;
+            if (full.preset && full.preset !== this.imageStudioPreset) {
+                const presetMeta = this.imageStudioPresets.find((p) => p.slug === full.preset);
+                this.imageStudioPreset = full.preset;
+                if (presetMeta) {
+                    this.imageStudioEngine.setSize(presetMeta.width, presetMeta.height);
+                }
             }
             this.imageStudioEngine.applyTemplate(full);
             if (full.background?.color) {
                 this.imageStudioBgColor = full.background.color;
                 this.imageStudioBgOpacity = full.background.opacity ?? 100;
             }
+            this.fitImageStudioCanvas();
             this.refreshImageStudioLayers();
             this.scheduleImageStudioSave();
-            this.message = `Template "${full.name}" aplicado`;
+            this.message = `Layout "${full.name}" aplicado — veja contorno e sangrias no canvas`;
         },
 
         async imageStudioImportFromLibrary(item) {

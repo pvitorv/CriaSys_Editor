@@ -746,12 +746,13 @@ O narrador continua a história com calma."
                 </div>
             </div>
 
-            {{-- Image Studio — editor estilo Canva --}}
+            {{-- Image Studio --}}
             <div x-show="activeTab === 'image_studio'" class="space-y-4" x-cloak>
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h3 class="text-sm font-semibold text-violet-200">Image Studio</h3>
-                        <p class="text-[11px] text-zinc-500 mt-0.5">Editor de artes para redes sociais, banners e sites — camadas, exportação e integração com Thumbnail e biblioteca.</p>
+                        <p class="text-[11px] text-zinc-500 mt-0.5">Formatos à esquerda · ferramentas no topo do canvas · layouts prontos abaixo dos formatos.</p>
+                        <p class="text-[10px] mt-1 text-emerald-400" x-show="imageStudioReady" x-text="'Carregado: ' + (imageStudioPresets.length||0) + ' formatos · ' + (imageStudioTemplates.length||0) + ' layouts · ' + (imageStudioElements.length||0) + ' elementos'"></p>
                     </div>
                     <div class="flex flex-wrap gap-2 items-center">
                         <span x-show="imageStudioSaving" class="text-[10px] text-zinc-500">Salvando…</span>
@@ -760,7 +761,7 @@ O narrador continua a história com calma."
                 </div>
 
                 <div class="grid grid-cols-1 xl:grid-cols-[240px_1fr_260px] gap-4">
-                    {{-- Presets --}}
+                    {{-- Formatos + layouts + elementos --}}
                     <div class="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950/50 p-3 max-h-[75vh] overflow-y-auto">
                         <input type="search" x-model="imageStudioPresetFilter" placeholder="Buscar formato…" class="w-full text-xs px-2 py-1.5 rounded bg-zinc-900 border border-zinc-700">
                         <template x-for="(presets, groupName) in imageStudioPresetGroups" :key="'isg-' + groupName">
@@ -768,12 +769,7 @@ O narrador continua a história com calma."
                                 <p class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1" x-text="groupName"></p>
                                 <div class="space-y-1">
                                     <template x-for="preset in presets" :key="preset.slug">
-                                        <button
-                                            type="button"
-                                            @click="switchImageStudioPreset(preset.slug)"
-                                            class="w-full text-left text-xs px-2 py-1.5 rounded border transition"
-                                            :class="imageStudioPreset === preset.slug ? 'border-violet-500 bg-violet-950/40 text-white' : 'border-zinc-800 text-zinc-400 hover:border-zinc-600'"
-                                        >
+                                        <button type="button" @click="switchImageStudioPreset(preset.slug)" class="w-full text-left text-xs px-2 py-1.5 rounded border transition" :class="imageStudioPreset === preset.slug ? 'border-violet-500 bg-violet-950/40 text-white' : 'border-zinc-800 text-zinc-400 hover:border-zinc-600'">
                                             <span x-text="preset.icon"></span>
                                             <span x-text="preset.name" class="ml-1"></span>
                                             <span class="block text-[9px] text-zinc-600 tabular-nums" x-text="preset.width + '×' + preset.height"></span>
@@ -783,20 +779,30 @@ O narrador continua a história com calma."
                             </div>
                         </template>
                         <div class="pt-3 border-t border-zinc-800">
-                            <p class="text-[10px] uppercase tracking-wide text-zinc-500 mb-2">Templates prontos</p>
+                            <p class="text-[10px] uppercase tracking-wide text-zinc-500 mb-2">Layouts prontos (<span x-text="imageStudioTemplates.length"></span>)</p>
                             <div class="space-y-1">
                                 <template x-for="tpl in imageStudioTemplates" :key="'ist-' + tpl.slug">
-                                    <button
-                                        type="button"
-                                        @click="imageStudioApplyTemplate(tpl)"
-                                        class="w-full text-left text-xs px-2 py-1.5 rounded border border-zinc-800 text-zinc-400 hover:border-violet-600 hover:text-violet-200 transition"
-                                        :title="tpl.description"
-                                    >
+                                    <button type="button" @click="imageStudioApplyTemplate(tpl)" class="w-full text-left text-xs px-2 py-1.5 rounded border border-zinc-800 text-zinc-400 hover:border-violet-600 hover:text-violet-200 transition" :title="tpl.description">
                                         <span x-text="tpl.name"></span>
                                         <span class="block text-[9px] text-zinc-600 truncate" x-text="tpl.description"></span>
                                     </button>
                                 </template>
                             </div>
+                        </div>
+                        <div class="pt-3 border-t border-zinc-800">
+                            <input type="search" x-model="imageStudioElementFilter" placeholder="Buscar ícone ou forma…" class="w-full text-xs px-2 py-1.5 rounded bg-zinc-900 border border-zinc-700 mb-2">
+                            <p class="text-[10px] uppercase tracking-wide text-zinc-500 mb-2">Elementos (<span x-text="imageStudioElements.length"></span>)</p>
+                            <template x-for="(items, groupName) in imageStudioElementsByGroup" :key="'elg-' + groupName">
+                                <p class="text-[9px] text-zinc-600 mb-1 mt-2" x-text="groupName"></p>
+                                <div class="grid grid-cols-4 gap-1 mb-1">
+                                    <template x-for="el in items" :key="el.slug">
+                                        <button type="button" @click="imageStudioAddElement(el)" class="aspect-square rounded border border-zinc-800 hover:border-violet-500 flex items-center justify-center p-1" :title="el.name">
+                                            <img x-show="el.type === 'svg_icon' && el.icon_url" :src="el.icon_url" alt="" class="w-5 h-5 invert opacity-90 pointer-events-none">
+                                            <span x-show="el.type !== 'svg_icon'" class="text-base leading-none" x-text="el.icon || '•'"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                            </template>
                         </div>
                     </div>
 
@@ -812,29 +818,42 @@ O narrador continua a história com calma."
                                 + Imagem
                                 <input type="file" accept="image/*" @change="imageStudioUploadImage($event)" class="hidden">
                             </label>
-                            <label class="text-xs px-2 py-1 rounded bg-emerald-900/60 hover:bg-emerald-800 cursor-pointer" :class="!imageStudioBgRemoval && 'opacity-50'" title="Requer: pip install rembg pillow">
-                                ✂ Remover fundo
-                                <input type="file" accept="image/*" @change="imageStudioRemoveBackground($event)" class="hidden" :disabled="!imageStudioBgRemoval">
+                            <label class="text-xs px-2 py-1 rounded bg-emerald-900/60 hover:bg-emerald-800 cursor-pointer" :class="imageStudioBgRemoving ? 'opacity-50 pointer-events-none' : ''">
+                                ✂ Remover fundo (arquivo)
+                                <input type="file" accept="image/*" @change="imageStudioRemoveBackground($event)" class="hidden" :disabled="imageStudioBgRemoving">
+                            </label>
+                            <button type="button" @click="imageStudioRemoveBgFromSelection()" :disabled="imageStudioBgRemoving || imageStudioSelectedObject?.type !== 'image'" class="text-xs px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 disabled:opacity-40" title="Remove fundo da imagem já selecionada no canvas">
+                                <span x-show="!imageStudioBgRemoving">✂ Remover fundo da seleção</span>
+                                <span x-show="imageStudioBgRemoving">Processando…</span>
+                            </button>
+                            <label class="text-xs px-2 py-1 rounded bg-zinc-800 flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" x-model="imageStudioShowFormatGuides" @change="onImageStudioFormatGuidesChange()" class="rounded"> Sangrias / contorno
                             </label>
                             <label class="text-xs px-2 py-1 rounded bg-zinc-800 flex items-center gap-1 cursor-pointer">
-                                <input type="checkbox" x-model="imageStudioShowGrid" @change="onImageStudioGridChange()" class="rounded">
-                                Grid
+                                <input type="checkbox" x-model="imageStudioShowGrid" @change="onImageStudioGridChange()" class="rounded"> Grid
                             </label>
                             <label class="text-xs px-2 py-1 rounded bg-zinc-800 flex items-center gap-1 cursor-pointer">
-                                <input type="checkbox" x-model="imageStudioSnapGrid" @change="onImageStudioGridChange()" class="rounded">
-                                Snap
+                                <input type="checkbox" x-model="imageStudioSnapGrid" @change="onImageStudioGridChange()" class="rounded"> Snap
                             </label>
                             <select x-model.number="imageStudioGridSize" @change="onImageStudioGridChange()" class="text-xs px-2 py-1 rounded bg-zinc-800 border border-zinc-700">
                                 <option :value="10">10px</option>
                                 <option :value="20">20px</option>
                                 <option :value="40">40px</option>
                             </select>
-                            <button type="button" @click="fitImageStudioCanvas()" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 ml-auto">Ajustar zoom</button>
+                            <div class="flex items-center gap-1.5 ml-auto border border-zinc-700 rounded-lg px-2 py-0.5 bg-zinc-900/80">
+                                <button type="button" @click="imageStudioZoomOut()" class="text-xs px-1.5 py-0.5 rounded hover:bg-zinc-700" title="Diminuir zoom">−</button>
+                                <input type="range" min="8" max="400" step="1" x-model.number="imageStudioZoom" @input="imageStudioSetZoomPercent(imageStudioZoom)" class="w-20 accent-violet-500">
+                                <button type="button" @click="imageStudioZoomIn()" class="text-xs px-1.5 py-0.5 rounded hover:bg-zinc-700" title="Aumentar zoom">+</button>
+                                <span class="text-[10px] text-zinc-400 w-9 text-center" x-text="imageStudioZoom + '%'"></span>
+                                <button type="button" @click="imageStudioZoomReset()" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700">100%</button>
+                                <button type="button" @click="fitImageStudioCanvas()" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700">Ajustar</button>
+                            </div>
                         </div>
+                        <p class="text-[10px] text-violet-400" x-show="imageStudioCurrentPreset" x-text="'Formato ativo: ' + (imageStudioCurrentPreset?.name || '') + ' — ' + (imageStudioCurrentPreset?.width || 0) + '×' + (imageStudioCurrentPreset?.height || 0) + 'px (contorno violeta = corte · amarelo = sangria)'"></p>
 
-                        <div class="rounded-xl border border-zinc-700 bg-zinc-900/80 p-3 overflow-auto max-h-[70vh]" x-ref="imageStudioCanvasWrap">
-                            <div class="mx-auto shadow-2xl shadow-black/40 inline-block">
-                                <canvas x-ref="imageStudioCanvas" class="block max-w-full"></canvas>
+                        <div class="rounded-xl border border-zinc-700 bg-zinc-950 p-4 overflow-auto max-h-[70vh] flex justify-center items-start" x-ref="imageStudioCanvasWrap">
+                            <div x-ref="imageStudioCanvasScaler" class="shadow-2xl shadow-black/40 ring-2 ring-violet-500/40 inline-block bg-zinc-900">
+                                <canvas x-ref="imageStudioCanvas" class="block"></canvas>
                             </div>
                         </div>
 
@@ -876,21 +895,25 @@ O narrador continua a história com calma."
                                 <input type="range" min="0" max="100" :value="Math.round((imageStudioSelectedObject?.opacity ?? 1) * 100)" @input="imageStudioObjectOpacity($event.target.value)" class="w-full mt-1">
                             </label>
                             <div class="flex flex-wrap gap-1 pt-1">
-                                <button type="button" @click="imageStudioAlignObject('left')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800" title="Alinhar esquerda">⬅</button>
-                                <button type="button" @click="imageStudioAlignObject('center-h')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800" title="Centro horizontal">↔</button>
-                                <button type="button" @click="imageStudioAlignObject('right')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800" title="Alinhar direita">➡</button>
-                                <button type="button" @click="imageStudioAlignObject('top')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800" title="Topo">⬆</button>
-                                <button type="button" @click="imageStudioAlignObject('center-v')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800" title="Centro vertical">↕</button>
-                                <button type="button" @click="imageStudioAlignObject('bottom')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800" title="Base">⬇</button>
+                                <button type="button" @click="imageStudioAlignObject('left')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800">⬅</button>
+                                <button type="button" @click="imageStudioAlignObject('center-h')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800">↔</button>
+                                <button type="button" @click="imageStudioAlignObject('right')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800">➡</button>
+                                <button type="button" @click="imageStudioAlignObject('top')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800">⬆</button>
+                                <button type="button" @click="imageStudioAlignObject('center-v')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800">↕</button>
+                                <button type="button" @click="imageStudioAlignObject('bottom')" class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800">⬇</button>
                             </div>
                             <template x-if="imageStudioSelectedObject?.type === 'image'">
                                 <div class="space-y-2 pt-2 border-t border-zinc-800">
-                                    <p class="text-[10px] text-violet-400 font-medium">Filtros (intensidade)</p>
+                                    <button type="button" @click="imageStudioRemoveBgFromSelection()" :disabled="imageStudioBgRemoving" class="w-full text-[10px] py-1.5 rounded bg-emerald-900/60 hover:bg-emerald-800 disabled:opacity-40">
+                                        <span x-show="!imageStudioBgRemoving">✂ Remover fundo desta imagem</span>
+                                        <span x-show="imageStudioBgRemoving">Removendo fundo…</span>
+                                    </button>
+                                    <p class="text-[10px] text-violet-400 font-medium">Filtros</p>
                                     <label class="text-[10px] text-zinc-400 block">Brilho<input type="range" min="0" max="100" x-model.number="imageStudioFilters.brightness" @input="imageStudioApplyFilters()" class="w-full mt-1"></label>
                                     <label class="text-[10px] text-zinc-400 block">Contraste<input type="range" min="0" max="100" x-model.number="imageStudioFilters.contrast" @input="imageStudioApplyFilters()" class="w-full mt-1"></label>
                                     <label class="text-[10px] text-zinc-400 block">Saturação<input type="range" min="0" max="100" x-model.number="imageStudioFilters.saturation" @input="imageStudioApplyFilters()" class="w-full mt-1"></label>
                                     <label class="text-[10px] text-zinc-400 block">Desfoque<input type="range" min="0" max="100" x-model.number="imageStudioFilters.blur" @input="imageStudioApplyFilters()" class="w-full mt-1"></label>
-                                    <label class="text-[10px] text-zinc-400 block">Preto e branco<input type="range" min="0" max="100" x-model.number="imageStudioFilters.grayscale" @input="imageStudioApplyFilters()" class="w-full mt-1"></label>
+                                    <label class="text-[10px] text-zinc-400 block">P&B<input type="range" min="0" max="100" x-model.number="imageStudioFilters.grayscale" @input="imageStudioApplyFilters()" class="w-full mt-1"></label>
                                     <button type="button" @click="imageStudioClearFilters()" class="text-[10px] px-2 py-1 rounded bg-zinc-800 text-zinc-400 hover:text-white">Limpar filtros</button>
                                 </div>
                             </template>
@@ -915,7 +938,6 @@ O narrador continua a história com calma."
                                     <button type="button" @click="imageStudioExport(fmt.id)" class="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-violet-800" x-text="fmt.label"></button>
                                 </template>
                             </div>
-                            <p class="text-[9px] text-zinc-600">PNG/JPG → Photoshop & Affinity · SVG → CorelDRAW & Affinity</p>
                         </div>
 
                         <div class="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-3 space-y-2">
@@ -929,8 +951,6 @@ O narrador continua a história com calma."
                             <button type="button" @click="imageStudioPickLocalFolder()" class="w-full text-xs py-2 rounded-lg bg-sky-800 hover:bg-sky-700">Monitorar pasta de imagens</button>
                             <p x-show="imageStudioLocalWatch" class="text-[9px] text-zinc-500 break-all" x-text="imageStudioLocalWatch"></p>
                         </div>
-
-                        <p x-show="!imageStudioBgRemoval" class="text-[10px] text-amber-600/90">Remover fundo: instale <code class="text-amber-400">pip install rembg pillow</code> e configure REMBG_PYTHON no .env se necessário.</p>
                     </div>
                 </div>
             </div>

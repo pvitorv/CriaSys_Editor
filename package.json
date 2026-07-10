@@ -16,7 +16,8 @@
         "electron:build:linux": "npm run build && electron-builder --linux --x64",
         "electron:build:mac": "npm run build && electron-builder --mac --x64 --arm64",
         "electron:build:all": "npm run build && electron-builder -mwl --x64",
-        "portable:prepare": "node scripts/prepare-portable.mjs"
+        "portable:prepare": "node scripts/prepare-portable.mjs",
+        "icons:sync": "node scripts/sync-bootstrap-icons.mjs"
     },
     "build": {
         "appId": "com.criasys.editor",
@@ -150,8 +151,10 @@
     },
     "dependencies": {
         "@alpinejs/sort": "^3.15.12",
+        "@imgly/background-removal": "^1.7.0",
         "ag-psd": "^31.0.2",
         "alpinejs": "^3.15.12",
+        "bootstrap-icons": "^1.13.1",
         "edge-tts-universal": "^1.4.0",
         "fabric": "^6.9.1",
         "jspdf": "^4.2.1"
