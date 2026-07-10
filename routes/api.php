@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AlertController;
 use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\AudioTrackController;
 use App\Http\Controllers\Api\ExportController;
+use App\Http\Controllers\Api\ImageStudioController;
 use App\Http\Controllers\Api\MediaLibraryController;
 use App\Http\Controllers\Api\NarrationController;
 use App\Http\Controllers\Api\ProjectController;
@@ -38,6 +39,14 @@ Route::delete('projects/{project}/slides/{slide}', [SlideController::class, 'des
 Route::post('projects/{project}/assets/upload', [AssetController::class, 'upload']);
 Route::get('projects/{project}/assets/{asset}', [AssetController::class, 'serve'])->name('api.projects.assets');
 Route::get('projects/{project}/files/{type}/{filename}', [AssetController::class, 'serveFile'])->name('api.projects.files');
+
+Route::get('image-studio/catalog', [ImageStudioController::class, 'catalog']);
+Route::get('projects/{project}/image-studio', [ImageStudioController::class, 'show']);
+Route::put('projects/{project}/image-studio', [ImageStudioController::class, 'update']);
+Route::post('projects/{project}/image-studio/export', [ImageStudioController::class, 'export']);
+Route::post('projects/{project}/image-studio/remove-background', [ImageStudioController::class, 'removeBackground']);
+Route::post('projects/{project}/image-studio/push-thumbnail', [ImageStudioController::class, 'pushThumbnail']);
+Route::post('projects/{project}/image-studio/push-library', [ImageStudioController::class, 'pushLibrary']);
 
 Route::get('media/providers', [MediaLibraryController::class, 'providers']);
 Route::get('media/suggest-query', [MediaLibraryController::class, 'suggestQuery']);

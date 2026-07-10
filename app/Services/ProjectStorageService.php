@@ -21,7 +21,7 @@ class ProjectStorageService
     public function ensureStructure(Project $project): string
     {
         $path = $this->projectPath($project);
-        $dirs = ['slides', 'audio', 'assets', 'exports', 'thumbs'];
+        $dirs = ['slides', 'audio', 'assets', 'exports', 'thumbs', 'designs'];
 
         foreach ($dirs as $dir) {
             File::ensureDirectoryExists($path.DIRECTORY_SEPARATOR.$dir);

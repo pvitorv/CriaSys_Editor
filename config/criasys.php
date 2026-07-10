@@ -24,6 +24,10 @@ return [
 
     'ffprobe_path' => env('FFPROBE_PATH') ?: 'ffprobe',
 
+    'image_studio' => [
+        'rembg_python' => env('REMBG_PYTHON'),
+    ],
+
     // Windows/Laragon: php artisan serve nem sempre herda o PATH com Node.js
     'node_path' => env('NODE_PATH'),
 

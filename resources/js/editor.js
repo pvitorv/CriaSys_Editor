@@ -7,6 +7,7 @@ import {
     defaultTextStyle,
 } from './slideTextStyle';
 import { PreviewAudioMixer } from './previewAudio';
+import { imageStudioMethods } from './imageStudio.js';
 
 const token = document.head.querySelector('meta[name="csrf-token"]');
 if (token) {
@@ -30,6 +31,7 @@ window.api.interceptors.response.use(
 
 window.editorApp = function (projectId, projectMeta = {}) {
     return {
+        ...imageStudioMethods(),
         projectId,
         projectDescription: projectMeta.description || '',
         slides: [],
@@ -39,6 +41,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             { id: 'roteiro', label: 'Roteiro' },
             { id: 'audio', label: 'Trilhas & FX' },
             { id: 'biblioteca', label: 'Biblioteca' },
+            { id: 'image_studio', label: 'Image Studio' },
             { id: 'exportar', label: 'Exportar' },
             { id: 'thumbnail', label: 'Thumbnail' },
         ],
@@ -1504,6 +1507,9 @@ window.editorApp = function (projectId, projectMeta = {}) {
             if (tab === 'exportar') {
                 this.loadProjectCredits();
                 this.loadPlatformDescriptions();
+            }
+            if (tab === 'image_studio') {
+                this.$nextTick(() => this.initImageStudio());
             }
         },
 

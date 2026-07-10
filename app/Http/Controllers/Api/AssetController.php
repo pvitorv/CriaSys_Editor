@@ -122,7 +122,7 @@ class AssetController extends Controller
 
     public function serveFile(Project $project, string $type, string $filename): BinaryFileResponse
     {
-        $allowed = ['audio', 'exports', 'thumbs', 'slides', 'assets'];
+        $allowed = ['audio', 'exports', 'thumbs', 'slides', 'assets', 'designs'];
         abort_unless(in_array($type, $allowed, true), 404);
 
         $path = $this->storage->projectPath($project).DIRECTORY_SEPARATOR.$type.DIRECTORY_SEPARATOR.$filename;
@@ -134,6 +134,9 @@ class AssetController extends Controller
                 'wav' => 'audio/wav',
                 'jpg', 'jpeg' => 'image/jpeg',
                 'png' => 'image/png',
+                'webp' => 'image/webp',
+                'svg' => 'image/svg+xml',
+                'json' => 'application/json',
                 'mp4' => 'video/mp4',
                 'srt' => 'text/plain',
                 'zip' => 'application/zip',

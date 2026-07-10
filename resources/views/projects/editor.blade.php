@@ -737,6 +737,127 @@ O narrador continua a história com calma."
                 </div>
             </div>
 
+            {{-- Image Studio — editor estilo Canva --}}
+            <div x-show="activeTab === 'image_studio'" class="space-y-4" x-cloak>
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h3 class="text-sm font-semibold text-violet-200">Image Studio</h3>
+                        <p class="text-[11px] text-zinc-500 mt-0.5">Editor de artes para redes sociais, banners e sites — camadas, exportação e integração com Thumbnail e biblioteca.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <span x-show="imageStudioSaving" class="text-[10px] text-zinc-500">Salvando…</span>
+                        <button type="button" @click="saveImageStudioDesign()" class="text-xs px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600">Salvar</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-[240px_1fr_260px] gap-4">
+                    {{-- Presets --}}
+                    <div class="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950/50 p-3 max-h-[75vh] overflow-y-auto">
+                        <input type="search" x-model="imageStudioPresetFilter" placeholder="Buscar formato…" class="w-full text-xs px-2 py-1.5 rounded bg-zinc-900 border border-zinc-700">
+                        <template x-for="(presets, groupName) in imageStudioPresetGroups" :key="'isg-' + groupName">
+                            <div>
+                                <p class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1" x-text="groupName"></p>
+                                <div class="space-y-1">
+                                    <template x-for="preset in presets" :key="preset.slug">
+                                        <button
+                                            type="button"
+                                            @click="switchImageStudioPreset(preset.slug)"
+                                            class="w-full text-left text-xs px-2 py-1.5 rounded border transition"
+                                            :class="imageStudioPreset === preset.slug ? 'border-violet-500 bg-violet-950/40 text-white' : 'border-zinc-800 text-zinc-400 hover:border-zinc-600'"
+                                        >
+                                            <span x-text="preset.icon"></span>
+                                            <span x-text="preset.name" class="ml-1"></span>
+                                            <span class="block text-[9px] text-zinc-600 tabular-nums" x-text="preset.width + '×' + preset.height"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    {{-- Canvas --}}
+                    <div class="space-y-3 min-w-0">
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" @click="imageStudioAddText()" class="text-xs px-2 py-1 rounded bg-violet-800 hover:bg-violet-700">+ Texto</button>
+                            <button type="button" @click="imageStudioAddShape('rect')" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">+ Retângulo</button>
+                            <button type="button" @click="imageStudioAddShape('circle')" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">+ Círculo</button>
+                            <label class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 cursor-pointer">
+                                + Imagem
+                                <input type="file" accept="image/*" @change="imageStudioUploadImage($event)" class="hidden">
+                            </label>
+                            <label class="text-xs px-2 py-1 rounded bg-emerald-900/60 hover:bg-emerald-800 cursor-pointer" :class="!imageStudioBgRemoval && 'opacity-50'" title="Requer: pip install rembg pillow">
+                                ✂ Remover fundo
+                                <input type="file" accept="image/*" @change="imageStudioRemoveBackground($event)" class="hidden" :disabled="!imageStudioBgRemoval">
+                            </label>
+                            <button type="button" @click="fitImageStudioCanvas()" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 ml-auto">Ajustar zoom</button>
+                        </div>
+
+                        <div class="rounded-xl border border-zinc-700 bg-zinc-900/80 p-3 overflow-auto max-h-[70vh]" x-ref="imageStudioCanvasWrap">
+                            <div class="mx-auto shadow-2xl shadow-black/40 inline-block">
+                                <canvas x-ref="imageStudioCanvas" class="block max-w-full"></canvas>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="text-xs text-zinc-400">
+                                Cor de fundo do canvas
+                                <input type="color" x-model="imageStudioBgColor" @input="onImageStudioBgChange()" class="w-full mt-1 h-9 rounded bg-zinc-800 border border-zinc-700 cursor-pointer">
+                            </label>
+                            <label class="text-xs text-zinc-400">
+                                Transparência fundo
+                                <input type="range" min="0" max="100" x-model.number="imageStudioBgOpacity" @input="onImageStudioBgChange()" class="w-full mt-2">
+                                <span class="text-[10px] text-zinc-500" x-text="imageStudioBgOpacity + '%'"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    {{-- Camadas + export --}}
+                    <div class="space-y-3 max-h-[75vh] overflow-y-auto">
+                        <div class="rounded-xl border border-zinc-800 bg-zinc-950/50 p-3 space-y-2">
+                            <p class="text-xs font-medium text-zinc-300">Camadas</p>
+                            <template x-if="!imageStudioLayers.length">
+                                <p class="text-[10px] text-zinc-600">Adicione texto, formas ou imagens.</p>
+                            </template>
+                            <template x-for="layer in imageStudioLayers" :key="layer.id">
+                                <div class="flex items-center gap-1 rounded bg-zinc-900/80 border border-zinc-800 px-1.5 py-1">
+                                    <button type="button" @click="imageStudioSelectLayer(layer)" class="flex-1 text-left text-[10px] text-zinc-300 truncate" x-text="layer.name"></button>
+                                    <button type="button" @click="imageStudioLayerAction(layer, 'visibility')" class="text-[10px] px-1" x-text="layer.visible ? '👁' : '🚫'"></button>
+                                    <button type="button" @click="imageStudioLayerAction(layer, 'lock')" class="text-[10px] px-1" x-text="layer.locked ? '🔒' : '🔓'"></button>
+                                    <button type="button" @click="imageStudioLayerAction(layer, 'up')" class="text-[10px] px-1">↑</button>
+                                    <button type="button" @click="imageStudioLayerAction(layer, 'delete')" class="text-[10px] px-1 text-red-400">×</button>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div x-show="imageStudioSelectedObject" class="rounded-xl border border-zinc-800 bg-zinc-950/50 p-3 space-y-2">
+                            <p class="text-xs font-medium text-zinc-300">Objeto selecionado</p>
+                            <label class="text-xs text-zinc-400 block">
+                                Opacidade
+                                <input type="range" min="0" max="100" :value="Math.round((imageStudioSelectedObject?.opacity ?? 1) * 100)" @input="imageStudioObjectOpacity($event.target.value)" class="w-full mt-1">
+                            </label>
+                        </div>
+
+                        <div class="rounded-xl border border-violet-900/40 bg-violet-950/20 p-3 space-y-2">
+                            <p class="text-xs font-medium text-violet-200">Exportar</p>
+                            <div class="flex flex-wrap gap-1.5">
+                                <template x-for="fmt in imageStudioExportFormats" :key="'isf-' + fmt.id">
+                                    <button type="button" @click="imageStudioExport(fmt.id)" class="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-violet-800" x-text="fmt.label"></button>
+                                </template>
+                            </div>
+                            <p class="text-[9px] text-zinc-600">PNG/JPG → Photoshop & Affinity · SVG → CorelDRAW & Affinity</p>
+                        </div>
+
+                        <div class="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-3 space-y-2">
+                            <p class="text-xs font-medium text-emerald-200">Integração CriaSys</p>
+                            <button type="button" @click="imageStudioPushThumbnail()" class="w-full text-xs py-2 rounded-lg bg-violet-800 hover:bg-violet-700">Enviar para Thumbnail</button>
+                            <button type="button" @click="imageStudioPushLibrary()" class="w-full text-xs py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700">Salvar na biblioteca do projeto</button>
+                        </div>
+
+                        <p x-show="!imageStudioBgRemoval" class="text-[10px] text-amber-600/90">Remover fundo: instale <code class="text-amber-400">pip install rembg pillow</code> e configure REMBG_PYTHON no .env se necessário.</p>
+                    </div>
+                </div>
+            </div>
+
             {{-- Thumbnail --}}
             <div x-show="activeTab === 'thumbnail'" class="space-y-4">
                 {{-- Plataformas de entrega --}}
