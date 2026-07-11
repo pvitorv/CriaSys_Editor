@@ -4157,5 +4157,16 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 this.error = e.response?.data?.message || 'Erro ao exportar pacote';
             }
         },
+
+        async exportBundle() {
+            try {
+                const { data } = await api.post(`/projects/${this.projectId}/export-bundle`);
+                this.message = data.message || 'Bundle gerado';
+                if (data.url) window.open(data.url, '_blank');
+                await this.loadDownloads();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao exportar bundle';
+            }
+        },
     };
 };

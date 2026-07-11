@@ -32,6 +32,18 @@
     @endif
     <p class="text-xs text-zinc-500 mb-6">Atalhos no editor: Ctrl+S salvar · Ctrl+N novo slide · Ctrl+Shift+S sincronizar narração</p>
 
+    @if($deployment['is_desktop'] || $canCreate)
+        <div class="mb-6">
+            <label class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm text-zinc-200 cursor-pointer">
+                <span>Importar projeto (ZIP bundle)</span>
+                <input type="file" accept=".zip,application/zip" class="hidden" @change="importBundle($event)">
+            </label>
+            <p class="text-[11px] text-zinc-500 mt-2">Restaura slides, áudio, assets e descrições de um bundle exportado anteriormente.</p>
+        </div>
+    @elseif($deployment['is_online'])
+        <p class="text-xs text-amber-400/80 mb-6">Exporte e exclua o projeto atual para importar outro bundle.</p>
+    @endif
+
     <p x-show="message" x-text="message" class="text-emerald-400 text-sm mb-4"></p>
     <p x-show="error" x-text="error" class="text-red-400 text-sm mb-4"></p>
 

@@ -1752,6 +1752,7 @@ O narrador continua a história com calma."
                     <button @click="exportSubtitles()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Exportar legendas.srt</button>
                     <button @click="exportPsd()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">Exportar slides PSD</button>
                     <button @click="exportPackage()" class="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-sm">Pacote Premiere/Affinity</button>
+                    <button @click="exportBundle()" class="px-4 py-2 rounded-lg bg-sky-700 hover:bg-sky-600 text-sm">Bundle completo (ZIP)</button>
                 </div>
 
                 <div class="rounded-lg border border-emerald-800/50 bg-emerald-950/20 p-3 space-y-3">

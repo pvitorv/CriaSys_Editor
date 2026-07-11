@@ -49,5 +49,35 @@ window.dashboardApp = function () {
                 this.error = e.response?.data?.message || 'Erro ao excluir';
             }
         },
+
+        async importBundle(event) {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (!file) return;
+
+            this.error = '';
+            this.message = 'Importando bundle…';
+
+            const form = new FormData();
+            form.append('bundle', file);
+
+            try {
+                const { data } = await api.post('/projects/import-bundle', form, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                });
+                this.message = data.message || 'Projeto importado';
+                if (data.editor_url) {
+                    setTimeout(() => { window.location.href = data.editor_url; }, 800);
+                } else {
+                    setTimeout(() => window.location.reload(), 800);
+                }
+            } catch (e) {
+                this.message = '';
+                const errors = e.response?.data?.errors;
+                this.error = errors?.bundle?.[0]
+                    || e.response?.data?.message
+                    || 'Erro ao importar bundle';
+            }
+        },
     };
 };

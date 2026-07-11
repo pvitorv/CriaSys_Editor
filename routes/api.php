@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\ImageStudioController;
 use App\Http\Controllers\Api\MediaLibraryController;
 use App\Http\Controllers\Api\NarrationController;
+use App\Http\Controllers\Api\ProjectBundleController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\ProjectStockLicenseController;
 use App\Http\Controllers\Api\ProjectTemplateController;
@@ -25,6 +26,9 @@ Route::get('tts/engines/{provider}/voices', [TtsController::class, 'voices']);
 Route::get('project-templates', [ProjectTemplateController::class, 'index']);
 
 Route::get('deployment', [DeploymentController::class, 'show']);
+
+Route::post('projects/import-bundle', [ProjectBundleController::class, 'import']);
+Route::post('projects/{project}/export-bundle', [ProjectBundleController::class, 'export']);
 
 Route::apiResource('projects', ProjectController::class);
 Route::post('projects/{project}/duplicate', [ProjectController::class, 'duplicate']);

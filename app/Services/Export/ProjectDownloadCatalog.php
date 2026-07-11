@@ -126,6 +126,7 @@ class ProjectDownloadCatalog
                     str_starts_with($filename, 'legendas') => 'Legendas SRT',
                     str_starts_with($filename, 'slides_psd_') => 'Slides PSD/PNG',
                     str_starts_with($filename, 'pacote_premiere_') => 'Pacote Premiere',
+                    str_starts_with($filename, 'bundle_') => 'Bundle completo do projeto',
                     str_starts_with($filename, 'render_') => 'Vídeo render',
                     str_starts_with($filename, 'descricao_') => 'Descrição '.str_replace(['descricao_', '.txt'], '', $filename),
                     str_starts_with($filename, 'creditos_') => 'Créditos dos materiais',
