@@ -69,7 +69,8 @@ class ProjectWebController extends Controller
         $project->load('slides');
 
         $imageStudioCatalog = $imageStudio->catalog(auth()->user());
+        $deployment = DeploymentMode::meta();
 
-        return view('projects.editor', compact('project', 'imageStudioCatalog'));
+        return view('projects.editor', compact('project', 'imageStudioCatalog', 'deployment'));
     }
 }

@@ -27,6 +27,7 @@
     <h1 class="text-2xl font-bold mb-2">Projetos recentes</h1>
     @if($deployment['is_online'])
         <p class="text-amber-400/90 text-sm mb-2">Modo online — {{ $deployment['max_active_projects'] }} projeto ativo por vez. Exporte e exclua para iniciar o próximo.</p>
+        <p class="text-xs text-zinc-500 mb-2">Configure links do canal em <a href="{{ route('profile.edit') }}" class="text-violet-400 hover:text-violet-300 underline">Minha conta</a> · Veja <code class="text-zinc-400">DOCS_DEPLOYMENT.md</code> no repositório.</p>
     @else
         <p class="text-zinc-400 mb-2">Modo desktop — projetos limitados apenas pelo espaço em disco.</p>
     @endif
