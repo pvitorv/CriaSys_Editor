@@ -18,6 +18,7 @@ export function buildLaravelEnv({ isDev, dataPath, ffmpegPath, ffprobePath, port
     return {
         ...process.env,
         CRIASYS_PORTABLE: 'true',
+        CRIASYS_DEPLOYMENT: 'desktop',
         CRIASYS_DATA_PATH: dataPath,
         APP_NAME: 'CriaSys_Editor',
         APP_ENV: 'production',

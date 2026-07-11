@@ -17,6 +17,13 @@ return [
     'portable' => env('CRIASYS_PORTABLE', false),
     'data_path' => env('CRIASYS_DATA_PATH'),
 
+    /*
+    | desktop — projetos ilimitados (limite = disco/RAM), import/export de pastas
+    | online  — 1 projeto ativo por usuário; exportar e excluir para o próximo
+    */
+    'deployment' => env('CRIASYS_DEPLOYMENT', env('CRIASYS_PORTABLE', false) ? 'desktop' : 'desktop'),
+    'online_max_active_projects' => (int) env('CRIASYS_ONLINE_MAX_ACTIVE_PROJECTS', 1),
+
     // Laragon/Windows: defina false se buscas externas (Openverse, TTS) falharem por SSL
     'http_verify_ssl' => env('HTTP_VERIFY_SSL', env('APP_ENV') === 'production'),
 

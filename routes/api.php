@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AlertController;
 use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\AudioTrackController;
+use App\Http\Controllers\Api\DeploymentController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\ImageStudioController;
 use App\Http\Controllers\Api\MediaLibraryController;
@@ -23,9 +24,12 @@ Route::get('tts/engines', [TtsController::class, 'engines']);
 Route::get('tts/engines/{provider}/voices', [TtsController::class, 'voices']);
 Route::get('project-templates', [ProjectTemplateController::class, 'index']);
 
+Route::get('deployment', [DeploymentController::class, 'show']);
+
 Route::apiResource('projects', ProjectController::class);
 Route::post('projects/{project}/duplicate', [ProjectController::class, 'duplicate']);
 Route::post('projects/{project}/archive', [ProjectController::class, 'archive']);
+Route::post('projects/{project}/mark-exported', [ProjectController::class, 'markExported']);
 
 Route::get('projects/{project}/slides', [SlideController::class, 'index']);
 Route::post('projects/{project}/slides', [SlideController::class, 'store']);

@@ -5,25 +5,34 @@ namespace App\Http\Controllers;
 use App\Models\Project;
 use App\Models\ProjectTemplate;
 use App\Services\ImageStudio\ImageStudioService;
+use App\Services\ProjectQuotaService;
 use App\Services\ProjectStorageService;
 use App\Services\ProjectTemplateService;
+use App\Support\DeploymentMode;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ProjectWebController extends Controller
 {
-    public function __construct(private ProjectStorageService $storage) {}
+    public function __construct(
+        private ProjectStorageService $storage,
+        private ProjectQuotaService $quota,
+    ) {}
 
     public function create(): View
     {
         $templates = ProjectTemplate::where('is_active', true)->orderBy('name')->get();
+        $deployment = DeploymentMode::meta();
+        $canCreate = $this->quota->canCreateProject(auth()->user());
 
-        return view('projects.create', compact('templates'));
+        return view('projects.create', compact('templates', 'deployment', 'canCreate'));
     }
 
     public function store(Request $request, ProjectTemplateService $templates): RedirectResponse
     {
+        $this->quota->assertCanCreate(auth()->user());
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
