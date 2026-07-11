@@ -51,4 +51,27 @@ class ProfileController extends Controller
 
         return back()->with('success', 'Senha alterada com sucesso.');
     }
+
+    public function updateCreator(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'display_name' => ['nullable', 'string', 'max:120'],
+            'youtube' => ['nullable', 'url', 'max:500'],
+            'instagram' => ['nullable', 'url', 'max:500'],
+            'tiktok' => ['nullable', 'url', 'max:500'],
+            'website' => ['nullable', 'url', 'max:500'],
+            'subscribe_cta' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $profile = app(\App\Services\Creator\CreatorProfileService::class)->defaults();
+        foreach ($data as $key => $value) {
+            $profile[$key] = $value === '' ? null : $value;
+        }
+
+        $user->update(['creator_profile' => $profile]);
+
+        return back()->with('success', 'Perfil de creator atualizado.');
+    }
 }

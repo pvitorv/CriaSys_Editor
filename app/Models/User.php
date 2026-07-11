@@ -22,6 +22,7 @@ class User extends Authenticatable
         'password',
         'is_admin',
         'status',
+        'creator_profile',
     ];
 
     protected $hidden = [
@@ -35,6 +36,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_admin' => 'boolean',
+            'creator_profile' => 'array',
         ];
     }
 

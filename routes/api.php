@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AlertController;
 use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\AudioTrackController;
+use App\Http\Controllers\Api\CreatorProfileController;
 use App\Http\Controllers\Api\DeploymentController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\ImageStudioController;
@@ -26,6 +27,9 @@ Route::get('tts/engines/{provider}/voices', [TtsController::class, 'voices']);
 Route::get('project-templates', [ProjectTemplateController::class, 'index']);
 
 Route::get('deployment', [DeploymentController::class, 'show']);
+
+Route::get('creator-profile', [CreatorProfileController::class, 'show']);
+Route::put('creator-profile', [CreatorProfileController::class, 'update']);
 
 Route::post('projects/import-bundle', [ProjectBundleController::class, 'import']);
 Route::post('projects/{project}/export-bundle', [ProjectBundleController::class, 'export']);

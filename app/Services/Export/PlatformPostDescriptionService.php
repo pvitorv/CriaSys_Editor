@@ -3,12 +3,16 @@
 namespace App\Services\Export;
 
 use App\Models\Project;
+use App\Services\Creator\CreatorProfileService;
 use App\Services\ProjectStorageService;
 use Illuminate\Support\Facades\File;
 
 class PlatformPostDescriptionService
 {
-    public function __construct(private ProjectAttributionCatalog $attributions) {}
+    public function __construct(
+        private ProjectAttributionCatalog $attributions,
+        private CreatorProfileService $creatorProfiles,
+    ) {}
 
     /**
      * @return array<string, array<string, mixed>>
@@ -35,7 +39,8 @@ class PlatformPostDescriptionService
                 $meta['slug'],
                 $creditsBlock,
                 $credits,
-                $meta['max']
+                $meta['max'],
+                $this->customDescription($project, $key),
             );
         }
 
@@ -79,10 +84,32 @@ class PlatformPostDescriptionService
         string $creditsBlock,
         array $credits,
         int $maxChars,
+        ?string $customDescription = null,
     ): array {
+        if ($customDescription !== null && trim($customDescription) !== '') {
+            $description = trim($customDescription);
+            if ($creditsBlock !== '' && ! str_contains($description, 'CRÉDITOS')) {
+                $description .= "\n\n".$creditsBlock;
+            }
+
+            return [
+                'platform' => $platformName,
+                'slug' => $slug,
+                'title' => $project->name,
+                'description' => $description,
+                'hashtags' => $this->hashtagsFor($slug, $project),
+                'credits_block' => $creditsBlock,
+                'char_count' => mb_strlen($description),
+                'materials_count' => count($credits),
+                'is_custom' => true,
+            ];
+        }
+
         $title = $project->name;
         $summary = $this->projectSummary($project);
         $hashtags = $this->hashtagsFor($slug, $project);
+        $creatorProfile = $this->creatorProfiles->forProject($project);
+        $ctaBlock = $this->creatorProfiles->ctaBlockForPlatform($creatorProfile, $slug);
 
         $intro = match ($slug) {
             'youtube', 'youtube_shorts' => "{$title}\n\n{$summary}\n\n{$hashtags}",
@@ -93,12 +120,13 @@ class PlatformPostDescriptionService
 
         $creditsSection = $creditsBlock !== '' ? "\n\n".$creditsBlock : '';
 
-        $description = $intro.$creditsSection;
+        $description = $intro.$ctaBlock.$creditsSection;
 
         if (mb_strlen($description) > $maxChars) {
-            $budget = $maxChars - mb_strlen($creditsSection) - 20;
+            $fixedLen = mb_strlen($ctaBlock.$creditsSection) + 20;
+            $budget = $maxChars - $fixedLen;
             $intro = mb_substr($intro, 0, max(200, $budget)).'…';
-            $description = $intro.$creditsSection;
+            $description = $intro.$ctaBlock.$creditsSection;
         }
 
         return [
@@ -110,7 +138,16 @@ class PlatformPostDescriptionService
             'credits_block' => $creditsBlock,
             'char_count' => mb_strlen($description),
             'materials_count' => count($credits),
+            'is_custom' => false,
         ];
+    }
+
+    private function customDescription(Project $project, string $platformKey): ?string
+    {
+        $settings = $project->settings ?? [];
+        $custom = $settings['platform_descriptions'][$platformKey] ?? null;
+
+        return is_string($custom) ? $custom : null;
     }
 
     private function projectSummary(Project $project): string

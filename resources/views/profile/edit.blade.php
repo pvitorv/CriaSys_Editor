@@ -18,6 +18,43 @@
     @endif
 
     <div class="rounded-xl border border-zinc-800 bg-zinc-900 p-6">
+        <h2 class="font-semibold mb-2">Perfil de creator (CTAs opcionais)</h2>
+        <p class="text-xs text-zinc-500 mb-4">Links entram automaticamente nas descrições de publicação — só aparecem se você preencher.</p>
+        @php($creator = array_merge(app(\App\Services\Creator\CreatorProfileService::class)->defaults(), $user->creator_profile ?? []))
+        <form method="POST" action="{{ route('profile.creator') }}" class="space-y-4">
+            @csrf
+            @method('PUT')
+            <div>
+                <label class="block text-sm text-zinc-400 mb-1">Nome do canal / marca</label>
+                <input type="text" name="display_name" value="{{ $creator['display_name'] ?? '' }}" placeholder="Ex.: Meu Canal" class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2">
+            </div>
+            <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">YouTube</label>
+                    <input type="url" name="youtube" value="{{ $creator['youtube'] ?? '' }}" placeholder="https://youtube.com/@..." class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Instagram</label>
+                    <input type="url" name="instagram" value="{{ $creator['instagram'] ?? '' }}" placeholder="https://instagram.com/..." class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">TikTok</label>
+                    <input type="url" name="tiktok" value="{{ $creator['tiktok'] ?? '' }}" placeholder="https://tiktok.com/@..." class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Site</label>
+                    <input type="url" name="website" value="{{ $creator['website'] ?? '' }}" placeholder="https://..." class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm text-zinc-400 mb-1">Chamada personalizada (opcional)</label>
+                <input type="text" name="subscribe_cta" value="{{ $creator['subscribe_cta'] ?? '' }}" placeholder="Ex.: Inscreva-se e ative o sininho!" class="w-full rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-2">
+            </div>
+            <button type="submit" class="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm">Salvar perfil creator</button>
+        </form>
+    </div>
+
+    <div class="rounded-xl border border-zinc-800 bg-zinc-900 p-6">
         <h2 class="font-semibold mb-4">Alterar e-mail</h2>
         <p class="text-xs text-zinc-500 mb-4">É necessário informar sua senha atual.</p>
         <form method="POST" action="{{ route('profile.email') }}" class="space-y-4">
