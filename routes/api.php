@@ -82,6 +82,8 @@ Route::delete('projects/{project}/sound-effects/{soundEffect}', [SoundEffectCont
 
 Route::get('projects/{project}/platform-descriptions', [ExportController::class, 'platformDescriptions']);
 Route::post('projects/{project}/platform-descriptions', [ExportController::class, 'savePlatformDescriptions']);
+Route::put('projects/{project}/platform-descriptions/custom', [ExportController::class, 'updatePlatformDescription']);
+Route::post('projects/{project}/publish-kit', [ExportController::class, 'publishKit']);
 Route::get('projects/{project}/credits', [ExportController::class, 'credits']);
 Route::post('projects/{project}/publish/sync', [ExportController::class, 'syncPublish']);
 

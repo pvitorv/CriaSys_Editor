@@ -11,8 +11,10 @@ use App\Services\Export\ProjectAttributionCatalog;
 use App\Services\Export\ProjectCreditsClipboard;
 use App\Services\Export\ProjectDownloadCatalog;
 use App\Services\Export\ProjectPublishAutoSyncService;
+use App\Services\Export\PublishKitExporter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class ExportController extends Controller
 {
@@ -135,6 +137,48 @@ class ExportController extends Controller
             'message' => 'Descrições e créditos gerados.',
             'files' => $files,
             'descriptions' => $descriptions->generateAll($project),
+        ]);
+    }
+
+    public function updatePlatformDescription(Request $request, Project $project, PlatformPostDescriptionService $descriptions): JsonResponse
+    {
+        $this->authorize('update', $project);
+
+        $data = $request->validate([
+            'platform' => ['required', 'string', Rule::in(array_keys(config('publish_platforms', [])))],
+            'description' => ['nullable', 'string', 'max:10000'],
+        ]);
+
+        $settings = $project->settings ?? [];
+        $custom = $settings['platform_descriptions'] ?? [];
+
+        if ($data['description'] === null || trim($data['description']) === '') {
+            unset($custom[$data['platform']]);
+        } else {
+            $custom[$data['platform']] = trim($data['description']);
+        }
+
+        $settings['platform_descriptions'] = $custom;
+        $project->update(['settings' => $settings]);
+
+        $descriptions->saveToProject($project->fresh());
+
+        return response()->json([
+            'message' => 'Descrição salva.',
+            'descriptions' => $descriptions->generateAll($project->fresh()),
+        ]);
+    }
+
+    public function publishKit(Project $project, PublishKitExporter $kit): JsonResponse
+    {
+        $this->authorize('view', $project);
+
+        $result = $kit->export($project);
+
+        return response()->json([
+            'message' => 'Publish Kit gerado.',
+            'filename' => $result['filename'],
+            'url' => $result['url'],
         ]);
     }
 

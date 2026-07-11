@@ -34,6 +34,8 @@ window.editorApp = function (projectId, projectMeta = {}) {
         ...imageStudioMethods(),
         projectId,
         projectDescription: projectMeta.description || '',
+        projectStatus: projectMeta.status || 'active',
+        deployment: projectMeta.deployment || { is_online: false, is_desktop: true },
         slides: [],
         selectedSlide: null,
         activeTab: 'roteiro',
@@ -104,6 +106,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
         downloads: [],
         selectedDownloadIds: [],
         platformDescriptions: {},
+        platformDescDraft: '',
         platformDescKeys: ['youtube', 'youtube_shorts', 'tiktok', 'instagram_reels', 'instagram_feed'],
         selectedPlatformDesc: 'youtube',
         projectCreditsText: '',
@@ -1100,6 +1103,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.projectCreditsCount = publish.materials_count || 0;
             if (publish.descriptions) {
                 this.platformDescriptions = publish.descriptions;
+                this.syncPlatformDescDraft();
             }
             if (publish.files) {
                 this.publishFiles = publish.files;
@@ -1120,8 +1124,67 @@ window.editorApp = function (projectId, projectMeta = {}) {
             try {
                 const { data } = await api.get(`/projects/${this.projectId}/platform-descriptions`);
                 this.platformDescriptions = data;
+                this.syncPlatformDescDraft();
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao carregar descrições';
+            }
+        },
+
+        syncPlatformDescDraft() {
+            const d = this.platformDescriptions[this.selectedPlatformDesc];
+            this.platformDescDraft = d?.description || '';
+        },
+
+        async saveCustomPlatformDescription() {
+            try {
+                const { data } = await api.put(`/projects/${this.projectId}/platform-descriptions/custom`, {
+                    platform: this.selectedPlatformDesc,
+                    description: this.platformDescDraft,
+                });
+                this.platformDescriptions = data.descriptions || this.platformDescriptions;
+                this.syncPlatformDescDraft();
+                this.message = 'Descrição salva';
+                await this.syncPublish();
+                await this.loadDownloads();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao salvar descrição';
+            }
+        },
+
+        async resetCustomPlatformDescription() {
+            try {
+                const { data } = await api.put(`/projects/${this.projectId}/platform-descriptions/custom`, {
+                    platform: this.selectedPlatformDesc,
+                    description: null,
+                });
+                this.platformDescriptions = data.descriptions || this.platformDescriptions;
+                this.syncPlatformDescDraft();
+                this.message = 'Descrição automática restaurada';
+                await this.syncPublish();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao restaurar descrição';
+            }
+        },
+
+        async exportPublishKit() {
+            try {
+                const { data } = await api.post(`/projects/${this.projectId}/publish-kit`);
+                this.message = data.message || 'Publish Kit gerado';
+                if (data.url) window.open(data.url, '_blank');
+                await this.loadDownloads();
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao gerar Publish Kit';
+            }
+        },
+
+        async markProjectExported() {
+            if (!confirm('Marcar este projeto como exportado? Você poderá excluí-lo no dashboard para criar outro (modo online).')) return;
+            try {
+                const { data } = await api.post(`/projects/${this.projectId}/mark-exported`);
+                this.projectStatus = data.project?.status || 'exported';
+                this.message = data.message || 'Projeto marcado como exportado';
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao marcar exportado';
             }
         },
 
@@ -1645,9 +1708,9 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         copyPlatformDescription() {
-            const d = this.platformDescriptions[this.selectedPlatformDesc];
-            if (!d?.description) return;
-            navigator.clipboard.writeText(d.description).then(() => {
+            const text = this.platformDescDraft || this.platformDescriptions[this.selectedPlatformDesc]?.description;
+            if (!text) return;
+            navigator.clipboard.writeText(text).then(() => {
                 this.message = 'Descrição copiada para a área de transferência';
             }).catch(() => {
                 this.error = 'Não foi possível copiar — selecione e copie manualmente';

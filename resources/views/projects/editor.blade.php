@@ -24,6 +24,8 @@
     x-data="editorApp({{ $project->id }}, @js([
         'description' => $project->description ?? '',
         'name' => $project->name,
+        'status' => $project->status,
+        'deployment' => $deployment,
         'defaultTtsEngine' => app(\App\Services\Tts\TtsEngineFactory::class)->recommendedEngine(),
         'defaultVoice' => config('criasys.tts.default_voice'),
     ]))"
@@ -1734,6 +1736,24 @@ O narrador continua a história com calma."
 
             {{-- Exportar --}}
             <div x-show="activeTab === 'exportar'" class="space-y-4">
+                <div x-show="deployment.is_online" class="rounded-lg border border-amber-800/50 bg-amber-950/20 p-4 space-y-3">
+                    <h3 class="text-sm font-medium text-amber-200">Finalizar projeto (modo online)</h3>
+                    <ol class="text-xs text-zinc-400 space-y-1 list-decimal list-inside">
+                        <li>Gere o <strong class="text-zinc-300">Publish Kit</strong> ou <strong class="text-zinc-300">Bundle completo</strong> e baixe os arquivos</li>
+                        <li>Marque como exportado quando tiver tudo salvo no seu computador</li>
+                        <li>Exclua o projeto no dashboard para liberar a criação/importação do próximo</li>
+                    </ol>
+                    <div class="flex flex-wrap gap-2">
+                        <button @click="exportPublishKit()" class="px-3 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-600 text-xs text-white">Gerar Publish Kit</button>
+                        <button @click="exportBundle()" class="px-3 py-1.5 rounded-lg bg-sky-700 hover:bg-sky-600 text-xs text-white">Bundle completo</button>
+                        <button
+                            x-show="projectStatus !== 'exported'"
+                            @click="markProjectExported()"
+                            class="px-3 py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-xs text-white"
+                        >Marcar como exportado</button>
+                        <span x-show="projectStatus === 'exported'" class="text-xs text-emerald-400 self-center">✓ Projeto marcado como exportado</span>
+                    </div>
+                </div>
                 <div>
                     <h3 class="text-sm font-medium text-zinc-300 mb-2">Render vídeo</h3>
                     <label class="flex items-center gap-2 text-sm text-zinc-400 mb-1">
@@ -1867,7 +1887,7 @@ O narrador continua a história com calma."
                     <div class="flex flex-wrap gap-1">
                         <template x-for="key in platformDescKeys" :key="key">
                             <button
-                                @click="selectedPlatformDesc = key"
+                                @click="selectedPlatformDesc = key; syncPlatformDescDraft()"
                                 :class="selectedPlatformDesc === key ? 'bg-violet-600 text-white' : 'bg-zinc-800 text-zinc-400'"
                                 class="px-2 py-1 rounded text-xs capitalize"
                                 x-text="platformDescriptions[key]?.platform || key.replace('_', ' ')"
@@ -1878,13 +1898,19 @@ O narrador continua a história com calma."
                         <div>
                             <p class="text-[10px] text-zinc-500 mb-1">
                                 <span x-text="platformDescriptions[selectedPlatformDesc].materials_count + ' material(is) com crédito · ' + platformDescriptions[selectedPlatformDesc].char_count + ' caracteres'"></span>
+                                <span x-show="platformDescriptions[selectedPlatformDesc].is_custom" class="text-violet-400 ml-2">· editado manualmente</span>
                             </p>
                             <textarea
-                                readonly
+                                x-model="platformDescDraft"
                                 rows="12"
                                 class="w-full rounded bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs font-mono text-zinc-300"
-                                x-text="platformDescriptions[selectedPlatformDesc]?.description || ''"
                             ></textarea>
+                            <div class="flex flex-wrap gap-2 mt-2">
+                                <button @click="saveCustomPlatformDescription()" type="button" class="text-xs px-2 py-1 rounded bg-violet-700 hover:bg-violet-600 text-white">Salvar descrição</button>
+                                <button @click="resetCustomPlatformDescription()" type="button" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300">Restaurar automática</button>
+                                <button @click="copyPlatformDescription()" type="button" class="text-xs px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300">Copiar</button>
+                                <button @click="exportPublishKit()" type="button" class="text-xs px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-white">Gerar Publish Kit</button>
+                            </div>
                         </div>
                     </template>
                     <p x-show="!platformDescriptions[selectedPlatformDesc]" class="text-xs text-zinc-500">Importe mídia da biblioteca para montar as descrições com créditos.</p>

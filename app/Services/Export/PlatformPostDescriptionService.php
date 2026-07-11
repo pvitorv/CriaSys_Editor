@@ -23,24 +23,23 @@ class PlatformPostDescriptionService
         $credits = $this->attributions->collect($project);
         $creditsBlock = $this->attributions->creditsBlock($project);
 
-        $platforms = [
-            'youtube' => ['name' => 'YouTube', 'slug' => 'youtube', 'max' => 5000],
-            'youtube_shorts' => ['name' => 'YouTube Shorts', 'slug' => 'youtube_shorts', 'max' => 2200],
-            'tiktok' => ['name' => 'TikTok', 'slug' => 'tiktok', 'max' => 2200],
-            'instagram_reels' => ['name' => 'Instagram Reels', 'slug' => 'instagram_reels', 'max' => 2200],
-            'instagram_feed' => ['name' => 'Instagram Feed', 'slug' => 'instagram_feed', 'max' => 2200],
-        ];
+        $platforms = collect(config('publish_platforms', []))->map(fn ($meta, $key) => [
+            'key' => $key,
+            'name' => $meta['name'],
+            'slug' => $key,
+            'max' => $meta['max_chars'] ?? 2200,
+        ])->values()->all();
 
         $out = [];
-        foreach ($platforms as $key => $meta) {
-            $out[$key] = $this->buildForPlatform(
+        foreach ($platforms as $meta) {
+            $out[$meta['key']] = $this->buildForPlatform(
                 $project,
                 $meta['name'],
                 $meta['slug'],
                 $creditsBlock,
                 $credits,
                 $meta['max'],
-                $this->customDescription($project, $key),
+                $this->customDescription($project, $meta['key']),
             );
         }
 
