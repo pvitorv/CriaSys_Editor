@@ -38,6 +38,7 @@ Route::delete('projects/{project}/slides/{slide}', [SlideController::class, 'des
 
 Route::get('projects/{project}/assets', [AssetController::class, 'index']);
 Route::post('projects/{project}/assets/upload', [AssetController::class, 'upload']);
+Route::delete('projects/{project}/assets/{asset}', [AssetController::class, 'destroy']);
 Route::get('projects/{project}/assets/{asset}', [AssetController::class, 'serve'])->name('api.projects.assets');
 Route::get('projects/{project}/files/{type}/{filename}', [AssetController::class, 'serveFile'])->name('api.projects.files');
 
@@ -53,7 +54,9 @@ Route::get('projects/{project}/image-studio/frame-preview', [ImageStudioControll
 Route::get('media/providers', [MediaLibraryController::class, 'providers']);
 Route::get('media/suggest-query', [MediaLibraryController::class, 'suggestQuery']);
 Route::get('media/search', [MediaLibraryController::class, 'search']);
+Route::post('media/resolve-url', [MediaLibraryController::class, 'resolveUrl']);
 Route::post('projects/{project}/media/import', [MediaLibraryController::class, 'import']);
+Route::post('projects/{project}/media/import-url', [MediaLibraryController::class, 'importUrl']);
 
 Route::get('projects/{project}/audio-tracks', [AudioTrackController::class, 'index']);
 Route::post('projects/{project}/audio-tracks', [AudioTrackController::class, 'store']);

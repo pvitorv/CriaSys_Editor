@@ -6,8 +6,6 @@ use App\Support\ExternalHttp;
 
 class MixkitVideoService
 {
-    public function __construct(private MediaSearchQueryTranslator $queryTranslator) {}
-
     /**
      * Busca vídeos gratuitos no Mixkit (sem API key) via página pública + schema.org.
      *
@@ -15,66 +13,99 @@ class MixkitVideoService
      */
     public function searchVideos(string $query, int $page = 1): array
     {
-        $query = trim($query);
-        if ($query === '') {
+        $term = trim($query);
+        if ($term === '') {
             return [];
         }
 
-        $terms = $this->queryTranslator->termsFor($query);
-        $results = [];
-        $seen = [];
-
-        foreach ($terms as $term) {
-            $html = $this->fetchPage($term, $page);
-            if (! $html) {
-                continue;
-            }
-
-            foreach ($this->parseVideoObjects($html) as $video) {
-                $key = ($video['source'] ?? '').'-'.($video['id'] ?? '');
-                if (isset($seen[$key])) {
-                    continue;
-                }
-                $seen[$key] = true;
-                $results[] = $video;
-            }
-
-            if (count($results) >= 20) {
-                break;
-            }
+        $html = $this->fetchSearchPage($term, $page);
+        if (! $html && $page === 1) {
+            $html = $this->fetchCategoryPage($term);
         }
 
-        return array_slice($results, 0, 24);
+        if (! $html) {
+            return [];
+        }
+
+        $results = $this->parseVideoObjects($html);
+
+        return array_slice($this->uniqueVideos($results), 0, 24);
     }
 
-    private function fetchPage(string $term, int $page): ?string
+    private function fetchSearchPage(string $term, int $page): ?string
     {
         $encoded = rawurlencode($term);
-        $urls = [
-            "https://mixkit.co/free-stock-video/discover/{$encoded}/",
-            "https://mixkit.co/free-stock-video/search/?search={$encoded}",
-            "https://mixkit.co/free-stock-video/{$encoded}/",
-        ];
-
+        $url = "https://mixkit.co/free-stock-video/search/?search={$encoded}";
         if ($page > 1) {
-            $urls = array_map(fn (string $url) => $url.(str_contains($url, '?') ? '&' : '?').'page='.$page, $urls);
+            $url .= '&page='.$page;
         }
 
-        foreach ($urls as $url) {
-            try {
-                $response = ExternalHttp::client(20)
-                    ->withHeaders(['User-Agent' => 'CriaSysEditor/1.0'])
-                    ->get($url);
+        return $this->fetchHtml($url);
+    }
 
-                if ($response->successful() && str_contains($response->body(), 'VideoObject')) {
-                    return $response->body();
-                }
-            } catch (\Throwable) {
-                continue;
+    private function fetchCategoryPage(string $term): ?string
+    {
+        $slug = preg_replace('/[^a-z0-9\-]+/i', '-', strtolower($term)) ?? '';
+        $slug = trim($slug, '-');
+        if ($slug === '') {
+            return null;
+        }
+
+        return $this->fetchHtml("https://mixkit.co/free-stock-video/{$slug}/");
+    }
+
+    private function fetchHtml(string $url): ?string
+    {
+        try {
+            $response = ExternalHttp::client(20)
+                ->withHeaders(['User-Agent' => 'CriaSysEditor/1.0'])
+                ->get($url);
+
+            if ($response->successful() && str_contains($response->body(), 'mixkit.co')) {
+                return $response->body();
             }
+        } catch (\Throwable) {
+            return null;
         }
 
         return null;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $videos
+     * @return list<array<string, mixed>>
+     */
+    private function uniqueVideos(array $videos): array
+    {
+        $seen = [];
+        $unique = [];
+
+        foreach ($videos as $video) {
+            $key = $this->videoKey($video);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $unique[] = $video;
+        }
+
+        return $unique;
+    }
+
+    /** @param  array<string, mixed>  $video */
+    private function videoKey(array $video): string
+    {
+        $id = (string) ($video['id'] ?? '');
+        if ($id !== '') {
+            return 'mixkit-'.$id;
+        }
+
+        $url = (string) ($video['download_url'] ?? $video['preview_url'] ?? '');
+        if (preg_match('#/videos/(\d+)/#', $url, $match)) {
+            return 'mixkit-'.$match[1];
+        }
+
+        return 'mixkit-'.md5($url);
     }
 
     /**

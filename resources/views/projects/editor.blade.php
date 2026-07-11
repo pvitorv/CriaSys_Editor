@@ -96,8 +96,17 @@
                     </span>
                     <span x-show="narration?.audio_url && !previewPlaying" class="text-[10px] text-emerald-400">narração pronta</span>
                     <button
+                        type="button"
+                        x-show="slides.length"
+                        @click="togglePreviewSubtitles()"
+                        class="text-[10px] px-2 py-1 rounded border"
+                        :class="previewShowSubtitles ? 'border-sky-700/50 text-sky-300 bg-sky-950/40' : 'border-zinc-600 text-zinc-400 bg-zinc-800'"
+                        x-text="previewShowSubtitles ? 'CC ON' : 'CC OFF'"
+                        :title="previewShowSubtitles ? 'Com legendas no preview' : 'Sem legendas no preview'"
+                    ></button>
+                    <button
                         x-show="canPlayPreview"
-                        @click="previewPlaying ? stopSlideshow() : playSlideshow()"
+                        @click="previewPlaying ? stopSlideshow() : playSlideshow(true)"
                         class="text-xs px-2 py-1 rounded"
                         :class="previewPlaying ? 'bg-red-900/60 text-red-300' : 'bg-violet-700 text-white hover:bg-violet-600'"
                         x-text="previewPlaying ? 'Parar' : (slides.length ? '▶ Reproduzir' : '▶ Preview roteiro')"
@@ -133,15 +142,20 @@
                         </template>
                         <div
                             class="absolute inset-0 flex flex-col items-center text-center p-4 sm:p-6 overflow-hidden"
-                            :class="previewVerticalAlignClass()"
-                            :style="previewSlide?.video_url || previewSlide?.image_url ? 'background: rgba(0,0,0,0.45)' : 'background: #000'"
+                            :class="[
+                                previewVerticalAlignClass(),
+                                !previewShowSubtitles && previewHasMediaBackground ? 'pointer-events-none' : '',
+                            ]"
+                            :style="previewOverlayStyle()"
                         >
                             <p
+                                x-show="previewShowSubtitles || !previewHasMediaBackground"
                                 class="font-medium leading-relaxed whitespace-pre-line max-w-prose w-full"
                                 :style="previewTextStyle()"
-                                x-text="previewDisplayText || (canPlayPreview ? '' : 'Cole o roteiro ou adicione slides')"
+                                x-text="previewVisibleText || (canPlayPreview ? '' : 'Cole o roteiro ou adicione slides')"
                             ></p>
-                            <p x-show="!previewDisplayText && !slides.length" class="text-xs text-zinc-500 mt-4">Tela preta — texto e narração aparecem aqui</p>
+                            <p x-show="!previewVisibleText && !slides.length" class="text-xs text-zinc-500 mt-4">Tela preta — texto e narração aparecem aqui</p>
+                            <p x-show="!previewShowSubtitles && previewHasMediaBackground && slides.length" class="absolute bottom-2 left-2 right-2 text-[10px] text-zinc-500/80 text-center">Preview sem legenda · exporte com «Queimar legendas» desmarcado</p>
                         </div>
                     </div>
                 </div>
@@ -267,12 +281,44 @@
                 ></button>
                 <button
                     type="button"
-                    x-show="slides.length > 1"
-                    @click="previewPlaying ? stopSlideshow() : playSlideshow()"
+                    x-show="slides.length"
+                    @click="togglePreviewSubtitles()"
+                    class="text-[10px] px-2 py-1.5 rounded-lg border"
+                    :class="previewShowSubtitles ? 'bg-sky-950/50 border-sky-700/60 text-sky-200 hover:bg-sky-900/50' : 'bg-zinc-800 border-zinc-600 text-zinc-300 hover:bg-zinc-700'"
+                    :title="previewShowSubtitles ? 'Ocultar texto/legendas no preview (como vídeo limpo)' : 'Mostrar texto/legendas no preview'"
+                    x-text="previewShowSubtitles ? 'CC Com legenda' : 'CC Sem legenda'"
+                ></button>
+                <button
+                    type="button"
+                    x-show="slides.length"
+                    @click="previewPlaying ? stopSlideshow() : playSlideshow(true)"
                     class="ml-2 text-xs px-3 py-1.5 rounded-lg"
                     :class="previewPlaying ? 'bg-red-900/50 text-red-300' : 'bg-violet-700 text-white hover:bg-violet-600'"
                     x-text="previewPlaying ? 'Parar' : '▶ Play timeline'"
                 ></button>
+            </div>
+        </div>
+
+        {{-- Mix de volumes (preview) --}}
+        <div x-show="showTimelineAudioLanes" class="px-4 py-2 border-b border-zinc-800/80 bg-zinc-950/40">
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <span class="text-[10px] text-zinc-500 uppercase tracking-wide shrink-0">Mix preview</span>
+                <div class="flex items-center gap-2 min-w-[140px]">
+                    <span class="text-[9px] text-emerald-400 w-14 shrink-0">Narração</span>
+                    <input type="range" min="0" max="1" step="0.05" x-model.number="mixVolumes.narration" @input="updatePreviewMixVolumes()" class="flex-1 min-w-[60px]">
+                    <span class="text-[9px] text-zinc-400 w-8 tabular-nums shrink-0" x-text="Math.round((mixVolumes.narration || 0) * 100) + '%'"></span>
+                </div>
+                <div class="flex items-center gap-2 min-w-[140px]">
+                    <span class="text-[9px] text-amber-400 w-14 shrink-0">Trilhas</span>
+                    <input type="range" min="0" max="1" step="0.05" x-model.number="mixVolumes.music" @input="updatePreviewMixVolumes()" class="flex-1 min-w-[60px]">
+                    <span class="text-[9px] text-zinc-400 w-8 tabular-nums shrink-0" x-text="Math.round((mixVolumes.music || 0) * 100) + '%'"></span>
+                </div>
+                <div class="flex items-center gap-2 min-w-[140px]">
+                    <span class="text-[9px] text-rose-400 w-14 shrink-0">Efeitos</span>
+                    <input type="range" min="0" max="1" step="0.05" x-model.number="mixVolumes.sfx" @input="updatePreviewMixVolumes()" class="flex-1 min-w-[60px]">
+                    <span class="text-[9px] text-zinc-400 w-8 tabular-nums shrink-0" x-text="Math.round((mixVolumes.sfx || 0) * 100) + '%'"></span>
+                </div>
+                <button type="button" @click="openAudioTab()" class="text-[9px] text-violet-400 hover:text-violet-300 ml-auto">Volumes por trilha →</button>
             </div>
         </div>
 
@@ -475,15 +521,23 @@
                                 <div
                                     @mousedown.stop="startTimelinePointerDrag($event, sfxDragPayload(fx))"
                                     @click.stop="selectTimelineSfx(fx)"
-                                    class="absolute inset-y-0 rounded border cursor-grab active:cursor-grabbing hover:brightness-110 select-none"
+                                    @dblclick.stop="testSoundEffect(fx)"
+                                    class="absolute inset-y-0 rounded border cursor-grab active:cursor-grabbing hover:brightness-110 select-none group/fx"
                                     :class="{
                                         'bg-rose-800/55 border-rose-400 ring-2 ring-rose-300 z-40 opacity-95': timelinePointerDragActive(null, null, fx.id),
                                         'bg-rose-800/55 border-rose-400 ring-1 ring-rose-400 z-[1]': !timelinePointerDragActive(null, null, fx.id) && timelineSelectedClip?.kind === 'sfx' && timelineSelectedClip?.id === fx.id,
                                         'bg-rose-900/35 border-rose-600/40 z-[1]': !timelinePointerDragActive(null, null, fx.id) && !(timelineSelectedClip?.kind === 'sfx' && timelineSelectedClip?.id === fx.id),
                                     }"
                                     :style="'left: ' + timelineSecondsToPx(timelinePointerDragFxSec(fx.id)) + 'px; width: ' + timelineSfxSegmentWidth(fx) + 'px'"
-                                    :title="(fx.label || 'Efeito') + ' · ' + formatTimelineTime(timelinePointerDragFxSec(fx.id)) + ' — arraste horizontalmente (Shift = 0,1s)'"
+                                    :title="(fx.label || 'Efeito') + ' · ' + formatTimelineTime(timelinePointerDragFxSec(fx.id)) + ' — arraste · duplo-clique para testar'"
                                 >
+                                    <button
+                                        type="button"
+                                        @mousedown.stop
+                                        @click.stop="testSoundEffect(fx)"
+                                        class="absolute right-0.5 top-0.5 z-10 hidden group-hover/fx:flex items-center justify-center w-4 h-4 rounded bg-rose-900/90 text-[8px] text-rose-100 hover:bg-rose-700"
+                                        title="Testar efeito"
+                                    >▶</button>
                                     <span class="absolute inset-0 flex items-center px-1 text-[8px] text-rose-100/90 truncate pointer-events-none" x-text="formatTimelineTime(timelinePointerDragFxSec(fx.id))"></span>
                                 </div>
                             </template>
@@ -623,6 +677,11 @@ O narrador continua a história com calma."
                     </div>
                     <div x-show="narration?.audio_url">
                         <p class="text-xs text-violet-400 mb-1">Narração completa do projeto</p>
+                        <div class="flex items-center gap-2 mb-2">
+                            <label class="text-[10px] text-zinc-500 shrink-0 w-14">Volume</label>
+                            <input type="range" min="0" max="1" step="0.05" x-model.number="mixVolumes.narration" @input="updatePreviewMixVolumes()" class="flex-1">
+                            <span class="text-[10px] text-zinc-400 w-10 tabular-nums" x-text="Math.round((mixVolumes.narration || 0) * 100) + '%'"></span>
+                        </div>
                         <audio :src="narration.audio_url" controls class="w-full" preload="auto"></audio>
                     </div>
                 </div>
@@ -647,8 +706,8 @@ O narrador continua a história com calma."
                                 </div>
                                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                     <div>
-                                        <label class="text-[10px] text-zinc-500">Volume</label>
-                                        <input type="range" min="0" max="1" step="0.05" x-model.number="track.volume" @change="saveMusicTrack(slot)" class="block w-full mt-1">
+                                        <label class="text-[10px] text-zinc-500">Volume <span class="text-zinc-600" x-text="Math.round((track.volume || 0) * 100) + '%'"></span></label>
+                                        <input type="range" min="0" max="1" step="0.05" x-model.number="track.volume" @input="onMusicVolumeInput(slot)" @change="saveMusicTrack(slot)" class="block w-full mt-1">
                                     </div>
                                     <div>
                                         <label class="text-[10px] text-zinc-500">Início (s)</label>
@@ -740,10 +799,11 @@ O narrador continua a história com calma."
                                         <input type="number" min="0" step="0.1" x-model.number="fx.start_at" @change="saveSoundEffect(fx)" class="w-full mt-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs">
                                     </div>
                                     <div>
-                                        <label class="text-[10px] text-zinc-500">Volume</label>
-                                        <input type="range" min="0" max="1" step="0.05" x-model.number="fx.volume" @change="saveSoundEffect(fx)" class="block w-full mt-1">
+                                        <label class="text-[10px] text-zinc-500">Volume <span class="text-zinc-600" x-text="Math.round((fx.volume || 0) * 100) + '%'"></span></label>
+                                        <input type="range" min="0" max="1" step="0.05" x-model.number="fx.volume" @input="onSfxVolumeInput(fx)" @change="saveSoundEffect(fx)" class="block w-full mt-1">
                                     </div>
                                     <div class="flex gap-2">
+                                        <button type="button" @click.stop="testSoundEffect(fx)" class="text-[10px] text-rose-300 hover:text-rose-200">▶ Testar</button>
                                         <button type="button" @click="removeSoundEffect(fx)" class="text-[10px] text-red-400">Remover</button>
                                     </div>
                                 </div>
@@ -753,7 +813,7 @@ O narrador continua a história com calma."
                     </div>
                 </div>
 
-                <p class="text-[10px] text-zinc-600">No preview, narração + trilhas + efeitos tocam juntos ao pressionar ▶ Reproduzir.</p>
+                <p class="text-[10px] text-zinc-600">No preview, narração + trilhas + efeitos tocam juntos ao pressionar ▶ Play timeline. Use <strong>▶ Testar</strong> em cada efeito antes de inserir. Coloque o playhead <em>antes</em> do efeito na timeline para ouvi-lo no play.</p>
             </div>
 
             {{-- Biblioteca --}}
@@ -764,18 +824,109 @@ O narrador continua a história com calma."
                     <button type="button" @click="setMediaLibraryMode('sfx')" class="text-xs px-3 py-1.5 rounded-lg" :class="mediaType === 'sfx' ? 'bg-rose-800 text-rose-100' : 'bg-zinc-800 text-zinc-400'">💥 Efeitos</button>
                 </div>
 
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" @click="mediaPanel = 'search'" class="text-[11px] px-3 py-1.5 rounded-lg border" :class="mediaPanel === 'search' ? 'border-violet-500 bg-violet-950/40 text-violet-200' : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'">🔍 Buscar online</button>
+                    <button type="button" @click="mediaPanel = 'upload'; resetMediaUploadMeta()" class="text-[11px] px-3 py-1.5 rounded-lg border" :class="mediaPanel === 'upload' ? 'border-emerald-500 bg-emerald-950/40 text-emerald-200' : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'">📁 Meu arquivo</button>
+                    <button type="button" @click="mediaPanel = 'url'; mediaImportPreview = null" class="text-[11px] px-3 py-1.5 rounded-lg border" :class="mediaPanel === 'url' ? 'border-sky-500 bg-sky-950/40 text-sky-200' : 'border-zinc-700 text-zinc-400 hover:border-zinc-600'">🔗 Por link</button>
+                </div>
+
+                {{-- Cadastro externo: upload --}}
+                <div x-show="mediaPanel === 'upload'" x-cloak class="rounded-xl border border-emerald-800/50 bg-emerald-950/20 p-4 space-y-3">
+                    <h3 class="text-sm font-medium text-emerald-200">Enviar arquivo do seu computador</h3>
+                    <p class="text-[11px] text-zinc-500">Cadastre licença, créditos ao autor e origem — entra na exportação de descrições automaticamente.</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-[10px] text-zinc-500">Título / descrição</label>
+                            <input type="text" x-model="mediaUploadMeta.item_title" class="w-full mt-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm" placeholder="Nome da mídia">
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-zinc-500">Autor / artista</label>
+                            <input type="text" x-model="mediaUploadMeta.author" class="w-full mt-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm" placeholder="Quem criou">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="text-[10px] text-zinc-500">Crédito / licença (texto para YouTube, TikTok…)</label>
+                            <textarea x-model="mediaUploadMeta.attribution_text" rows="2" class="w-full mt-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm" placeholder="Ex.: Foto por João Silva — licença Envato Elements, projeto XYZ"></textarea>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-zinc-500">Link original (opcional)</label>
+                            <input type="url" x-model="mediaUploadMeta.original_url" class="w-full mt-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm" placeholder="https://...">
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-zinc-500">Licença paga cadastrada</label>
+                            <select x-model.number="mediaUploadMeta.stock_license_id" class="w-full mt-1 rounded bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-sm">
+                                <option :value="null">Nenhuma (usar crédito manual acima)</option>
+                                <template x-for="reg in stockLicenses" :key="'up-lic-' + reg.id">
+                                    <option :value="reg.id" x-text="(reg.provider || 'licença') + ' — ' + (reg.project_title || 'projeto')"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="flex items-end">
+                            <label class="flex items-center gap-2 text-[11px] text-zinc-400">
+                                <input type="checkbox" x-model="mediaUploadMeta.requires_attribution" class="rounded border-zinc-600">
+                                Exigir crédito na descrição
+                            </label>
+                        </div>
+                        <div x-show="mediaType === 'image' || mediaType === 'video'" class="flex items-end">
+                            <label class="flex items-center gap-2 text-[11px] text-zinc-400">
+                                <input type="checkbox" x-model="mediaUploadAttachToSlide" class="rounded border-zinc-600">
+                                Inserir no slide selecionado
+                            </label>
+                        </div>
+                    </div>
+                    <label class="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-sm font-medium cursor-pointer">
+                        <span x-text="mediaType === 'music' ? 'Enviar trilha (MP3/WAV)' : (mediaType === 'sfx' ? 'Enviar efeito sonoro' : (mediaType === 'video' ? 'Enviar vídeo' : 'Enviar imagem'))"></span>
+                        <input type="file" :accept="mediaUploadAcceptTypes()" class="hidden" @change="submitMediaUpload($event)">
+                    </label>
+                    <p x-show="mediaType === 'music'" class="text-[10px] text-zinc-600">Vai para a trilha <span x-text="(selectedMusicSlot ?? 0) + 1"></span>. Ajuste o slot no painel de busca se precisar.</p>
+                    <p x-show="mediaType === 'sfx'" class="text-[10px] text-zinc-600">Posição na timeline: <span x-text="formatTimelineTime(timelinePlayheadSec)"></span></p>
+                </div>
+
+                {{-- Importação por link --}}
+                <div x-show="mediaPanel === 'url'" x-cloak class="rounded-xl border border-sky-800/50 bg-sky-950/20 p-4 space-y-3">
+                    <h3 class="text-sm font-medium text-sky-200">Importar por link</h3>
+                    <p class="text-[11px] text-zinc-500">Cole a URL da página (Pixabay, Pexels, Unsplash, Mixkit) ou link direto do arquivo (.jpg, .mp4, .mp3). O sistema busca licença e créditos.</p>
+                    <div class="flex flex-wrap gap-2">
+                        <input type="url" x-model="mediaImportUrl" @keydown.enter.prevent="resolveMediaUrl()" class="flex-1 min-w-[220px] rounded bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm" placeholder="https://pixabay.com/photos/... ou link direto">
+                        <button type="button" @click="resolveMediaUrl()" :disabled="mediaImportLoading" class="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm disabled:opacity-50">Analisar</button>
+                        <button type="button" @click="importMediaFromUrl()" :disabled="mediaImportLoading" class="px-4 py-2 rounded-lg bg-sky-700 hover:bg-sky-600 text-sm disabled:opacity-50">
+                            <span x-text="mediaImportLoading ? 'Importando…' : 'Importar'"></span>
+                        </button>
+                    </div>
+                    <div x-show="mediaImportPreview" class="rounded-lg border border-zinc-700 bg-zinc-900/80 p-3 space-y-2">
+                        <p class="text-xs font-medium text-zinc-200" x-text="mediaImportPreview?.title || 'Prévia'"></p>
+                        <p class="text-[10px] text-zinc-500">
+                            <span x-text="mediaImportPreview?.source"></span>
+                            <span x-show="mediaImportPreview?.author"> · por <span x-text="mediaImportPreview?.author"></span></span>
+                            <span x-show="mediaImportPreview?.license_type"> · <span x-text="mediaImportPreview?.license_type"></span></span>
+                        </p>
+                        <p x-show="mediaImportPreview?.attribution_text" class="text-[10px] text-yellow-500/90" x-text="mediaImportPreview?.attribution_text"></p>
+                        <img x-show="mediaImportPreview?.preview_url && (mediaImportPreview?.type === 'image' || mediaImportPreview?.type === 'video')" :src="mediaImportPreview?.preview_url" class="max-h-32 rounded border border-zinc-800" alt="Prévia">
+                        <audio x-show="mediaImportPreview?.download_url && (mediaImportPreview?.type === 'audio' || mediaImportPreview?.type === 'sfx')" :src="mediaImportPreview?.download_url" controls class="w-full h-8" preload="none"></audio>
+                    </div>
+                </div>
+
                 <p class="text-xs text-zinc-500" x-show="mediaType === 'image' || mediaType === 'video'">Imagens e vídeos — Openverse grátis + Pexels/Pixabay/Unsplash com chave.</p>
 
                 {{-- Arquivos já salvos neste projeto (Image Studio, uploads, imports) --}}
                 <div x-show="mediaType === 'image' || mediaType === 'video'" class="rounded-xl border border-emerald-900/40 bg-emerald-950/15 p-3 space-y-2">
                     <div class="flex items-center justify-between gap-2">
                         <h3 class="text-sm font-medium text-emerald-200">Biblioteca deste projeto</h3>
-                        <button type="button" @click="loadProjectLibraryAssets()" class="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400">Atualizar</button>
+                        <div class="flex items-center gap-2">
+                            <span x-show="projectLibraryVisualAssets().length" class="text-[10px] text-zinc-500 tabular-nums" x-text="projectLibraryVisualAssets().length + ' arquivo(s)'"></span>
+                            <button
+                                type="button"
+                                x-show="projectLibraryVisualAssets().length"
+                                @click="toggleProjectLibraryExpanded()"
+                                class="text-[10px] px-2 py-1 rounded border border-zinc-700 hover:bg-zinc-800 text-zinc-400"
+                                x-text="projectLibraryExpanded ? '⛶ Recolher' : '⛶ Expandir'"
+                            ></button>
+                            <button type="button" @click="loadProjectLibraryAssets()" class="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400">Atualizar</button>
+                        </div>
                     </div>
                     <p class="text-[10px] text-zinc-500">Arquivos salvos aqui (Image Studio, upload, importação). Use no slide ou reabra no Studio.</p>
                     <p x-show="projectLibraryLoading" class="text-xs text-zinc-500">Carregando…</p>
                     <p x-show="!projectLibraryLoading && !projectLibraryVisualAssets().length" class="text-xs text-zinc-600">Nenhum arquivo ainda — salve do Image Studio ou importe mídia.</p>
-                    <div x-show="projectLibraryVisualAssets().length" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 max-h-56 overflow-y-auto">
+                    <div x-show="projectLibraryVisualAssets().length" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2" :class="projectLibraryScrollClass()">
                         <template x-for="asset in projectLibraryVisualAssets()" :key="'proj-asset-' + asset.id">
                             <div class="rounded-lg border border-zinc-700 bg-zinc-900/80 overflow-hidden group relative">
                                 <div class="relative cursor-pointer" @click="insertProjectAssetToSlide(asset)">
@@ -783,6 +934,12 @@ O narrador continua a história com calma."
                                     <span class="absolute bottom-0 left-0 right-0 bg-black/75 text-[9px] px-1 py-0.5 truncate" x-text="asset.source === 'image_studio' ? 'Image Studio' : (asset.source || 'projeto')"></span>
                                     <div class="absolute inset-0 bg-violet-900/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[10px] font-medium text-center px-1">Inserir no slide</div>
                                 </div>
+                                <button
+                                    type="button"
+                                    @click.stop="deleteProjectLibraryAsset(asset)"
+                                    class="absolute top-1 left-1 z-10 text-[9px] px-1.5 py-0.5 rounded bg-red-900/90 hover:bg-red-700 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title="Remover da biblioteca"
+                                >✕</button>
                                 <button
                                     type="button"
                                     x-show="asset.type === 'image'"
@@ -799,7 +956,7 @@ O narrador continua a história com calma."
                 <p class="text-xs text-zinc-500" x-show="mediaType === 'music'">Biblioteca de trilhas — Mixkit grátis + Freesound/Pixabay (com chave). Créditos vão para a descrição automaticamente.</p>
                 <p class="text-xs text-zinc-500" x-show="mediaType === 'sfx'">Biblioteca de efeitos sonoros — Mixkit grátis + Freesound (CC, crédito ao autor obrigatório).</p>
 
-                <div class="flex flex-wrap gap-2">
+                <div class="flex flex-wrap gap-2" x-show="mediaPanel === 'search'">
                     <template x-if="mediaType === 'image' || mediaType === 'video'">
                         <select x-model="mediaType" class="rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm">
                             <option value="image">Imagens</option>
@@ -835,8 +992,9 @@ O narrador continua a história com calma."
                     <input
                         type="text"
                         x-model="mediaQuery"
+                        @input="_mediaAutoSearchToken++; _mediaSearchSeq++; mediaResults = []; mediaHasMore = false"
                         @keydown.enter.prevent="searchMedia()"
-                        :placeholder="mediaType === 'sfx' ? 'Buscar efeito — impacto, risada, whoosh, notification…' : (mediaType === 'music' ? 'Buscar trilha — ambient, cinematic, upbeat…' : 'Buscar em português — praia, futebol, cidade…')"
+                        :placeholder="mediaType === 'video' ? 'Objeto ou cena — gato, bola, praia, cidade…' : (mediaType === 'sfx' ? 'Buscar efeito — impacto, risada, whoosh, notification…' : (mediaType === 'music' ? 'Buscar trilha — ambient, cinematic, upbeat…' : 'Buscar em português — praia, futebol, cidade…'))"
                         class="flex-1 min-w-[200px] rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm"
                     >
                     <button x-show="mediaType === 'image'" @click="searchFromSlideBody()" :disabled="!selectedSlide?.body_text?.trim()" class="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-sm">Texto slide</button>
@@ -845,7 +1003,7 @@ O narrador continua a história com calma."
                     </button>
                 </div>
 
-                <div x-show="mediaLibraryProviders && (mediaType === 'music' || mediaType === 'sfx')" class="flex flex-wrap gap-2 text-[10px]">
+                <div x-show="mediaLibraryProviders && (mediaType === 'music' || mediaType === 'sfx') && mediaPanel === 'search'" class="flex flex-wrap gap-2 text-[10px]">
                     <template x-for="provider in (mediaType === 'music' ? mediaLibraryProviders?.music : mediaLibraryProviders?.sfx) || []" :key="provider.id">
                         <span class="px-2 py-1 rounded border" :class="provider.configured ? 'border-emerald-700/50 text-emerald-400 bg-emerald-950/30' : 'border-zinc-700 text-zinc-500'">
                             <span x-text="provider.label"></span>
@@ -855,11 +1013,11 @@ O narrador continua a história com calma."
                     </template>
                 </div>
 
-                <p x-show="mediaErrors.length && !mediaResults.length" class="text-xs text-yellow-400" x-text="mediaErrors.join(' ')"></p>
-                <p x-show="mediaResults.length && (mediaType === 'image')" class="text-xs text-emerald-400">Clique na imagem para inserir no slide — ou use <strong>Image Studio</strong> para editar a arte.</p>
-                <p x-show="mediaResults.length && mediaType === 'video'" class="text-xs text-emerald-400">Clique no vídeo para inserir como B-roll no slide selecionado.</p>
-                <p x-show="mediaResults.length && mediaType === 'music'" class="text-xs text-amber-400">Ouça o preview — clique em Inserir ou <strong>arraste ⋮⋮</strong> para a faixa desejada na timeline.</p>
-                <p x-show="mediaResults.length && mediaType === 'sfx'" class="text-xs text-rose-400">Ouça e clique em Inserir ou <strong>arraste ⋮⋮</strong> para a faixa FX na timeline.</p>
+                <p x-show="mediaErrors.length && !mediaResults.length && mediaPanel === 'search'" class="text-xs text-yellow-400" x-text="mediaErrors.join(' ')"></p>
+                <p x-show="mediaResults.length && (mediaType === 'image') && mediaPanel === 'search'" class="text-xs text-emerald-400">Clique na imagem para inserir no slide — ou use <strong>Image Studio</strong> para editar a arte.</p>
+                <p x-show="mediaResults.length && mediaType === 'video' && mediaPanel === 'search'" class="text-xs text-emerald-400">Clique no vídeo para inserir como B-roll no slide selecionado.</p>
+                <p x-show="mediaResults.length && mediaType === 'music' && mediaPanel === 'search'" class="text-xs text-amber-400">Ouça o preview — clique em Inserir ou <strong>arraste ⋮⋮</strong> para a faixa desejada na timeline.</p>
+                <p x-show="mediaResults.length && mediaType === 'sfx' && mediaPanel === 'search'" class="text-xs text-rose-400">Ouça e clique em Inserir ou <strong>arraste ⋮⋮</strong> para a faixa FX na timeline.</p>
 
                 <div x-show="publishAuto && projectCreditsCount" class="rounded border border-emerald-800/40 bg-emerald-950/30 p-2">
                     <p class="text-xs text-emerald-300">
@@ -867,7 +1025,17 @@ O narrador continua a história com calma."
                     </p>
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-72 overflow-y-auto">
+                <div x-show="mediaPanel === 'search' && mediaResults.length" class="flex items-center justify-between gap-2">
+                    <span class="text-[11px] text-zinc-500 tabular-nums" x-text="mediaResults.length + ' resultado(s)' + (mediaHasMore ? ' · há mais' : '')"></span>
+                    <button
+                        type="button"
+                        @click="toggleMediaSearchExpanded()"
+                        class="text-[10px] px-2 py-1 rounded border border-zinc-700 hover:bg-zinc-800 text-zinc-400"
+                        x-text="mediaSearchExpanded ? '⛶ Recolher lista' : '⛶ Expandir lista'"
+                    ></button>
+                </div>
+
+                <div x-show="mediaPanel === 'search'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" :class="mediaResultsScrollClass()">
                     <template x-for="(item, itemIndex) in mediaResults" :key="item.source + '-' + item.id">
                         <div class="rounded-lg border border-zinc-700 bg-zinc-800/80 overflow-hidden group">
                             <template x-if="item.type === 'audio' || item.type === 'sfx'">
@@ -894,6 +1062,7 @@ O narrador continua a história com calma."
                                     <div class="flex items-center justify-between gap-2 pt-1">
                                         <span x-show="item.requires_attribution || item.attribution_text" class="text-[10px] text-yellow-500" title="Crédito na descrição">© crédito</span>
                                         <span x-show="item.license_type" class="text-[9px] text-zinc-600 truncate" x-text="item.license_type"></span>
+                                        <button type="button" @click.stop="previewLibraryAudio(item)" class="text-xs px-2 py-1 rounded bg-zinc-700 hover:bg-zinc-600 shrink-0">▶ Testar</button>
                                         <button type="button" @click="importMedia(item)" class="text-xs px-2 py-1 rounded bg-violet-700 hover:bg-violet-600 shrink-0">Inserir</button>
                                     </div>
                                 </div>
@@ -927,6 +1096,17 @@ O narrador continua a história com calma."
                             </template>
                         </div>
                     </template>
+                </div>
+
+                <div x-show="mediaPanel === 'search' && mediaHasMore" class="flex justify-center pt-2">
+                    <button
+                        type="button"
+                        @click="loadMoreMediaResults()"
+                        :disabled="mediaSearching"
+                        class="text-xs px-4 py-2 rounded-lg border border-violet-700/50 bg-violet-950/40 text-violet-200 hover:bg-violet-900/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        <span x-text="mediaSearching ? 'Carregando…' : 'Ver mais resultados'"></span>
+                    </button>
                 </div>
             </div>
 
@@ -1556,10 +1736,11 @@ O narrador continua a história com calma."
             <div x-show="activeTab === 'exportar'" class="space-y-4">
                 <div>
                     <h3 class="text-sm font-medium text-zinc-300 mb-2">Render vídeo</h3>
-                    <label class="flex items-center gap-2 text-sm text-zinc-400 mb-3">
-                        <input type="checkbox" x-model="burnSubtitles">
+                    <label class="flex items-center gap-2 text-sm text-zinc-400 mb-1">
+                        <input type="checkbox" x-model="burnSubtitles" @change="previewShowSubtitles = burnSubtitles">
                         Queimar legendas no vídeo (burn-in via SRT)
                     </label>
+                    <p class="text-[10px] text-zinc-600 mb-3">Use <strong class="text-zinc-500">CC Sem legenda</strong> na timeline para ver o vídeo limpo antes de exportar.</p>
                     <div class="flex flex-wrap gap-2">
                         <template x-for="preset in exportPresets.filter(p => p.slug !== 'thumbnail')" :key="preset.slug">
                             <button @click="renderVideo(preset.slug)" class="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-xs" x-text="preset.name"></button>

@@ -72,9 +72,29 @@ window.editorApp = function (projectId, projectMeta = {}) {
         mediaQuery: '',
         mediaSource: 'all',
         mediaType: 'image',
+        mediaPanel: 'search',
+        mediaImportUrl: '',
+        mediaImportPreview: null,
+        mediaImportLoading: false,
+        mediaUploadMeta: {
+            item_title: '',
+            author: '',
+            attribution_text: '',
+            requires_attribution: false,
+            original_url: '',
+            license_type: '',
+            stock_license_id: null,
+        },
+        mediaUploadAttachToSlide: true,
+        _mediaSearchSeq: 0,
+        _mediaAutoSearchToken: 0,
         mediaLibraryProviders: null,
         mediaSfxStartAt: 0,
         mediaResults: [],
+        mediaSearchPage: 1,
+        mediaHasMore: false,
+        mediaSearchExpanded: false,
+        projectLibraryExpanded: false,
         projectLibraryAssets: [],
         projectLibraryLoading: false,
         mediaErrors: [],
@@ -104,6 +124,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
         audioTracks: [],
         selectedMusicSlot: 0,
         soundEffects: [],
+        mixVolumes: { narration: 1, music: 1, sfx: 1 },
         previewMixer: null,
         renderJobs: [],
         saving: false,
@@ -121,6 +142,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
         timelinePointerDrag: null,
         timelineSnapStep: 0.5,
         burnSubtitles: false,
+        previewShowSubtitles: true,
         timelineZoom: 18,
         timelineZoomManual: false,
         timelineExpanded: false,
@@ -420,6 +442,20 @@ window.editorApp = function (projectId, projectMeta = {}) {
             return '';
         },
 
+        get previewVisibleText() {
+            if (!this.previewShowSubtitles) {
+                return '';
+            }
+
+            return this.previewDisplayText;
+        },
+
+        get previewHasMediaBackground() {
+            const slide = this.previewSlide;
+
+            return !!(slide?.video_url || slide?.image_url);
+        },
+
         get canPlayPreview() {
             if (this.slides.length > 0) return true;
 
@@ -677,6 +713,28 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.timelineZoomBeforeExpand = this.timelineZoom;
             this.timelineExpanded = true;
             this.syncTimelineFitAll();
+        },
+
+        togglePreviewSubtitles() {
+            this.previewShowSubtitles = !this.previewShowSubtitles;
+            if (this.previewShowSubtitles) {
+                this.burnSubtitles = true;
+                this.message = 'Preview com legendas na tela — ao exportar, deixe «Queimar legendas» marcado para baixar igual.';
+            } else {
+                this.burnSubtitles = false;
+                this.message = 'Preview sem legendas — vídeo limpo. Ao exportar, desmarque «Queimar legendas» para baixar sem texto queimado.';
+            }
+        },
+
+        previewOverlayStyle() {
+            if (!this.previewShowSubtitles && this.previewHasMediaBackground) {
+                return 'background: transparent';
+            }
+            if (this.previewHasMediaBackground) {
+                return 'background: rgba(0,0,0,0.45)';
+            }
+
+            return 'background: #000';
         },
 
         afterSlidesLayoutChanged() {
@@ -1090,10 +1148,12 @@ window.editorApp = function (projectId, projectMeta = {}) {
             }
         },
 
-        playSlideshow() {
+        playSlideshow(fromStart = false) {
             if (!this.canPlayPreview) return;
 
-            let startSec = Math.max(0, parseFloat(this.timelinePlayheadSec) || 0);
+            let startSec = fromStart
+                ? 0
+                : Math.max(0, parseFloat(this.timelinePlayheadSec) || 0);
             const total = this.timelineTotalSeconds;
             if (total > 0 && startSec >= total - 0.05) {
                 startSec = 0;
@@ -1177,25 +1237,14 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 return Math.max(0, parseFloat(this.timelinePlayheadSec) || 0);
             }
 
-            const slide = this.slides[this.previewIndex];
-            if (!slide) {
-                return Math.max(0, parseFloat(this.timelinePlayheadSec) || 0);
-            }
-
             const slideStart = this.timelineSlideStartSec(this.previewIndex);
-            const dur = this.slideDurationSec(slide);
-
-            if (this.previewTransitioning) {
-                return Math.min(this.timelineTotalSeconds, slideStart + dur);
-            }
-
             const slideElapsed = this.previewSlideStartedPerf != null
                 ? (performance.now() - this.previewSlideStartedPerf) / 1000
                 : 0;
 
             return Math.min(
                 this.timelineTotalSeconds,
-                slideStart + Math.min(Math.max(0, slideElapsed), dur),
+                slideStart + Math.max(0, slideElapsed),
             );
         },
 
@@ -1343,7 +1392,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             const offset = Math.max(0, parseFloat(offsetInSlide) || 0);
             this.resetPreviewSlideClock(offset);
             const dur = this.slideDurationSec(slide);
-            const remainingMs = Math.max(100, (dur - offset) * 1000);
+            const remainingMs = Math.max(500, (dur - offset) * 1000);
             this.previewTimer = setTimeout(() => this.advancePreviewSlide(), remainingMs);
         },
 
@@ -1392,31 +1441,132 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 this.previewMixer = new PreviewAudioMixer();
             }
 
+            this.previewMixer.beginFromUserGesture();
+
+            const musicTracks = [];
+            this.audioTracks
+                .filter((t) => t?.audio_url)
+                .forEach((t, slot) => {
+                    musicTracks.push({
+                        audio_url: t.audio_url,
+                        volume: parseFloat(t.volume) >= 0 ? parseFloat(t.volume) : 0.35,
+                        start_at: parseFloat(t.start_at) || 0,
+                        trim_in: parseFloat(t.trim_in) || 0,
+                        loop_enabled: t.loop_enabled !== false,
+                        slot,
+                    });
+
+                    (t.clips || []).forEach((clip) => {
+                        const clipUrl = this.musicClipAudioUrl(clip);
+                        if (!clipUrl) {
+                            return;
+                        }
+                        musicTracks.push({
+                            audio_url: clipUrl,
+                            volume: parseFloat(t.volume) >= 0 ? parseFloat(t.volume) : 0.35,
+                            start_at: parseFloat(clip.start_at) || 0,
+                            trim_in: parseFloat(clip.trim_in) || 0,
+                            loop_enabled: false,
+                            slot,
+                        });
+                    });
+                });
+
             const soundEffects = this.soundEffects
-                .filter((fx) => fx?.file_path && fx?.audio_url)
                 .map((fx) => ({
-                    audio_url: fx.audio_url,
-                    volume: fx.volume ?? 1,
-                    start_at: fx.start_at ?? 0,
-                }));
+                    id: fx.id,
+                    audio_url: this.resolveSoundEffectUrl(fx),
+                    volume: parseFloat(fx.volume) >= 0 ? parseFloat(fx.volume) : 1,
+                    start_at: parseFloat(fx.start_at) || 0,
+                    trim_in: parseFloat(fx.trim_in) || 0,
+                }))
+                .filter((fx) => fx.audio_url);
+
+            const startOffsetSec = this.previewPlaying
+                ? this.getPreviewElapsedSec()
+                : (this.previewPlayStartedAtSec || this.timelinePlayheadSec || 0);
 
             this.previewMixer.play({
                 narrationUrl: this.narration?.audio_url || null,
-                musicTracks: this.buildMusicTracksForPreview(),
+                musicTracks,
                 soundEffects,
                 totalDuration: this.timelineTotalSeconds,
-                startOffsetSec: this.previewPlayStartedAtSec || 0,
+                startOffsetSec,
+                mixVolumes: { ...this.mixVolumes },
             });
         },
 
-        buildMusicTracksForPreview() {
-            return this.audioTracks
-                .filter((t) => t?.file_path)
-                .map((t) => ({
-                    volume: t.volume ?? 0.35,
-                    loop_enabled: t.loop_enabled !== false,
-                    segments: this.musicTrackSegments(t),
-                }));
+        updatePreviewMixVolumes() {
+            this.previewMixer?.setMixVolumes({ ...this.mixVolumes });
+        },
+
+        onMusicVolumeInput(slot) {
+            const vol = parseFloat(this.audioTracks[slot]?.volume);
+            if (Number.isFinite(vol)) {
+                this.previewMixer?.updateTrackVolume('music', slot, vol);
+            }
+        },
+
+        onSfxVolumeInput(fx) {
+            const vol = parseFloat(fx?.volume);
+            if (Number.isFinite(vol) && fx?.id) {
+                this.previewMixer?.updateSfxVolume(fx.id, vol);
+            }
+        },
+
+        async testSoundEffect(fx) {
+            const url = fx?.audio_url || this.resolveSoundEffectUrl(fx);
+            if (!url) {
+                this.error = 'Efeito sem arquivo de áudio — reimporte o som.';
+                return;
+            }
+            if (!this.previewMixer) {
+                this.previewMixer = new PreviewAudioMixer();
+            }
+            const vol = (parseFloat(fx.volume) >= 0 ? parseFloat(fx.volume) : 1)
+                * (this.mixVolumes.sfx ?? 1);
+            const ok = await this.previewMixer.playSfxNow(url, vol, parseFloat(fx.trim_in) || 0);
+            if (!ok) {
+                this.error = `Não foi possível tocar "${fx.label || 'Efeito'}". O arquivo pode estar corrompido — remova o efeito e importe novamente da biblioteca.`;
+            } else {
+                this.message = `Testando: ${fx.label || 'Efeito'}`;
+            }
+        },
+
+        resolveSoundEffectUrl(fx) {
+            if (fx?.audio_url) {
+                return fx.audio_url;
+            }
+            if (fx?.asset_id) {
+                return `/api/projects/${this.projectId}/assets/${fx.asset_id}`;
+            }
+            const path = fx?.file_path || fx?.asset?.file_path;
+            if (path) {
+                return this.fileUrl('assets', path.split(/[/\\]/).pop());
+            }
+
+            return null;
+        },
+
+        async previewLibraryAudio(item) {
+            const url = item?.preview_url || item?.download_url;
+            if (!url) {
+                this.error = 'Preview indisponível para este item.';
+                return;
+            }
+            if (!this.previewMixer) {
+                this.previewMixer = new PreviewAudioMixer();
+            }
+            this.previewMixer.beginFromUserGesture();
+            const isSfx = item.type === 'sfx' || this.mediaType === 'sfx';
+            const mix = isSfx ? (this.mixVolumes.sfx ?? 1) : (this.mixVolumes.music ?? 1);
+            const audio = new Audio(url);
+            audio.volume = Math.min(1, Math.max(0, mix));
+            try {
+                await audio.play();
+            } catch (_) {
+                this.error = 'Não foi possível tocar o preview — tente Inserir e use ▶ Testar na timeline.';
+            }
         },
 
         musicTrackSegments(track) {
@@ -1449,6 +1599,9 @@ window.editorApp = function (projectId, projectMeta = {}) {
         musicClipAudioUrl(clip) {
             if (clip?.audio_url) {
                 return clip.audio_url;
+            }
+            if (clip?.asset_id) {
+                return `/api/projects/${this.projectId}/assets/${clip.asset_id}`;
             }
             if (clip?.file_path) {
                 return this.fileUrl('assets', clip.file_path.split(/[/\\]/).pop());
@@ -1527,12 +1680,71 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
         setMediaLibraryMode(mode) {
             this.mediaType = mode === 'visual' ? 'image' : mode;
+            this.mediaSearchPage = 1;
+            this.mediaHasMore = false;
+            this.mediaSearchExpanded = false;
             if (mode === 'music' || mode === 'sfx') {
                 this.mediaSource = 'all';
             }
             if (mode === 'visual' || mode === 'image') {
                 this.mediaSource = 'all';
             }
+        },
+
+        toggleMediaSearchExpanded() {
+            this.mediaSearchExpanded = !this.mediaSearchExpanded;
+        },
+
+        toggleProjectLibraryExpanded() {
+            this.projectLibraryExpanded = !this.projectLibraryExpanded;
+        },
+
+        mediaResultsScrollClass() {
+            return this.mediaSearchExpanded
+                ? 'max-h-[min(70vh,720px)] overflow-y-auto overscroll-contain'
+                : 'max-h-72 overflow-y-auto overscroll-contain';
+        },
+
+        projectLibraryScrollClass() {
+            return this.projectLibraryExpanded
+                ? 'max-h-[min(60vh,560px)] overflow-y-auto overscroll-contain'
+                : 'max-h-56 overflow-y-auto overscroll-contain';
+        },
+
+        mergeMediaResults(existing, incoming) {
+            const keyFor = (item) => {
+                const source = item?.source || '';
+                const id = item?.id != null ? String(item.id) : '';
+                if (id) {
+                    return `${source}-${id}`;
+                }
+                const url = item?.download_url || item?.preview_url || '';
+                const match = String(url).match(/\/videos\/(\d+)\//);
+                if (match) {
+                    return `${source}-${match[1]}`;
+                }
+
+                return `${source}-${url}`;
+            };
+
+            const seen = new Set(existing.map(keyFor));
+            const merged = [...existing];
+            for (const item of incoming) {
+                const key = keyFor(item);
+                if (!seen.has(key)) {
+                    merged.push(item);
+                    seen.add(key);
+                }
+            }
+
+            return merged;
+        },
+
+        async loadMoreMediaResults() {
+            if (this.mediaSearching || !this.mediaHasMore) {
+                return;
+            }
+            await this.searchMedia(true);
         },
 
         openLibraryForMusic(slot = 0) {
@@ -1577,10 +1789,15 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         enrichAudioTrack(track) {
-            if (track?.file_path) {
+            if (track?.asset_id) {
+                track.audio_url = `/api/projects/${this.projectId}/assets/${track.asset_id}`;
+            } else if (track?.file_path) {
                 track.audio_url = this.fileUrl('assets', track.file_path.split(/[/\\]/).pop());
             }
             track.label = track.label || `Trilha ${(track.track_slot ?? 0) + 1}`;
+            track.volume = track.volume != null && Number.isFinite(parseFloat(track.volume))
+                ? parseFloat(track.volume)
+                : 0.35;
             track.trim_in = parseFloat(track.trim_in) || 0;
             track.trim_out = track.trim_out != null ? parseFloat(track.trim_out) : null;
             track.source_duration = track.source_duration != null ? parseFloat(track.source_duration) : null;
@@ -1591,9 +1808,11 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 trim_out: clip.trim_out != null ? parseFloat(clip.trim_out) : null,
                 source_duration: clip.source_duration != null ? parseFloat(clip.source_duration) : null,
                 start_at: parseFloat(clip.start_at) || 0,
-                audio_url: clip.file_path
-                    ? this.fileUrl('assets', clip.file_path.split(/[/\\]/).pop())
-                    : null,
+                audio_url: clip.asset_id
+                    ? `/api/projects/${this.projectId}/assets/${clip.asset_id}`
+                    : (clip.file_path
+                        ? this.fileUrl('assets', clip.file_path.split(/[/\\]/).pop())
+                        : null),
             })) : [];
 
             return track;
@@ -1605,13 +1824,20 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         enrichSoundEffect(fx) {
-            if (fx?.file_path) {
-                fx.audio_url = this.fileUrl('assets', fx.file_path.split(/[/\\]/).pop());
-            }
+            fx.audio_url = this.resolveSoundEffectUrl(fx);
+            fx.volume = fx.volume != null && Number.isFinite(parseFloat(fx.volume))
+                ? parseFloat(fx.volume)
+                : 1;
+            fx.start_at = parseFloat(fx.start_at) || 0;
             fx.trim_in = parseFloat(fx.trim_in) || 0;
             fx.trim_out = fx.trim_out != null ? parseFloat(fx.trim_out) : null;
-            fx.source_duration = fx.source_duration != null ? parseFloat(fx.source_duration) : null;
-            fx.clip_duration = fx.clip_duration != null ? parseFloat(fx.clip_duration) : null;
+            const metaDur = parseFloat(fx?.asset?.metadata?.duration_seconds);
+            fx.source_duration = fx.source_duration != null
+                ? parseFloat(fx.source_duration)
+                : (Number.isFinite(metaDur) && metaDur > 0 ? metaDur : null);
+            fx.clip_duration = fx.clip_duration != null
+                ? parseFloat(fx.clip_duration)
+                : (fx.source_duration || 2);
 
             return fx;
         },
@@ -1879,9 +2105,10 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 || parseFloat(item?.duration_seconds)
                 || fallback;
             const trimIn = parseFloat(item?.trim_in) || 0;
-            const trimOut = item?.trim_out != null ? parseFloat(item.trim_out) : source;
+            const rawTrimOut = item?.trim_out != null ? parseFloat(item.trim_out) : null;
+            const trimOut = rawTrimOut != null && rawTrimOut > trimIn ? rawTrimOut : source;
 
-            return Math.max(0.1, trimOut - trimIn);
+            return Math.max(0.25, trimOut - trimIn);
         },
 
         timelineMusicClipWidth(track) {
@@ -1892,7 +2119,10 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         timelineMusicSegmentWidth(segment) {
-            return Math.max(16, (segment.duration || 30) * this.timelineZoom);
+            const dur = segment?.duration
+                || this.timelineEffectiveDuration(segment, segment?.source_duration || 30);
+
+            return Math.max(24, dur * this.timelineZoom);
         },
 
         timelineSfxSegmentWidth(fx) {
@@ -1901,7 +2131,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 fx?.clip_duration || fx?.source_duration || 2,
             );
 
-            return Math.max(16, dur * this.timelineZoom);
+            return Math.max(36, Math.min(160, dur * this.timelineZoom));
         },
 
         timelineFxDisplayWidth(fx) {
@@ -2482,6 +2712,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.activeTab = tab;
             if (tab === 'biblioteca') {
                 this.loadProjectLibraryAssets();
+                this.loadStockLicenses();
                 this.prepareMediaSearch();
             }
             if (tab === 'exportar') {
@@ -2497,12 +2728,195 @@ window.editorApp = function (projectId, projectMeta = {}) {
             const slide = this.selectedSlide;
             const raw = this.slideSearchQuery(slide);
             if (!raw) return;
+            if (this.mediaQuery.trim() && this.mediaQuery !== this._lastSlideSearchRaw) {
+                return;
+            }
             if (!this.mediaQuery.trim() || this.mediaQuery === this._lastSlideSearchRaw) {
+                const token = ++this._mediaAutoSearchToken;
                 this.resolveMediaQuery(raw).then((query) => {
+                    if (token !== this._mediaAutoSearchToken) return;
+                    if (this.mediaQuery.trim() && this.mediaQuery !== this._lastSlideSearchRaw) return;
                     this.mediaQuery = query;
                     this._lastSlideSearchRaw = raw;
                     this.searchMedia();
                 });
+            }
+        },
+
+        resetMediaUploadMeta() {
+            this.mediaUploadMeta = {
+                item_title: '',
+                author: '',
+                attribution_text: '',
+                requires_attribution: false,
+                original_url: '',
+                license_type: '',
+                stock_license_id: this.defaultStockLicense?.id ?? null,
+            };
+        },
+
+        mediaUploadAcceptTypes() {
+            if (this.mediaType === 'music' || this.mediaType === 'sfx') {
+                return 'audio/*';
+            }
+            if (this.mediaType === 'video') {
+                return 'video/*';
+            }
+            return 'image/*';
+        },
+
+        async submitMediaUpload(event) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            event.target.value = '';
+
+            const meta = { ...this.mediaUploadMeta };
+            if (!meta.item_title?.trim()) {
+                meta.item_title = file.name.replace(/\.[^.]+$/, '');
+            }
+
+            try {
+                const assetType = (this.mediaType === 'music' || this.mediaType === 'sfx') ? 'audio' : this.mediaType;
+                const asset = await this.uploadAsset(file, assetType, false, meta);
+                await this.attachUploadedAsset(asset, file.name);
+                this.resetMediaUploadMeta();
+            } catch (e) {
+                this.error = e.response?.data?.message || e.message || 'Erro ao enviar arquivo';
+            }
+        },
+
+        async attachUploadedAsset(asset, fileName = '') {
+            const label = asset.item_title || fileName.replace(/\.[^.]+$/, '') || 'Mídia';
+
+            if (this.mediaType === 'music') {
+                const slot = this.selectedMusicSlot ?? 0;
+                const track = this.audioTracks[slot] ?? this.emptyMusicSlot(slot);
+                const append = !!track.file_path;
+                const { data } = await api.post(`/projects/${this.projectId}/audio-tracks`, {
+                    asset_id: asset.id,
+                    file_path: asset.file_path,
+                    track_slot: slot,
+                    volume: track.volume ?? 0.35,
+                    start_at: track.start_at ?? 0,
+                    ducking_enabled: track.ducking_enabled ?? true,
+                    loop_enabled: track.loop_enabled !== false,
+                    append,
+                    label,
+                });
+                this.audioTracks[slot] = this.enrichAudioTrack(data);
+                if (slot === 0) this.audioTrack = this.audioTracks[0];
+                this.message = append
+                    ? `Trilha encadeada na ${this.audioTracks[slot].label}`
+                    : `${this.audioTracks[slot].label} cadastrada com licença/créditos`;
+                return;
+            }
+
+            if (this.mediaType === 'sfx') {
+                const startAt = Math.round(this.timelinePlayheadSec * 10) / 10;
+                const { data } = await api.post(`/projects/${this.projectId}/sound-effects`, {
+                    asset_id: asset.id,
+                    file_path: asset.file_path,
+                    label,
+                    start_at: startAt,
+                    volume: 1,
+                });
+                this.soundEffects.push(this.enrichSoundEffect(data));
+                this.message = `Efeito "${label}" adicionado aos ${startAt}s`;
+                return;
+            }
+
+            if (this.mediaUploadAttachToSlide && this.selectedSlide) {
+                if (asset.type === 'video') {
+                    this.selectedSlide.video_path = asset.file_path;
+                    this.selectedSlide.video_url = asset.url || this.fileUrl('assets', asset.file_path.split(/[/\\]/).pop());
+                    this.selectedSlide.duration_mode = 'video';
+                } else {
+                    this.selectedSlide.image_path = asset.file_path;
+                    this.selectedSlide.image_url = asset.url || `/api/projects/${this.projectId}/assets/${asset.id}`;
+                }
+                await this.saveSlide();
+                this.message = `"${label}" inserido no slide`;
+            } else {
+                this.message = `"${label}" salvo na biblioteca do projeto`;
+            }
+        },
+
+        async resolveMediaUrl() {
+            const url = (this.mediaImportUrl || '').trim();
+            if (!url) {
+                this.error = 'Cole o link da mídia.';
+                return;
+            }
+            this.mediaImportLoading = true;
+            this.mediaImportPreview = null;
+            this.error = '';
+            try {
+                const typeHint = this.mediaType === 'music' ? 'audio' : this.mediaType;
+                const { data } = await api.post('/media/resolve-url', { url, type: typeHint });
+                this.mediaImportPreview = data.item;
+                this.message = 'Link reconhecido — confira os dados e clique em Importar';
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Não foi possível ler este link';
+            } finally {
+                this.mediaImportLoading = false;
+            }
+        },
+
+        async importMediaFromUrl() {
+            const url = (this.mediaImportUrl || '').trim();
+            if (!url) {
+                this.error = 'Cole o link da mídia.';
+                return;
+            }
+            this.mediaImportLoading = true;
+            this.error = '';
+            try {
+                const isMusic = this.mediaType === 'music';
+                const isSfx = this.mediaType === 'sfx';
+                const payload = {
+                    url,
+                    type: isSfx ? 'sfx' : (isMusic ? 'audio' : this.mediaType),
+                    target: isSfx ? 'sound_effect' : (isMusic ? 'audio_track' : 'slide'),
+                    slide_id: this.selectedSlide?.id,
+                };
+                if (isMusic) {
+                    payload.track_slot = this.selectedMusicSlot ?? 0;
+                }
+                if (isSfx) {
+                    payload.start_at = Math.round(this.timelinePlayheadSec * 10) / 10;
+                    payload.label = this.mediaImportPreview?.title || 'Efeito';
+                }
+                const { data } = await api.post(`/projects/${this.projectId}/media/import-url`, payload);
+                this.applyPublish(data.publish);
+                if (data.audio_track) {
+                    const slot = data.audio_track.track_slot ?? 0;
+                    this.audioTracks[slot] = this.enrichAudioTrack(data.audio_track);
+                    if (slot === 0) this.audioTrack = this.audioTracks[0];
+                    this.message = data.publish?.message || 'Trilha importada por link';
+                } else if (data.sound_effect) {
+                    this.soundEffects.push(this.enrichSoundEffect({
+                        ...data.sound_effect,
+                        asset: data.asset || data.sound_effect?.asset,
+                    }));
+                    this.message = data.publish?.message || 'Efeito importado por link';
+                } else if (data.slide && this.selectedSlide) {
+                    const idx = this.slides.findIndex((s) => s.id === data.slide.id);
+                    if (idx >= 0) {
+                        this.slides[idx] = this.enrichSlide({ ...this.slides[idx], ...data.slide });
+                        if (this.selectedSlide?.id === data.slide.id) {
+                            this.selectedSlide = this.slides[idx];
+                        }
+                    }
+                    this.message = data.publish?.message || 'Mídia inserida no slide';
+                } else {
+                    this.message = data.publish?.message || 'Mídia importada';
+                }
+                await this.loadProjectLibraryAssets();
+                this.mediaImportPreview = null;
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao importar por link';
+            } finally {
+                this.mediaImportLoading = false;
             }
         },
 
@@ -2765,16 +3179,26 @@ window.editorApp = function (projectId, projectMeta = {}) {
             }
         },
 
-        async uploadAsset(file, type, attachToSlide = true) {
+        async uploadAsset(file, type, attachToSlide = true, meta = {}) {
             const form = new FormData();
             form.append('file', file);
             form.append('type', type);
 
-            if (this.attachPaidLicenseOnUpload && this.defaultStockLicense) {
+            const title = meta.item_title || file.name.replace(/\.[^.]+$/, '');
+            form.append('item_title', title);
+
+            if (meta.stock_license_id) {
+                form.append('stock_license_id', meta.stock_license_id);
+            } else if (this.attachPaidLicenseOnUpload && this.defaultStockLicense && !meta.attribution_text && !meta.author) {
                 form.append('stock_license_id', this.defaultStockLicense.id);
-                const baseName = file.name.replace(/\.[^.]+$/, '');
-                form.append('item_title', baseName);
             }
+
+            if (meta.author) form.append('author', meta.author);
+            if (meta.attribution_text) form.append('attribution_text', meta.attribution_text);
+            if (meta.requires_attribution) form.append('requires_attribution', '1');
+            if (meta.original_url) form.append('original_url', meta.original_url);
+            if (meta.license_type) form.append('license_type', meta.license_type);
+            if (meta.item_external_id) form.append('item_external_id', meta.item_external_id);
 
             const { data: asset } = await api.post(
                 `/projects/${this.projectId}/assets/upload`,
@@ -2793,19 +3217,16 @@ window.editorApp = function (projectId, projectMeta = {}) {
             }
 
             if (type === 'image' || type === 'video') {
-                const formatted = {
+                this.upsertProjectLibraryAsset({
                     id: asset.id,
                     type: asset.type,
                     source: asset.source,
                     item_title: asset.item_title,
                     file_path: asset.file_path,
+                    file_hash: asset.file_hash,
                     url: asset.url || `/api/projects/${this.projectId}/assets/${asset.id}`,
                     preview_url: asset.preview_url || asset.url || `/api/projects/${this.projectId}/assets/${asset.id}`,
-                };
-                const exists = (this.projectLibraryAssets || []).some((a) => a.id === formatted.id);
-                if (!exists) {
-                    this.projectLibraryAssets = [formatted, ...(this.projectLibraryAssets || [])];
-                }
+                });
             }
 
             return asset;
@@ -2819,11 +3240,67 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.projectLibraryLoading = true;
             try {
                 const { data } = await api.get(`/projects/${this.projectId}/assets`);
-                this.projectLibraryAssets = data.assets || [];
+                this.projectLibraryAssets = this.dedupeProjectLibraryAssets(data.assets || []);
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao carregar biblioteca do projeto';
             } finally {
                 this.projectLibraryLoading = false;
+            }
+        },
+
+        projectLibraryAssetKey(asset) {
+            if (asset?.file_hash) {
+                return `hash:${asset.file_hash}`;
+            }
+            if (asset?.file_path) {
+                return `path:${asset.file_path}`;
+            }
+
+            return `id:${asset?.id}`;
+        },
+
+        dedupeProjectLibraryAssets(assets) {
+            const seen = new Set();
+            const unique = [];
+            for (const asset of assets || []) {
+                const key = this.projectLibraryAssetKey(asset);
+                if (seen.has(key)) {
+                    continue;
+                }
+                seen.add(key);
+                unique.push(asset);
+            }
+
+            return unique;
+        },
+
+        upsertProjectLibraryAsset(asset) {
+            if (!asset?.id) {
+                return;
+            }
+            const key = this.projectLibraryAssetKey(asset);
+            const rest = (this.projectLibraryAssets || []).filter((a) => this.projectLibraryAssetKey(a) !== key);
+            this.projectLibraryAssets = [asset, ...rest];
+        },
+
+        async deleteProjectLibraryAsset(asset) {
+            if (!asset?.id) {
+                return;
+            }
+            const title = asset.item_title || 'este arquivo';
+            if (!window.confirm(`Remover "${title}" da biblioteca deste projeto?\n\nSe o arquivo estiver em um slide, ele continua lá — só some da lista.`)) {
+                return;
+            }
+
+            try {
+                const { data } = await api.delete(`/projects/${this.projectId}/assets/${asset.id}`);
+                const key = this.projectLibraryAssetKey(asset);
+                this.projectLibraryAssets = (this.projectLibraryAssets || []).filter(
+                    (a) => this.projectLibraryAssetKey(a) !== key,
+                );
+                this.message = data.message || 'Removido da biblioteca do projeto';
+            } catch (e) {
+                this.error = e.response?.data?.message || 'Erro ao remover da biblioteca';
             }
         },
 
@@ -2857,14 +3334,22 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.message = `"${asset.item_title || 'Arquivo'}" inserido no slide`;
         },
 
-        async searchMedia() {
+        async searchMedia(append = false) {
             const query = this.mediaQuery.trim();
             if (query.length < 2) {
                 this.error = 'Digite pelo menos 2 caracteres para buscar.';
                 return;
             }
+
+            const nextPage = append ? (this.mediaSearchPage + 1) : 1;
+            const seq = ++this._mediaSearchSeq;
             this.mediaSearching = true;
-            this.mediaErrors = [];
+            if (!append) {
+                this.mediaErrors = [];
+                this.mediaResults = [];
+                this.mediaSearchPage = 1;
+                this.mediaHasMore = false;
+            }
             this.error = '';
             try {
                 const { data } = await api.get('/media/search', {
@@ -2872,10 +3357,26 @@ window.editorApp = function (projectId, projectMeta = {}) {
                         query,
                         source: this.mediaSource,
                         type: this.mediaSearchType(),
+                        page: nextPage,
                     },
                 });
-                this.mediaResults = data.results || [];
+                if (seq !== this._mediaSearchSeq) {
+                    return;
+                }
+
+                const incoming = data.results || [];
+                if (append) {
+                    const before = this.mediaResults.length;
+                    this.mediaResults = this.mergeMediaResults(this.mediaResults, incoming);
+                    this.mediaSearchPage = nextPage;
+                    this.mediaHasMore = this.mediaResults.length > before && !!data.has_more;
+                } else {
+                    this.mediaResults = incoming;
+                    this.mediaSearchPage = 1;
+                    this.mediaHasMore = !!data.has_more;
+                }
                 this.mediaErrors = data.errors || [];
+
                 if (this.mediaResults.length) {
                     const search = data.search || {};
                     const hint = search.hint
@@ -2883,14 +3384,24 @@ window.editorApp = function (projectId, projectMeta = {}) {
                         : search.translated
                             ? ` (${search.query} → ${search.primary})`
                             : '';
-                    this.message = `${this.mediaResults.length} resultado(s)${hint} — clique para inserir`;
+                    const moreHint = this.mediaHasMore ? ' · use Ver mais ou Expande' : '';
+                    this.message = `${this.mediaResults.length} resultado(s)${hint}${moreHint} — clique para inserir`;
                 } else if (data.search?.hint || data.search?.translated) {
                     this.message = (data.search.hint || `Buscamos como "${data.search.primary}"`) + ' — nenhum resultado ainda.';
+                } else {
+                    this.message = append
+                        ? 'Não há mais resultados para esta busca.'
+                        : 'Nenhum resultado — tente outro termo ou use Meu arquivo / Por link.';
+                    this.mediaHasMore = false;
                 }
             } catch (e) {
-                this.error = e.response?.data?.message || 'Erro na busca';
+                if (seq === this._mediaSearchSeq) {
+                    this.error = e.response?.data?.message || 'Erro na busca';
+                }
             } finally {
-                this.mediaSearching = false;
+                if (seq === this._mediaSearchSeq) {
+                    this.mediaSearching = false;
+                }
             }
         },
 
@@ -2963,12 +3474,11 @@ window.editorApp = function (projectId, projectMeta = {}) {
                             source: asset.source || item.source,
                             item_title: asset.item_title || item.title,
                             file_path: asset.file_path,
+                            file_hash: asset.file_hash,
                             url: `/api/projects/${this.projectId}/assets/${asset.id}`,
                             preview_url: `/api/projects/${this.projectId}/assets/${asset.id}`,
                         };
-                        if (!(this.projectLibraryAssets || []).some((a) => a.id === libAsset.id)) {
-                            this.projectLibraryAssets = [libAsset, ...(this.projectLibraryAssets || [])];
-                        }
+                        this.upsertProjectLibraryAsset(libAsset);
                     }
 
                     this.message = data.publish?.message || 'Mídia inserida — créditos atualizados na exportação';
@@ -2987,7 +3497,10 @@ window.editorApp = function (projectId, projectMeta = {}) {
                     }
                     this.activeTab = 'audio';
                 } else if (data.sound_effect) {
-                    this.soundEffects.push(this.enrichSoundEffect(data.sound_effect));
+                    this.soundEffects.push(this.enrichSoundEffect({
+                        ...data.sound_effect,
+                        asset: data.asset || data.sound_effect?.asset,
+                    }));
                     if (options.start_at != null) {
                         this.message = data.publish?.message
                             || `Efeito em ${this.formatTimelineTime(options.start_at)} — crédito na descrição`;

@@ -4,9 +4,15 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+const phpIniScript = path.join(root, 'scripts', 'configure-portable-php.mjs');
+if (fs.existsSync(phpIniScript)) {
+    await import(pathToFileURL(phpIniScript).href);
+}
 const platforms = ['win', 'linux', 'mac'];
 
 console.log('CriaSys Editor — verificação de runtimes\n');
@@ -23,6 +29,17 @@ for (const p of platforms) {
     const hasFf = fs.existsSync(path.join(ffDir, ffBin));
 
     console.log(`[${p}] PHP: ${hasPhp ? 'OK' : 'FALTANDO'} | FFmpeg: ${hasFf ? 'OK' : 'FALTANDO'}`);
+
+    if (p === 'win' && hasPhp) {
+        const mod = spawnSync(path.join(phpDir, phpBin), ['-m'], { encoding: 'utf8' });
+        const out = mod.stdout || '';
+        if (!out.includes('pdo_sqlite') || !out.includes('sqlite3')) {
+            console.log(`[${p}] SQLite: FALTANDO — rode npm run portable:prepare de novo`);
+            ok = false;
+        } else {
+            console.log(`[${p}] SQLite: OK`);
+        }
+    }
 
     if (p === 'win' && (!hasPhp || !hasFf)) {
         ok = false;

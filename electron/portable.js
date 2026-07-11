@@ -5,9 +5,24 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+export function getPortableBaseDir() {
+    if (process.env.PORTABLE_EXECUTABLE_DIR) {
+        return process.env.PORTABLE_EXECUTABLE_DIR;
+    }
+    if (process.env.PORTABLE_EXECUTABLE_FILE) {
+        return path.dirname(process.env.PORTABLE_EXECUTABLE_FILE);
+    }
+    return null;
+}
+
 export function getPortableDataPath(isDev, execPath) {
     if (isDev) {
         return path.resolve(__dirname, '..', 'portable-data');
+    }
+
+    const portableDir = getPortableBaseDir();
+    if (portableDir) {
+        return path.join(portableDir, 'CriaSysData');
     }
 
     return path.join(path.dirname(execPath), 'CriaSysData');
@@ -54,7 +69,7 @@ export function resolveRuntimePaths(isDev, electronDir, resourcesPath, execPath)
         ffmpegPath: getBundledBinary(resourcesPath, electronDir, isDev, 'ffmpeg', win ? 'ffmpeg.exe' : 'ffmpeg'),
         ffprobePath: getBundledBinary(resourcesPath, electronDir, isDev, 'ffmpeg', win ? 'ffprobe.exe' : 'ffprobe'),
         phpPath: getBundledBinary(resourcesPath, electronDir, isDev, 'php', win ? 'php.exe' : 'php'),
-        port: 8000,
+        port: 8765,
         isDev,
     };
 }
@@ -73,6 +88,11 @@ export function ensurePortableStructure(dataPath) {
 
     for (const dir of dirs) {
         fs.mkdirSync(dir, { recursive: true });
+    }
+
+    const dbFile = path.join(dataPath, 'database', 'criasys.sqlite');
+    if (!fs.existsSync(dbFile)) {
+        fs.writeFileSync(dbFile, '');
     }
 }
 

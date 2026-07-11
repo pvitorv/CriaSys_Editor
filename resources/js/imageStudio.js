@@ -3237,10 +3237,7 @@ export function imageStudioMethods() {
                     preset: this.imageStudioPreset,
                 });
                 if (data.asset) {
-                    const exists = (this.projectLibraryAssets || []).some((a) => a.id === data.asset.id);
-                    if (!exists) {
-                        this.projectLibraryAssets = [data.asset, ...(this.projectLibraryAssets || [])];
-                    }
+                    this.upsertProjectLibraryAsset(data.asset);
                 } else {
                     await this.loadProjectLibraryAssets();
                 }

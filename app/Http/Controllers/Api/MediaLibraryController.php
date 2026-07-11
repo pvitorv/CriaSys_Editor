@@ -10,6 +10,7 @@ use App\Services\Export\ProjectPublishAutoSyncService;
 use App\Services\MediaLibrary\FreesoundService;
 use App\Services\MediaLibrary\MediaImportService;
 use App\Services\MediaLibrary\MediaSearchQueryTranslator;
+use App\Services\MediaLibrary\MediaUrlResolverService;
 use App\Services\MediaLibrary\MixkitMusicService;
 use App\Services\MediaLibrary\MixkitSfxService;
 use App\Services\MediaLibrary\MixkitVideoService;
@@ -34,6 +35,7 @@ class MediaLibraryController extends Controller
         private MediaImportService $importer,
         private ProjectPublishAutoSyncService $publishSync,
         private MediaSearchQueryTranslator $queryTranslator,
+        private MediaUrlResolverService $urlResolver,
     ) {}
 
     public function providers(): JsonResponse
@@ -83,30 +85,59 @@ class MediaLibraryController extends Controller
         $terms = $searchMeta['terms'];
 
         if ($type === 'audio') {
-            return response()->json(array_merge(
+            return response()->json($this->withPaginationMeta(
                 $this->searchAudio($query, $terms, $source, $page),
-                ['search' => $searchMeta]
+                $page,
+                $searchMeta,
             ));
         }
 
         if ($type === 'sfx') {
-            return response()->json(array_merge(
+            return response()->json($this->withPaginationMeta(
                 $this->searchSfx($query, $terms, $source, $page),
-                ['search' => $searchMeta]
+                $page,
+                $searchMeta,
             ));
         }
 
         if ($type === 'video') {
-            return response()->json(array_merge(
-                $this->searchVideo($query, $terms, $source, $page),
-                ['search' => $searchMeta]
+            $videoTerms = $this->queryTranslator->termsForVideo($query);
+            $searchMeta['terms'] = $videoTerms;
+            $searchMeta['primary'] = $videoTerms[0] ?? $searchMeta['primary'];
+            if ($videoTerms !== [] && ($searchMeta['hint'] ?? null)) {
+                $searchMeta['hint'] = 'Objeto: '.$videoTerms[0];
+            } elseif ($videoTerms !== [] && $this->queryTranslator->wasTranslated($query)) {
+                $searchMeta['hint'] = 'Buscando como: '.$videoTerms[0];
+            }
+
+            return response()->json($this->withPaginationMeta(
+                $this->searchVideo($query, $videoTerms, $source, $page),
+                $page,
+                $searchMeta,
             ));
         }
 
-        return response()->json(array_merge(
+        return response()->json($this->withPaginationMeta(
             $this->searchImages($query, $terms, $source, $page),
-            ['search' => $searchMeta]
+            $page,
+            $searchMeta,
         ));
+    }
+
+    /**
+     * @param  array{results: list<array<string, mixed>>, errors: list<string>}  $payload
+     * @return array<string, mixed>
+     */
+    private function withPaginationMeta(array $payload, int $page, array $searchMeta): array
+    {
+        $count = count($payload['results'] ?? []);
+        $minPageSize = 8;
+
+        return array_merge($payload, [
+            'search' => $searchMeta,
+            'page' => $page,
+            'has_more' => $count >= $minPageSize,
+        ]);
     }
 
     /**
@@ -160,36 +191,38 @@ class MediaLibraryController extends Controller
     private function searchVideo(string $query, array $terms, string $source, int $page): array
     {
         $videoSources = $this->resolveVideoSources($source);
+        $term = $terms[0] ?? $this->queryTranslator->primaryTerm($query);
         $results = [];
         $lastError = null;
 
-        foreach ($terms as $term) {
-            if (in_array('mixkit', $videoSources, true)) {
-                try {
-                    $results = array_merge($results, $this->mixkitVideos->searchVideos($term, $page));
-                } catch (\Throwable $e) {
-                    $lastError = $e->getMessage();
-                }
-            }
+        if ($term === '') {
+            return [
+                'results' => [],
+                'errors' => ['Digite um objeto ou cena para buscar (ex.: gato, bola, praia).'],
+            ];
+        }
 
-            foreach ($videoSources as $src) {
-                if ($src === 'mixkit') {
-                    continue;
-                }
-                try {
-                    $chunk = match ($src) {
-                        'pexels' => $this->pexels->searchVideos($term, $page),
-                        'pixabay' => $this->pixabay->searchVideos($term, $page),
-                        default => [],
-                    };
-                    $results = array_merge($results, $chunk);
-                } catch (\Throwable $e) {
-                    $lastError = $e->getMessage();
-                }
+        if (in_array('mixkit', $videoSources, true)) {
+            try {
+                $results = array_merge($results, $this->mixkitVideos->searchVideos($term, $page));
+            } catch (\Throwable $e) {
+                $lastError = $e->getMessage();
             }
+        }
 
-            if (count($results) >= 24) {
-                break;
+        foreach ($videoSources as $src) {
+            if ($src === 'mixkit') {
+                continue;
+            }
+            try {
+                $chunk = match ($src) {
+                    'pexels' => $this->pexels->searchVideos($term, $page),
+                    'pixabay' => $this->pixabay->searchVideos($term, $page),
+                    default => [],
+                };
+                $results = array_merge($results, $chunk);
+            } catch (\Throwable $e) {
+                $lastError = $e->getMessage();
             }
         }
 
@@ -197,7 +230,7 @@ class MediaLibraryController extends Controller
 
         $errors = $this->buildSearchErrors($results, $query, $lastError, 'vídeo', 'vídeos');
         if (empty($results) && ! config('criasys.media.pexels_api_key') && ! config('criasys.media.pixabay_api_key')) {
-            $errors[] = 'Mixkit (grátis) não retornou resultados — tente outra palavra em português (ex.: futebol, praia, cidade).';
+            $errors[] = 'Mixkit (grátis) não retornou resultados para "'.$term.'" — tente um objeto concreto (ex.: cat, beach, football).';
         }
 
         return ['results' => $results, 'errors' => $errors];
@@ -343,9 +376,26 @@ class MediaLibraryController extends Controller
     private function uniqueResults(array $results): array
     {
         return collect($results)
-            ->unique(fn ($item) => ($item['source'] ?? '').'-'.($item['id'] ?? ''))
+            ->unique(fn ($item) => $this->resultKey($item))
             ->values()
             ->all();
+    }
+
+    /** @param  array<string, mixed>  $item */
+    private function resultKey(array $item): string
+    {
+        $source = (string) ($item['source'] ?? '');
+        $id = (string) ($item['id'] ?? '');
+        if ($id !== '') {
+            return $source.'-'.$id;
+        }
+
+        $url = (string) ($item['download_url'] ?? $item['preview_url'] ?? '');
+        if ($url !== '' && preg_match('#/videos/(\d+)/#', $url, $match)) {
+            return $source.'-'.$match[1];
+        }
+
+        return $source.'-'.md5($url);
     }
 
     /**
@@ -453,6 +503,53 @@ class MediaLibraryController extends Controller
         return $sources;
     }
 
+    public function resolveUrl(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'url' => ['required', 'url', 'max:2000'],
+            'type' => ['nullable', 'in:image,audio,video,sfx'],
+        ]);
+
+        try {
+            $item = $this->urlResolver->resolve($data['url'], $data['type'] ?? null);
+            if (empty($item['download_url'])) {
+                return response()->json(['message' => 'Não foi possível obter o arquivo para download.'], 422);
+            }
+
+            return response()->json(['item' => $item]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function importUrl(Request $request, Project $project): JsonResponse
+    {
+        $data = $request->validate([
+            'url' => ['required', 'url', 'max:2000'],
+            'type' => ['nullable', 'in:image,audio,video,sfx'],
+            'target' => ['nullable', 'in:slide,audio_track,sound_effect'],
+            'slide_id' => ['nullable', 'integer'],
+            'track_slot' => ['nullable', 'integer', 'min:0', 'max:2'],
+            'start_at' => ['nullable', 'numeric', 'min:0'],
+            'place_at' => ['nullable', 'boolean'],
+            'label' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        try {
+            $item = $this->urlResolver->resolve($data['url'], $data['type'] ?? null);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        if (empty($item['download_url'])) {
+            return response()->json(['message' => 'Não foi possível obter o arquivo para download.'], 422);
+        }
+
+        $request->merge(['item' => $item]);
+
+        return $this->import($request, $project);
+    }
+
     public function import(Request $request, Project $project): JsonResponse
     {
         $data = $request->validate([
@@ -518,15 +615,18 @@ class MediaLibraryController extends Controller
         ];
 
         if ($target === 'sound_effect') {
+            $duration = ! empty($item['duration_seconds']) ? (float) $item['duration_seconds'] : null;
             $effect = $project->soundEffects()->create([
                 'label' => $data['label'] ?? $item['title'] ?? 'Efeito',
                 'asset_id' => $asset->id,
                 'file_path' => $asset->file_path,
                 'start_at' => (float) ($data['start_at'] ?? 0),
                 'volume' => 0.85,
+                'source_duration' => $duration,
+                'clip_duration' => $duration,
             ]);
 
-            return response()->json(array_merge($payload, ['sound_effect' => $effect->fresh()]), 201);
+            return response()->json(array_merge($payload, ['sound_effect' => $effect->fresh(['asset'])]), 201);
         }
 
         if ($target === 'audio_track') {

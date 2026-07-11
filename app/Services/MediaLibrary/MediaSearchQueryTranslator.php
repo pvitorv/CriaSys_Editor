@@ -133,6 +133,31 @@ class MediaSearchQueryTranslator
         return $terms[0] ?? $this->extractVisualKeywords($query) ?: trim($query);
     }
 
+    /**
+     * Vídeos curtos: um único termo objetivo (ex.: "cat", "football") — evita misturar sinônimos.
+     *
+     * @return list<string>
+     */
+    public function termsForVideo(string $query): array
+    {
+        $query = trim($query);
+        if ($query === '') {
+            return [];
+        }
+
+        $wordCount = count(preg_split('/\s+/u', $query, -1, PREG_SPLIT_NO_EMPTY) ?: []);
+        if ($wordCount <= 4) {
+            $direct = $this->translateWords($this->normalize($query));
+            if ($direct !== null && $direct !== '') {
+                return [$direct];
+            }
+        }
+
+        $primary = $this->primaryTerm($query);
+
+        return $primary !== '' ? [$primary] : [];
+    }
+
     public function wasTranslated(string $query): bool
     {
         $primary = $this->primaryTerm($query);

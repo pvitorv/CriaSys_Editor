@@ -122,9 +122,9 @@ return [
     ],
 
     'mixkit_sfx_catalog' => [
-        ['id' => 'sfx-1', 'title' => 'Cinematic Impact', 'tags' => 'impact cinematic boom', 'download_url' => 'https://assets.mixkit.co/active_storage/sfx/1143/1143.mp3', 'preview_url' => 'https://assets.mixkit.co/active_storage/sfx/1143/1143-preview.mp3', 'original_url' => 'https://mixkit.co/free-sound-effects/impact/'],
-        ['id' => 'sfx-2', 'title' => 'Whoosh Transition', 'tags' => 'whoosh transition swoosh', 'download_url' => 'https://assets.mixkit.co/active_storage/sfx/2908/2908.mp3', 'preview_url' => 'https://assets.mixkit.co/active_storage/sfx/2908/2908-preview.mp3', 'original_url' => 'https://mixkit.co/free-sound-effects/whoosh/'],
-        ['id' => 'sfx-3', 'title' => 'Notification Pop', 'tags' => 'notification pop ui', 'download_url' => 'https://assets.mixkit.co/active_storage/sfx/788/788.mp3', 'preview_url' => 'https://assets.mixkit.co/active_storage/sfx/788/788-preview.mp3', 'original_url' => 'https://mixkit.co/free-sound-effects/notification/'],
+        ['id' => 'sfx-1', 'title' => 'Cinematic Impact', 'tags' => 'impact cinematic boom', 'download_url' => 'https://assets.mixkit.co/active_storage/sfx/1143/1143-preview.mp3', 'preview_url' => 'https://assets.mixkit.co/active_storage/sfx/1143/1143-preview.mp3', 'original_url' => 'https://mixkit.co/free-sound-effects/impact/'],
+        ['id' => 'sfx-2', 'title' => 'Whoosh Transition', 'tags' => 'whoosh transition swoosh', 'download_url' => 'https://assets.mixkit.co/active_storage/sfx/2908/2908-preview.mp3', 'preview_url' => 'https://assets.mixkit.co/active_storage/sfx/2908/2908-preview.mp3', 'original_url' => 'https://mixkit.co/free-sound-effects/whoosh/'],
+        ['id' => 'sfx-3', 'title' => 'Notification Pop', 'tags' => 'notification pop ui', 'download_url' => 'https://assets.mixkit.co/active_storage/sfx/788/788-preview.mp3', 'preview_url' => 'https://assets.mixkit.co/active_storage/sfx/788/788-preview.mp3', 'original_url' => 'https://mixkit.co/free-sound-effects/notification/'],
     ],
 
 ];

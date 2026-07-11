@@ -67,4 +67,20 @@ class MediaSearchQueryTranslatorTest extends TestCase
         $this->assertStringContainsString('football', $meta['extracted']);
         $this->assertNotEmpty($meta['primary']);
     }
+
+    public function test_video_search_uses_single_object_term(): void
+    {
+        $terms = $this->translator->termsForVideo('gato');
+
+        $this->assertCount(1, $terms);
+        $this->assertSame('cat', $terms[0]);
+    }
+
+    public function test_video_search_keeps_compound_object_phrase(): void
+    {
+        $terms = $this->translator->termsForVideo('bola futebol');
+
+        $this->assertCount(1, $terms);
+        $this->assertStringContainsString('football', $terms[0]);
+    }
 }

@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { spawn } from 'node:child_process';
+import net from 'node:net';
 import waitOn from 'wait-on';
 import { buildLaravelEnv } from '../portable-env.js';
 import { isPortableInitialized, markPortableInitialized } from '../portable.js';
@@ -8,6 +9,28 @@ let serverProcess = null;
 let queueProcess = null;
 let projectRootPath = '';
 let runtime = {};
+
+function isPortFree(port) {
+    return new Promise((resolve) => {
+        const server = net.createServer();
+        server.once('error', () => resolve(false));
+        server.once('listening', () => server.close(() => resolve(true)));
+        server.listen(port, '127.0.0.1');
+    });
+}
+
+async function findFreePort(preferred = 8765, maxAttempts = 30) {
+    for (let port = preferred; port < preferred + maxAttempts; port += 1) {
+        if (await isPortFree(port)) {
+            return port;
+        }
+    }
+    throw new Error('Nenhuma porta livre entre ' + preferred + ' e ' + (preferred + maxAttempts - 1));
+}
+
+export function getLaravelPort() {
+    return runtime.port || 8765;
+}
 
 export function registerLaravelIpc(root, paths) {
     projectRootPath = root;
@@ -34,6 +57,7 @@ function getPhpBinary() {
 }
 
 function buildEnv() {
+    const port = runtime.port || 8765;
     if (runtime.isDev) {
         return {
             ...process.env,
@@ -47,7 +71,7 @@ function buildEnv() {
         dataPath: runtime.dataPath,
         ffmpegPath: runtime.ffmpegPath,
         ffprobePath: runtime.ffprobePath,
-        port: runtime.port || 8000,
+        port,
     });
 }
 
@@ -93,11 +117,15 @@ export async function startLaravel(root, paths) {
         return waitForServer(runtime.port);
     }
 
+    runtime.port = runtime.isDev
+        ? (runtime.port || 8000)
+        : await findFreePort(runtime.port || 8765);
+
     const env = buildEnv();
     await initializePortable(env);
 
     const shell = process.platform === 'win32';
-    const port = runtime.port || 8000;
+    const port = runtime.port;
 
     serverProcess = spawn(getPhpBinary(), ['artisan', 'serve', '--host=127.0.0.1', `--port=${port}`], {
         cwd: projectRootPath,

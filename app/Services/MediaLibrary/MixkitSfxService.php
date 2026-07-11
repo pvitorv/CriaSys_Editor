@@ -98,17 +98,16 @@ class MixkitSfxService
         preg_match_all('/data-audio-player-item-id-value="(\d+)"/', $html, $ids);
 
         $items = [];
-        foreach ($urls[1] as $index => $previewUrl) {
+        foreach ($urls[1] as $previewUrl) {
             if (! str_contains($previewUrl, '/sfx/')) {
                 continue;
             }
 
-            $id = $ids[1][$index] ?? $this->extractId($previewUrl);
+            $id = $this->extractId($previewUrl);
             if (! $id) {
                 continue;
             }
 
-            $downloadUrl = str_replace('-preview', '', $previewUrl);
             $pageUrl = "https://mixkit.co/free-sound-effects/item/{$id}/";
             $title = 'Mixkit SFX #'.$id;
             $attribution = MediaAttribution::forMixkitSfx($title, $pageUrl);
@@ -120,7 +119,7 @@ class MixkitSfxService
                 'subtype' => 'sfx',
                 'title' => $title,
                 'preview_url' => $previewUrl,
-                'download_url' => $downloadUrl,
+                'download_url' => $this->resolveDownloadUrl($previewUrl, $id),
                 'author' => 'Mixkit',
                 'original_url' => $pageUrl,
                 'license_type' => LicenseType::Mixkit->value,
@@ -180,5 +179,20 @@ class MixkitSfxService
         }
 
         return null;
+    }
+
+    private function resolveDownloadUrl(string $previewUrl, string $id): string
+    {
+        if (preg_match('#/sfx/(\d+)/#', $previewUrl, $m)) {
+            $numericId = $m[1];
+
+            return "https://assets.mixkit.co/active_storage/sfx/{$numericId}/{$numericId}-preview.mp3";
+        }
+
+        if (str_contains($previewUrl, '-preview')) {
+            return $previewUrl;
+        }
+
+        return $previewUrl;
     }
 }

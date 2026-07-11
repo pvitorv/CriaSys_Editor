@@ -91,7 +91,8 @@
             "artifactName": "CriaSys-Editor-${version}-Setup-${arch}.${ext}"
         },
         "portable": {
-            "artifactName": "CriaSys-Editor-${version}-Portable-${arch}.exe"
+            "artifactName": "CriaSys-Editor-${version}-Portable-${arch}.exe",
+            "unpackDirName": "CriaSysEditor"
         },
         "linux": {
             "target": [
