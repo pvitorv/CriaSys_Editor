@@ -39,19 +39,55 @@ class NarrationService
         );
     }
 
-    public function generate(Project $project, string $voice, ?string $engine = null): Narration
+    public function hasNarratableSlides(Project $project, ?array $slideIds = null): bool
     {
+        foreach ($this->slidesForNarration($project, $slideIds) as $slide) {
+            if ($this->slideNarrationSource($slide) !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function generate(
+        Project $project,
+        string $voice,
+        ?string $engine = null,
+        ?array $slideIds = null,
+        ?Narration $narration = null,
+    ): Narration {
+        @set_time_limit(0);
+
         $engineSlug = $engine ?? config('criasys.tts.default_engine');
 
         $this->storage->ensureStructure($project);
         $project->load('slides');
 
-        $narration = Narration::create([
+        $slides = $this->slidesForNarration($project, $slideIds);
+        if ($slides->isEmpty()) {
+            throw new \RuntimeException('Nenhum slide selecionado para narração.');
+        }
+
+        $narration ??= Narration::create([
             'project_id' => $project->id,
             'engine' => $engineSlug,
             'voice' => $voice,
             'status' => 'processing',
+            'segments' => [],
         ]);
+
+        if ($narration->status !== 'processing') {
+            $narration->update([
+                'engine' => $engineSlug,
+                'voice' => $voice,
+                'status' => 'processing',
+                'segments' => [],
+                'audio_path' => null,
+                'duration_seconds' => null,
+                'full_script' => null,
+            ]);
+        }
 
         $engineUsed = $engineSlug;
 
@@ -60,11 +96,8 @@ class NarrationService
             $segmentFiles = [];
             $fullScript = '';
 
-            foreach ($project->slides as $index => $slide) {
-                $text = trim($slide->narration_text ?? '');
-                if ($text === '') {
-                    $text = trim(collect([$slide->title, $slide->subtitle, $slide->body_text])->filter()->implode('. '));
-                }
+            foreach ($slides as $index => $slide) {
+                $text = $this->slideNarrationSource($slide);
 
                 if ($text === '') {
                     continue;
@@ -73,8 +106,8 @@ class NarrationService
                 $text = $this->scriptParser->formatNarrationText($text);
 
                 $fullScript .= ($fullScript ? "\n\n" : '').$text;
-                $segmentPath = $this->storage->audioPath($project, "segment_{$narration->id}_{$index}.mp3");
-                $result = $this->ttsFactory->synthesizeWithFallback($text, $voice, $segmentPath, $engineSlug);
+                $segmentBase = $this->storage->audioPath($project, "segment_{$narration->id}_{$slide->id}");
+                $result = $this->ttsFactory->synthesizeWithFallback($text, $voice, $segmentBase.'.mp3', $engineSlug);
                 $engineUsed = $result['engine'] ?? $engineUsed;
 
                 $segments[] = [
@@ -85,10 +118,12 @@ class NarrationService
                     'duration_seconds' => $result['duration_seconds'],
                 ];
                 $segmentFiles[] = $result['audio_path'];
+
+                $narration->update(['segments' => $segments]);
             }
 
-            if (empty($segmentFiles)) {
-                throw new \RuntimeException('Nenhum slide possui texto para narração.');
+            if ($segmentFiles === []) {
+                throw new \RuntimeException('Nenhum slide selecionado possui texto para narração.');
             }
 
             $outputPath = $this->storage->audioPath($project, "narracao_{$narration->id}.mp3");
@@ -104,7 +139,12 @@ class NarrationService
                 'engine' => $engineUsed,
             ]);
         } catch (\Throwable $e) {
-            $narration->update(['status' => 'failed']);
+            $narration->update([
+                'status' => 'failed',
+                'segments' => array_merge($narration->segments ?? [], [
+                    '_error' => $e->getMessage(),
+                ]),
+            ]);
             throw $e;
         }
 
@@ -120,8 +160,11 @@ class NarrationService
 
         DB::transaction(function () use ($narration) {
             foreach ($narration->segments as $segment) {
+                if (! is_array($segment) || empty($segment['slide_id'])) {
+                    continue;
+                }
                 Slide::where('id', $segment['slide_id'])->update([
-                    'duration_seconds' => max(0.5, (float) $segment['duration_seconds']),
+                    'duration_seconds' => max(0.5, (float) ($segment['duration_seconds'] ?? 0)),
                 ]);
             }
         });
@@ -129,26 +172,129 @@ class NarrationService
 
     private function concatAudio(array $files, string $outputPath): void
     {
-        if (count($files) === 1) {
-            File::copy($files[0], $outputPath);
+        File::ensureDirectoryExists(dirname($outputPath));
+
+        if ($files === []) {
+            throw new \RuntimeException('Nenhum segmento de áudio para concatenar.');
+        }
+
+        $ffmpeg = $this->ttsFactory->resolveFfmpegPath();
+        $normalized = [];
+
+        foreach ($files as $index => $file) {
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            if ($ext === 'mp3') {
+                $normalized[] = $file;
+
+                continue;
+            }
+
+            $tempMp3 = dirname($outputPath).DIRECTORY_SEPARATOR."seg_norm_{$index}_".uniqid().'.mp3';
+            $this->transcodeToMp3($file, $tempMp3, $ffmpeg);
+            $normalized[] = $tempMp3;
+        }
+
+        if (count($normalized) === 1) {
+            File::copy($normalized[0], $outputPath);
+            $this->cleanupTempSegments($normalized, $files);
 
             return;
         }
 
         $listPath = dirname($outputPath).DIRECTORY_SEPARATOR.'concat_audio_'.uniqid().'.txt';
-        $lines = array_map(fn ($f) => "file '".str_replace("'", "'\\''", $f)."'", $files);
+        $lines = array_map(fn ($f) => "file '".str_replace("'", "'\\''", $f)."'", $normalized);
         File::put($listPath, implode(PHP_EOL, $lines));
 
-        $ffmpeg = config('criasys.ffmpeg_path');
-        $result = Process::timeout(120)->run([
+        $result = Process::timeout(300)->run([
             $ffmpeg, '-y', '-f', 'concat', '-safe', '0', '-i', $listPath,
             '-c', 'copy', $outputPath,
         ]);
 
         File::delete($listPath);
 
-        if (! $result->successful()) {
-            throw new \RuntimeException('Falha ao concatenar áudio: '.$result->errorOutput());
+        if (! $result->successful() || ! is_file($outputPath)) {
+            $this->concatAudioReencode($normalized, $outputPath, $ffmpeg);
         }
+
+        $this->cleanupTempSegments($normalized, $files);
+    }
+
+    /** @param  list<string>  $normalized  @param  list<string>  $original */
+    private function cleanupTempSegments(array $normalized, array $original): void
+    {
+        foreach ($normalized as $path) {
+            if (! in_array($path, $original, true) && is_file($path)) {
+                File::delete($path);
+            }
+        }
+    }
+
+    /** @param  list<string>  $files */
+    private function concatAudioReencode(array $files, string $outputPath, string $ffmpeg): void
+    {
+        $args = [$ffmpeg, '-y'];
+        foreach ($files as $file) {
+            $args[] = '-i';
+            $args[] = $file;
+        }
+
+        $args = array_merge($args, [
+            '-filter_complex', 'concat=n='.count($files).':v=0:a=1[out]',
+            '-map', '[out]',
+            '-c:a', 'libmp3lame', '-q:a', '2',
+            $outputPath,
+        ]);
+
+        $result = Process::timeout(300)->run($args);
+
+        if (! $result->successful() || ! is_file($outputPath)) {
+            throw new \RuntimeException(
+                'Falha ao concatenar áudio: '.trim($result->errorOutput() ?: $result->output())
+            );
+        }
+    }
+
+    private function transcodeToMp3(string $input, string $output, string $ffmpeg): void
+    {
+        $result = Process::timeout(120)->run([
+            $ffmpeg, '-y', '-i', $input, '-codec:a', 'libmp3lame', '-q:a', '2', $output,
+        ]);
+
+        if (! $result->successful() || ! is_file($output)) {
+            throw new \RuntimeException(
+                'Falha ao converter áudio para MP3: '.trim($result->errorOutput() ?: $result->output())
+            );
+        }
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, Slide>
+     */
+    private function slidesForNarration(Project $project, ?array $slideIds)
+    {
+        $slides = $project->slides->sortBy('order')->values();
+
+        if ($slideIds === null || $slideIds === []) {
+            return $slides;
+        }
+
+        $allowed = array_flip(array_map('intval', $slideIds));
+
+        return $slides->filter(fn (Slide $slide) => isset($allowed[$slide->id]))->values();
+    }
+
+    private function slideNarrationSource(Slide $slide): string
+    {
+        $text = trim($slide->narration_text ?? '');
+        if ($text !== '') {
+            return $text;
+        }
+
+        $text = trim($slide->body_text ?? '');
+        if ($text !== '') {
+            return $text;
+        }
+
+        return trim(collect([$slide->title, $slide->subtitle])->filter()->implode('. '));
     }
 }

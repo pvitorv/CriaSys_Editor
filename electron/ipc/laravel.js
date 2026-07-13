@@ -63,6 +63,7 @@ function buildEnv() {
             ...process.env,
             FFMPEG_PATH: runtime.ffmpegPath,
             FFPROBE_PATH: runtime.ffprobePath,
+            TTS_DEFAULT_ENGINE: process.env.TTS_DEFAULT_ENGINE || 'piper',
         };
     }
 
@@ -71,6 +72,7 @@ function buildEnv() {
         dataPath: runtime.dataPath,
         ffmpegPath: runtime.ffmpegPath,
         ffprobePath: runtime.ffprobePath,
+        laravelRoot: projectRootPath,
         port,
     });
 }

@@ -27,7 +27,9 @@
         'status' => $project->status,
         'deployment' => $deployment,
         'defaultTtsEngine' => app(\App\Services\Tts\TtsEngineFactory::class)->recommendedEngine(),
-        'defaultVoice' => config('criasys.tts.default_voice'),
+        'defaultVoice' => app(\App\Services\Tts\TtsEngineFactory::class)->defaultVoiceFor(
+            app(\App\Services\Tts\TtsEngineFactory::class)->recommendedEngine()
+        ),
     ]))"
     x-init="init()"
     class="flex flex-col gap-4 w-[70vw] max-w-[70vw] mx-auto px-1 sm:px-2 pb-10"
@@ -626,6 +628,44 @@ O narrador continua a história com calma."
                     <button type="button" @click="copyBodyToNarration()" class="mt-2 text-xs text-violet-400 hover:text-violet-300">Usar corpo do slide</button>
                 </div>
 
+                <div class="border-t border-zinc-800 pt-4 space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <label class="text-xs text-zinc-400">Slides na narração completa</label>
+                        <div class="flex flex-wrap gap-2 text-xs">
+                            <button type="button" @click="selectAllNarrationSlides()" class="text-violet-400 hover:text-violet-300">Marcar todos</button>
+                            <button type="button" @click="selectNarrationSlidesWithText()" class="text-violet-400 hover:text-violet-300">Com texto</button>
+                            <button type="button" @click="clearNarrationSlideSelection()" class="text-zinc-500 hover:text-zinc-300">Limpar</button>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-zinc-500">
+                        <span x-text="narrationSelectedWithTextCount()"></span> de
+                        <span x-text="narrationSelectedSlideIds.length"></span> marcado(s) têm texto para ler.
+                        O teste de voz usa só o slide selecionado; a narração completa usa os marcados abaixo.
+                    </p>
+                    <div class="max-h-48 overflow-y-auto rounded border border-zinc-800 divide-y divide-zinc-800">
+                        <template x-for="(slide, idx) in slides" :key="slide.id">
+                            <label class="flex items-start gap-2 px-3 py-2 hover:bg-zinc-800/50 cursor-pointer text-sm">
+                                <input
+                                    type="checkbox"
+                                    class="mt-1 rounded border-zinc-600"
+                                    :checked="isNarrationSlideSelected(slide.id)"
+                                    @change="toggleNarrationSlide(slide.id)"
+                                >
+                                <span class="min-w-0 flex-1">
+                                    <span class="text-zinc-300" x-text="`Slide ${idx + 1}`"></span>
+                                    <span x-show="!slideHasNarrationText(slide)" class="text-amber-500 text-xs ml-1">(sem texto)</span>
+                                    <span class="block text-xs text-zinc-500 truncate" x-text="slideNarrationPreview(slide) || '—'"></span>
+                                </span>
+                            </label>
+                        </template>
+                    </div>
+                    <p x-show="narrationLoading && narrationProgress" class="text-xs text-violet-300">
+                        <span x-text="narrationProgress?.total
+                            ? `Gerando slide ${Math.min((narrationProgress.current || 0) + 1, narrationProgress.total)} de ${narrationProgress.total}…`
+                            : 'Gerando narração…'"></span>
+                    </p>
+                </div>
+
                 <div class="flex flex-wrap gap-3 items-end border-t border-zinc-800 pt-4">
                     <div>
                         <label class="text-xs text-zinc-400">Motor TTS</label>
@@ -635,6 +675,7 @@ O narrador continua a história com calma."
                             </template>
                         </select>
                         <p x-show="selectedTtsEngineMeta?.price_hint" class="text-[10px] text-zinc-500 mt-1" x-text="selectedTtsEngineMeta?.price_hint"></p>
+                        <p x-show="selectedTtsEngineMeta && !selectedTtsEngineMeta.available" class="text-[10px] text-amber-400 mt-1" x-text="selectedTtsEngineMeta?.note || 'Motor indisponível — escolha Piper (grátis) ou conecte OpenAI em Integrações.'"></p>
                     </div>
                     <div>
                         <label class="text-xs text-zinc-400">Voz</label>
@@ -654,7 +695,7 @@ O narrador continua a história com calma."
                         <span x-text="previewLoading ? 'Gerando teste...' : '▶ Testar voz (slide atual)'"></span>
                     </button>
                     <button @click="generateNarration()" :disabled="narrationLoading || previewLoading" class="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-sm">
-                        <span x-text="narrationLoading ? 'Gerando...' : 'Gerar narração completa'"></span>
+                        <span x-text="narrationLoading ? 'Gerando narração…' : 'Gerar narração completa'"></span>
                     </button>
                     <button @click="syncNarration()" class="px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm">
                         Sincronizar duração
@@ -671,7 +712,8 @@ O narrador continua a história com calma."
                 <div class="rounded-lg border border-zinc-700 bg-zinc-800/50 p-4 space-y-3">
                     <h3 class="text-sm font-medium text-zinc-300">Ouvir áudio</h3>
                     <p x-show="!previewAudioUrl && !narration?.audio_url" class="text-xs text-zinc-500">
-                        Use <strong>Testar voz</strong> para ouvir o slide atual, ou <strong>Gerar narração completa</strong> para todos os slides.
+                        Use <strong>Testar voz</strong> para ouvir o slide atual, ou marque os slides e clique em <strong>Gerar narração completa</strong>.
+                        Se editou o roteiro completo acima, clique em <strong>Aplicar roteiro nos slides</strong> antes de gerar.
                     </p>
                     <div x-show="previewAudioUrl">
                         <p class="text-xs text-emerald-400 mb-1">Teste do slide</p>

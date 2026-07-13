@@ -63,7 +63,23 @@ class MediaLibraryController extends Controller
     {
         $data = $request->validate([
             'query' => ['required', 'string', 'min:2'],
+            'type' => ['nullable', 'in:image,video,audio,sfx'],
         ]);
+
+        $type = $data['type'] ?? 'image';
+        if ($type === 'video') {
+            $terms = $this->queryTranslator->termsForVideo($data['query']);
+            $primary = $terms[0] ?? trim($data['query']);
+
+            return response()->json([
+                'query' => trim($data['query']),
+                'extracted' => $primary,
+                'primary' => $primary,
+                'terms' => $terms,
+                'translated' => $this->queryTranslator->wasTranslated($data['query']),
+                'hint' => $terms !== [] ? 'Objeto: '.$primary : null,
+            ]);
+        }
 
         return response()->json($this->queryTranslator->meta($data['query']));
     }

@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Services\Tts\TtsEngineFactory;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
@@ -50,7 +51,7 @@ class TtsNodeRunner
             }
         }
 
-        $env['FFMPEG_PATH'] = config('criasys.ffmpeg_path', 'ffmpeg');
+        $env['FFMPEG_PATH'] = app(TtsEngineFactory::class)->resolveFfmpegPath();
         if ($dbg = getenv('TTS_DEBUG_LOG')) {
             $env['TTS_DEBUG_LOG'] = $dbg;
         }

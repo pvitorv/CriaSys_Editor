@@ -145,17 +145,51 @@ class MediaSearchQueryTranslator
             return [];
         }
 
-        $wordCount = count(preg_split('/\s+/u', $query, -1, PREG_SPLIT_NO_EMPTY) ?: []);
-        if ($wordCount <= 4) {
-            $direct = $this->translateWords($this->normalize($query));
+        $normalized = $this->normalize($query);
+        $wordCount = count(preg_split('/\s+/u', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: []);
+
+        // Consulta curta digitada pelo usuário — traduz frase inteira (ex.: "homem na rua" → "man street")
+        if ($wordCount <= 6) {
+            $direct = $this->translateWords($normalized);
             if ($direct !== null && $direct !== '') {
-                return [$direct];
+                return [$this->compactVideoTerm($direct)];
             }
+
+            if ($wordCount <= 3) {
+                return [$this->compactVideoTerm($normalized)];
+            }
+        }
+
+        // Texto longo (ex.: narração do slide) — extrai 1–2 substantivos visuais
+        $extracted = $this->extractVisualKeywords($query);
+        if ($extracted !== '') {
+            return [$this->compactVideoTerm($extracted)];
         }
 
         $primary = $this->primaryTerm($query);
 
-        return $primary !== '' ? [$primary] : [];
+        return $primary !== '' ? [$this->compactVideoTerm($primary)] : [];
+    }
+
+    private function compactVideoTerm(string $term): string
+    {
+        $stop = array_flip($this->dictionary['stop_words'] ?? []);
+        $words = preg_split('/\s+/u', $this->normalize($term), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $filtered = [];
+
+        foreach ($words as $word) {
+            $clean = preg_replace('/[^\p{L}\p{N}]/u', '', $word) ?? $word;
+            if ($clean === '' || isset($stop[$clean])) {
+                continue;
+            }
+            $filtered[] = $clean;
+        }
+
+        if ($filtered === []) {
+            return trim($term);
+        }
+
+        return implode(' ', array_slice(array_values(array_unique($filtered)), 0, 3));
     }
 
     public function wasTranslated(string $query): bool

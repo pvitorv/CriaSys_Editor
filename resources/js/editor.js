@@ -51,13 +51,15 @@ window.editorApp = function (projectId, projectMeta = {}) {
         fullScript: '',
         scriptStats: null,
         scriptParseTimeout: null,
-        voice: projectMeta.defaultVoice || 'onyx',
-        ttsEngine: projectMeta.defaultTtsEngine || 'openai',
+        voice: projectMeta.defaultVoice || 'pt-br-faber-calmo',
+        ttsEngine: projectMeta.defaultTtsEngine || 'piper',
         ttsEngines: [],
         voices: [],
         voicesLoading: false,
         narration: null,
         narrationLoading: false,
+        narrationSelectedSlideIds: [],
+        narrationProgress: null,
         previewLoading: false,
         previewAudioUrl: null,
         previewPlaying: false,
@@ -559,6 +561,9 @@ window.editorApp = function (projectId, projectMeta = {}) {
             await this.loadThumbnailSettings();
             await this.loadVoices();
             await this.syncPublish();
+            if (this.narration?.status === 'processing') {
+                this.resumeNarrationPolling();
+            }
             this.previewMixer = new PreviewAudioMixer();
             this.pollInterval = setInterval(() => {
                 this.loadRenderJobs();
@@ -869,7 +874,100 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
         scheduleSave() {
             clearTimeout(this.saveTimeout);
+            this._slideDirty = true;
             this.saveTimeout = setTimeout(() => this.saveSlide(), 600);
+        },
+
+        async flushPendingSave() {
+            if (this.saveTimeout) {
+                clearTimeout(this.saveTimeout);
+                this.saveTimeout = null;
+                await this.saveSlide();
+            }
+        },
+
+        slidesWithNarrationText() {
+            return this.slides.filter((slide) => this.slideHasNarrationText(slide));
+        },
+
+        slideHasNarrationText(slide) {
+            const narr = (slide?.narration_text || '').trim();
+            const body = (slide?.body_text || '').trim();
+            const title = (slide?.title || '').trim();
+            return !!(narr || body || title);
+        },
+
+        slideNarrationPreview(slide) {
+            const narr = (slide?.narration_text || '').trim();
+            if (narr) return narr;
+            const body = (slide?.body_text || '').trim();
+            if (body) return body;
+            return (slide?.title || '').trim();
+        },
+
+        syncNarrationSlideSelection() {
+            const validIds = new Set(this.slides.map((s) => s.id));
+            const kept = this.narrationSelectedSlideIds.filter((id) => validIds.has(id));
+            if (kept.length) {
+                this.narrationSelectedSlideIds = kept;
+                return;
+            }
+            this.selectNarrationSlidesWithText();
+        },
+
+        selectAllNarrationSlides() {
+            this.narrationSelectedSlideIds = this.slides.map((s) => s.id);
+        },
+
+        selectNarrationSlidesWithText() {
+            this.narrationSelectedSlideIds = this.slidesWithNarrationText().map((s) => s.id);
+        },
+
+        clearNarrationSlideSelection() {
+            this.narrationSelectedSlideIds = [];
+        },
+
+        toggleNarrationSlide(slideId) {
+            if (this.narrationSelectedSlideIds.includes(slideId)) {
+                this.narrationSelectedSlideIds = this.narrationSelectedSlideIds.filter((id) => id !== slideId);
+            } else {
+                this.narrationSelectedSlideIds = [...this.narrationSelectedSlideIds, slideId];
+            }
+        },
+
+        isNarrationSlideSelected(slideId) {
+            return this.narrationSelectedSlideIds.includes(slideId);
+        },
+
+        narrationSelectedSlides() {
+            const selected = new Set(this.narrationSelectedSlideIds);
+            return this.slides.filter((s) => selected.has(s.id));
+        },
+
+        narrationSelectedWithTextCount() {
+            return this.narrationSelectedSlides().filter((s) => this.slideHasNarrationText(s)).length;
+        },
+
+        async saveAllSlides() {
+            await this.flushPendingSave();
+            for (const slide of this.slides) {
+                try {
+                    const { data } = await api.put(
+                        `/projects/${this.projectId}/slides/${slide.id}`,
+                        this.slidePayload(slide),
+                    );
+                    const idx = this.slides.findIndex(s => s.id === data.id);
+                    if (idx >= 0) {
+                        this.slides[idx] = this.enrichSlide({ ...this.slides[idx], ...data });
+                        if (this.selectedSlide?.id === data.id) {
+                            this.selectedSlide = this.slides[idx];
+                        }
+                    }
+                } catch (e) {
+                    throw new Error(e.response?.data?.message || `Erro ao salvar slide ${slide.order + 1}`);
+                }
+            }
+            this._slideDirty = false;
         },
 
         syncSelection() {
@@ -925,16 +1023,42 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.ttsEngines = data;
 
             const recommended = data.find((e) => e.recommended && e.available);
-            const preferred = ['openai', 'piper', 'edge', 'elevenlabs'];
+            const preferred = ['piper', 'openai', 'edge', 'elevenlabs'];
             const current = data.find((e) => e.slug === this.ttsEngine && e.available);
 
             if (!current) {
                 const pick = recommended
                     || preferred.map((slug) => data.find((e) => e.slug === slug && e.available)).find(Boolean);
-                if (pick) this.ttsEngine = pick.slug;
-            } else if (this.ttsEngine === 'edge') {
-                const better = data.find((e) => e.slug === 'piper' && e.available);
-                if (better) this.ttsEngine = better.slug;
+                if (pick) {
+                    this.ttsEngine = pick.slug;
+                }
+            }
+        },
+
+        async ensureTtsReady() {
+            if (!this.ttsEngines.length) {
+                await this.loadTtsEngines();
+            }
+
+            const engine = this.ttsEngines.find((e) => e.slug === this.ttsEngine && e.available);
+            if (!engine) {
+                await this.loadTtsEngines();
+            }
+
+            if (!this.ttsEngines.some((e) => e.available)) {
+                throw new Error('Nenhum motor TTS disponível. Rode scripts/setup-piper.ps1 ou conecte OpenAI em Integrações.');
+            }
+
+            if (!this.ttsEngines.find((e) => e.slug === this.ttsEngine && e.available)) {
+                const pick = this.ttsEngines.find((e) => e.recommended && e.available)
+                    || this.ttsEngines.find((e) => e.available);
+                if (pick) {
+                    this.ttsEngine = pick.slug;
+                }
+            }
+
+            if (!this.voices.length || !this.voices.some((v) => v.id === this.voice)) {
+                await this.loadVoices();
             }
         },
 
@@ -1994,7 +2118,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             const { data } = await api.get(`/projects/${this.projectId}/slides`);
             this.slides = data.map(s => this.enrichSlide(s));
             this.syncSelection();
-            this.buildFullScriptFromSlides();
+            this.syncNarrationSlideSelection();
             this.afterSlidesLayoutChanged();
         },
 
@@ -2090,6 +2214,11 @@ window.editorApp = function (projectId, projectMeta = {}) {
         selectSlide(slide) {
             if (this.previewPlaying) {
                 this.stopSlideshow();
+            }
+            if (this._slideDirty && this.saveTimeout) {
+                clearTimeout(this.saveTimeout);
+                this.saveTimeout = null;
+                this.saveSlide();
             }
             this.selectedSlide = this.slides.find(s => s.id === slide.id) ?? slide;
             const index = this.slides.findIndex(s => s.id === slide.id);
@@ -2788,6 +2917,11 @@ window.editorApp = function (projectId, projectMeta = {}) {
         },
 
         prepareMediaSearch() {
+            // Vídeos: busca manual por objeto — não preencher com texto do slide
+            if (this.mediaType === 'video') {
+                return;
+            }
+
             const slide = this.selectedSlide;
             const raw = this.slideSearchQuery(slide);
             if (!raw) return;
@@ -2998,7 +3132,9 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
         async resolveMediaQuery(raw) {
             try {
-                const { data } = await api.get('/media/suggest-query', { params: { query: raw } });
+                const { data } = await api.get('/media/suggest-query', {
+                    params: { query: raw, type: this.mediaSearchType() },
+                });
                 return data.primary || data.extracted || raw;
             } catch {
                 return raw.replace(/\s+/g, ' ').slice(0, 80);
@@ -3581,14 +3717,74 @@ window.editorApp = function (projectId, projectMeta = {}) {
 
         async loadNarration() {
             const { data } = await api.get(`/projects/${this.projectId}/narration`);
-            if (data?.audio_path) {
+            if (data?.status === 'processing') {
+                this.narration = data;
+                this.narrationProgress = data.progress || null;
+                return;
+            }
+            if (data?.status === 'failed') {
+                this.narration = null;
+                if (data.error) {
+                    this.error = data.error;
+                }
+                return;
+            }
+            if (data?.audio_path && data?.status !== 'failed') {
                 data.audio_url = this.fileUrl('audio', data.audio_path.split(/[/\\]/).pop());
             }
             if (data?.id) {
                 data.trim_in = parseFloat(data.trim_in) || 0;
                 data.trim_out = data.trim_out != null ? parseFloat(data.trim_out) : null;
             }
-            this.narration = data?.id ? data : null;
+            this.narration = (data?.id && data?.audio_path && data?.status !== 'failed') ? data : null;
+            this.narrationProgress = null;
+        },
+
+        async pollNarrationUntilDone(expectedTotal = null) {
+            const maxAttempts = 600;
+            for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                const { data } = await api.get(`/projects/${this.projectId}/narration`);
+
+                if (data?.status === 'processing') {
+                    const current = data.progress?.current ?? (data.segments?.length || 0);
+                    const total = expectedTotal || current;
+                    this.narrationProgress = { current, total };
+                    this.message = total
+                        ? `Gerando narração… slide ${Math.min(current + 1, total)} de ${total}`
+                        : `Gerando narração… ${current} slide(s) prontos`;
+                    continue;
+                }
+
+                if (data?.status === 'failed') {
+                    throw new Error(data.error || 'Falha ao gerar narração completa.');
+                }
+
+                if (data?.status === 'completed' && data?.audio_path) {
+                    data.audio_url = this.fileUrl('audio', data.audio_path.split(/[/\\]/).pop());
+                    return data;
+                }
+            }
+
+            throw new Error('Tempo esgotado aguardando a narração. Recarregue a página (F5) — ela pode ter terminado em segundo plano.');
+        },
+
+        async resumeNarrationPolling() {
+            if (this._narrationPollActive) return;
+            this._narrationPollActive = true;
+            this.narrationLoading = true;
+            this.message = 'Retomando geração de narração em andamento…';
+            try {
+                const data = await this.pollNarrationUntilDone(this.narrationProgress?.total || null);
+                this.narration = data;
+                this.previewAudioUrl = data.audio_url;
+                this.message = `Narração completa pronta (${Math.round(data.duration_seconds || 0)}s)`;
+            } catch (e) {
+                this.error = e.message || 'Erro ao gerar narração';
+            } finally {
+                this.narrationLoading = false;
+                this._narrationPollActive = false;
+            }
         },
 
         slideNarrationText() {
@@ -3608,6 +3804,8 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.previewLoading = true;
             this.error = '';
             try {
+                await this.flushPendingSave();
+                await this.ensureTtsReady();
                 const { data } = await api.post(`/projects/${this.projectId}/narration/preview`, {
                     text,
                     voice: this.voice,
@@ -3631,23 +3829,78 @@ window.editorApp = function (projectId, projectMeta = {}) {
         async generateNarration() {
             this.narrationLoading = true;
             this.error = '';
+            this.narrationProgress = null;
             try {
-                if (this.fullScript.trim()) {
-                    await this.applyFullScript();
+                this.syncNarrationSlideSelection();
+
+                if (!this.narrationSelectedSlideIds.length) {
+                    this.error = 'Marque pelo menos um slide para incluir na narração.';
+                    this.message = '';
+                    return;
                 }
-                await this.saveSlide();
-                const { data } = await api.post(`/projects/${this.projectId}/narration/generate`, {
-                    voice: this.voice,
-                    engine: this.ttsEngine,
-                });
-                if (data?.audio_path) {
-                    data.audio_url = this.fileUrl('audio', data.audio_path.split(/[/\\]/).pop());
+
+                if (!this.narrationSelectedWithTextCount()) {
+                    this.error = 'Os slides marcados não têm texto. Preencha narração ou corpo, ou use “Com texto”.';
+                    this.message = '';
+                    return;
                 }
-                this.narration = data;
-                this.previewAudioUrl = data.audio_url;
-                this.message = 'Narração completa gerada — ouça abaixo';
+
+                await this.saveAllSlides();
+                await this.ensureTtsReady();
+
+                const slideIds = [...this.narrationSelectedSlideIds];
+                const expectedTotal = this.narrationSelectedWithTextCount();
+
+                this.message = `Salvando e gerando narração de ${expectedTotal} slide(s)…`;
+
+                const { data, status } = await api.post(
+                    `/projects/${this.projectId}/narration/generate`,
+                    {
+                        voice: this.voice,
+                        engine: this.ttsEngine,
+                        slide_ids: slideIds,
+                        async: true,
+                    },
+                    { timeout: 120000, validateStatus: (s) => s === 202 || s === 200 },
+                );
+
+                let narration = data;
+
+                if (status === 202 || data?.status === 'processing') {
+                    narration = await this.pollNarrationUntilDone(expectedTotal);
+                }
+
+                if (!narration?.audio_url && narration?.audio_path) {
+                    narration.audio_url = this.fileUrl('audio', narration.audio_path.split(/[/\\]/).pop());
+                }
+                if (!narration?.id || !narration?.audio_url) {
+                    throw new Error('Narração gerada sem arquivo de áudio — tente de novo com motor Piper.');
+                }
+
+                this.narration = narration;
+                this.previewAudioUrl = narration.audio_url;
+                this.narrationProgress = null;
+
+                if (narration?.engine && narration.engine !== this.ttsEngine) {
+                    this.ttsEngine = narration.engine;
+                    await this.loadVoices();
+                    this.message = `Narração gerada com ${narration.engine} (${Math.round(narration.duration_seconds || 0)}s)`;
+                } else {
+                    this.message = narration?.duration_seconds
+                        ? `Narração completa gerada (${Math.round(narration.duration_seconds)}s) — ouça abaixo`
+                        : 'Narração completa gerada — ouça abaixo';
+                }
+                await this.loadDownloads();
             } catch (e) {
-                this.error = e.response?.data?.message || 'Erro ao gerar narração';
+                this.message = '';
+                this.narrationProgress = null;
+                if (e.code === 'ECONNABORTED') {
+                    this.error = 'Conexão interrompida — aguarde ou recarregue (F5). A geração pode continuar em segundo plano.';
+                    await this.loadNarration();
+                } else {
+                    this.error = e.response?.data?.message || e.message || 'Erro ao gerar narração';
+                }
+                await this.loadNarration();
             } finally {
                 this.narrationLoading = false;
             }

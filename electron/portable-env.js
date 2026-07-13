@@ -6,12 +6,13 @@ import {
     loadPortableSecrets,
 } from './portable.js';
 
-export function buildLaravelEnv({ isDev, dataPath, ffmpegPath, ffprobePath, port = 8000 }) {
+export function buildLaravelEnv({ isDev, dataPath, ffmpegPath, ffprobePath, laravelRoot, port = 8000 }) {
     const dbFile = path.join(dataPath, 'database', 'criasys.sqlite').replace(/\\/g, '/');
     const storagePath = path.join(dataPath, 'storage').replace(/\\/g, '/');
     const projectsPath = path.join(dataPath, 'storage', 'app', 'criasys', 'projetos').replace(/\\/g, '/');
     const exportsPath = path.join(dataPath, 'storage', 'app', 'criasys', 'exports').replace(/\\/g, '/');
     const secrets = loadPortableSecrets(dataPath);
+    const root = laravelRoot || process.cwd();
 
     ensurePortableStructure(dataPath);
 
@@ -35,6 +36,11 @@ export function buildLaravelEnv({ isDev, dataPath, ffmpegPath, ffprobePath, port
         FILESYSTEM_DISK: 'local',
         FFMPEG_PATH: ffmpegPath,
         FFPROBE_PATH: ffprobePath,
+        TTS_DEFAULT_ENGINE: 'piper',
+        TTS_DEFAULT_VOICE: 'pt-br-faber-calmo',
+        PIPER_PATH: path.join(root, 'bin', 'piper', 'piper', 'piper.exe').replace(/\\/g, '/'),
+        PIPER_MODEL: path.join(root, 'bin', 'piper', 'pt_BR-faber-medium.onnx').replace(/\\/g, '/'),
+        PIPER_MODEL_EDRESSON: path.join(root, 'bin', 'piper', 'pt_BR-edresson-low.onnx').replace(/\\/g, '/'),
         CRIASYS_PROJECTS_PATH: projectsPath,
         CRIASYS_EXPORTS_PATH: exportsPath,
         LARAVEL_STORAGE_PATH: storagePath,

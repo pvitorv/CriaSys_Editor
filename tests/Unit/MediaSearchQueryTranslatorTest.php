@@ -83,4 +83,14 @@ class MediaSearchQueryTranslatorTest extends TestCase
         $this->assertCount(1, $terms);
         $this->assertStringContainsString('football', $terms[0]);
     }
+
+    public function test_video_search_strips_stop_words_from_phrase(): void
+    {
+        $terms = $this->translator->termsForVideo('homem na rua');
+
+        $this->assertCount(1, $terms);
+        $this->assertStringContainsString('man', $terms[0]);
+        $this->assertStringContainsString('street', $terms[0]);
+        $this->assertStringNotContainsString(' na ', $terms[0]);
+    }
 }

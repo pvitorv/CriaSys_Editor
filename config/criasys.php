@@ -39,8 +39,8 @@ return [
     'node_path' => env('NODE_PATH'),
 
     'tts' => [
-        'default_engine' => env('TTS_DEFAULT_ENGINE', 'openai'),
-        'default_voice' => env('TTS_DEFAULT_VOICE', 'pt-BR-FranciscaNeural'),
+        'default_engine' => env('TTS_DEFAULT_ENGINE', 'piper'),
+        'default_voice' => env('TTS_DEFAULT_VOICE', 'pt-br-faber-calmo'),
         'edge_python' => env('EDGE_TTS_PYTHON'),
         'piper_path' => env('PIPER_PATH', 'bin/piper/piper/piper.exe'),
         'piper_model' => env('PIPER_MODEL', 'bin/piper/pt_BR-faber-medium.onnx'),

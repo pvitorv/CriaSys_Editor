@@ -63,17 +63,33 @@ class PiperTtsEngine implements TtsEngineInterface
             );
         }
 
-        $ffmpeg = config('criasys.ffmpeg_path');
+        $factory = app(TtsEngineFactory::class);
+        $ffmpeg = $factory->resolveFfmpegPath();
         $convert = Process::timeout(60)->run([
             $ffmpeg, '-y', '-i', $wavPath, '-codec:a', 'libmp3lame', '-q:a', '2', $outputPath,
         ]);
 
-        if (is_file($wavPath)) {
-            File::delete($wavPath);
+        if (! $convert->successful() || ! is_file($outputPath)) {
+            $stderr = trim($convert->errorOutput());
+            $wavOutput = preg_replace('/\.mp3$/i', '.wav', $outputPath) ?: ($outputPath.'.wav');
+
+            if (is_file($wavPath)) {
+                File::move($wavPath, $wavOutput);
+
+                return [
+                    'audio_path' => $wavOutput,
+                    'duration_seconds' => $this->ffmpeg->getAudioDuration($wavOutput),
+                ];
+            }
+
+            throw new \RuntimeException(
+                'Falha ao converter WAV Piper para MP3.'
+                .($stderr !== '' ? ' FFmpeg: '.$stderr : ' Verifique FFMPEG_PATH.')
+            );
         }
 
-        if (! $convert->successful() || ! is_file($outputPath)) {
-            throw new \RuntimeException('Falha ao converter WAV Piper para MP3.');
+        if (is_file($wavPath)) {
+            File::delete($wavPath);
         }
 
         return [

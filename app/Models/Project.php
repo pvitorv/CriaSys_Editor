@@ -76,6 +76,16 @@ class Project extends Model
 
     public function latestNarration(): ?Narration
     {
+        $completed = $this->narrations()
+            ->where('status', 'completed')
+            ->whereNotNull('audio_path')
+            ->latest()
+            ->first();
+
+        if ($completed) {
+            return $completed;
+        }
+
         return $this->narrations()->latest()->first();
     }
 }

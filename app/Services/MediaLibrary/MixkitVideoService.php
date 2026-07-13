@@ -7,7 +7,9 @@ use App\Support\ExternalHttp;
 class MixkitVideoService
 {
     /**
-     * Busca vídeos gratuitos no Mixkit (sem API key) via página pública + schema.org.
+     * Busca vídeos gratuitos no Mixkit (sem API key).
+     * A página /search/ do Mixkit costuma devolver clipes genéricos sobre "buscar na internet";
+     * categorias (/free-stock-video/{term}/) trazem resultados relevantes.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -18,18 +20,49 @@ class MixkitVideoService
             return [];
         }
 
-        $html = $this->fetchSearchPage($term, $page);
-        if (! $html && $page === 1) {
-            $html = $this->fetchCategoryPage($term);
+        $results = [];
+
+        foreach ($this->categoryCandidates($term) as $slug) {
+            $html = $this->fetchCategoryPage($slug);
+            if (! $html) {
+                continue;
+            }
+            $chunk = $this->parseVideoPage($html);
+            $results = $this->uniqueVideos(array_merge($results, $chunk));
+            if (count($results) >= 12) {
+                break;
+            }
         }
 
-        if (! $html) {
-            return [];
+        if (count($results) < 8) {
+            $searchHtml = $this->fetchSearchPage($term, $page);
+            if ($searchHtml) {
+                $fromSearch = $this->parseVideoPage($searchHtml, filterSearchUi: true);
+                $results = $this->uniqueVideos(array_merge($results, $fromSearch));
+            }
         }
-
-        $results = $this->parseVideoObjects($html);
 
         return array_slice($this->uniqueVideos($results), 0, 24);
+    }
+
+    /** @return list<string> */
+    private function categoryCandidates(string $term): array
+    {
+        $normalized = strtolower(trim($term));
+        $normalized = preg_replace('/[^a-z0-9\s-]+/', '', $normalized) ?? $normalized;
+        $candidates = [];
+
+        if ($normalized !== '') {
+            $candidates[] = str_replace(' ', '-', $normalized);
+        }
+
+        foreach (preg_split('/\s+/u', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $word) {
+            if (strlen($word) >= 3) {
+                $candidates[] = $word;
+            }
+        }
+
+        return array_values(array_unique(array_filter($candidates)));
     }
 
     private function fetchSearchPage(string $term, int $page): ?string
@@ -72,6 +105,61 @@ class MixkitVideoService
     }
 
     /**
+     * @return list<array<string, mixed>>
+     */
+    private function parseVideoPage(string $html, bool $filterSearchUi = false): array
+    {
+        $fromJson = $this->parseVideoObjects($html, $filterSearchUi);
+        $fromSlugs = $this->parseFromSlugLinks($html);
+
+        if ($fromJson === []) {
+            return $fromSlugs;
+        }
+
+        if ($filterSearchUi && $this->looksLikeSearchUiResults($fromJson)) {
+            return $fromSlugs !== [] ? $fromSlugs : [];
+        }
+
+        return $this->uniqueVideos(array_merge($fromJson, $fromSlugs));
+    }
+
+    /** @param  list<array<string, mixed>>  $videos */
+    private function looksLikeSearchUiResults(array $videos): bool
+    {
+        if ($videos === []) {
+            return false;
+        }
+
+        $junk = 0;
+        foreach ($videos as $video) {
+            if ($this->isSearchUiTitle((string) ($video['title'] ?? ''))) {
+                $junk++;
+            }
+        }
+
+        return $junk >= max(1, (int) ceil(count($videos) * 0.6));
+    }
+
+    private function isSearchUiTitle(string $title): bool
+    {
+        $t = strtolower($title);
+        foreach ([
+            'searching for',
+            'search results',
+            'surfing the internet',
+            'scrolling through',
+            'searching for a book',
+            'creatives surfing',
+        ] as $needle) {
+            if (str_contains($t, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $videos
      * @return list<array<string, mixed>>
      */
@@ -111,54 +199,91 @@ class MixkitVideoService
     /**
      * @return list<array<string, mixed>>
      */
-    private function parseVideoObjects(string $html): array
+    private function parseVideoObjects(string $html, bool $filterSearchUi = false): array
     {
-        if (! preg_match('/<script type="application\/ld\+json"[^>]*>(.*?)<\/script>/s', $html, $match)) {
-            return $this->parseFromMp4Links($html);
+        if (! preg_match_all('/<script type="application\/ld\+json"[^>]*>(.*?)<\/script>/s', $html, $matches)) {
+            return [];
         }
 
-        $json = json_decode(html_entity_decode($match[1]), true);
-        if (! is_array($json)) {
-            return $this->parseFromMp4Links($html);
-        }
-
-        $graph = $json['@graph'] ?? [$json];
         $items = [];
 
-        foreach ($graph as $node) {
-            if (($node['@type'] ?? '') !== 'VideoObject') {
+        foreach ($matches[1] as $rawJson) {
+            $json = json_decode(html_entity_decode($rawJson), true);
+            if (! is_array($json)) {
                 continue;
             }
 
-            $download = $node['contentUrl'] ?? $node['embedUrl'] ?? null;
-            if (! $download) {
+            $graph = $json['@graph'] ?? [$json];
+
+            foreach ($graph as $node) {
+                if (($node['@type'] ?? '') !== 'VideoObject') {
+                    continue;
+                }
+
+                $title = (string) ($node['name'] ?? 'Vídeo Mixkit');
+                if ($filterSearchUi && $this->isSearchUiTitle($title)) {
+                    continue;
+                }
+
+                $download = $node['contentUrl'] ?? $node['embedUrl'] ?? null;
+                if (! $download) {
+                    continue;
+                }
+
+                $id = $this->extractIdFromUrl($download);
+                if (! $id) {
+                    continue;
+                }
+
+                $items[] = $this->videoItem(
+                    $id,
+                    $title,
+                    $node['thumbnailUrl'] ?? null,
+                    $this->preferHdUrl($download),
+                    $node['@id'] ?? "https://mixkit.co/free-stock-video/{$id}/",
+                );
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function parseFromSlugLinks(string $html): array
+    {
+        if (! preg_match_all(
+            '#https://mixkit\.co/free-stock-video/([a-z0-9-]+)-(\d+)/#i',
+            $html,
+            $matches,
+            PREG_SET_ORDER
+        )) {
+            return $this->parseFromMp4Links($html);
+        }
+
+        $items = [];
+        $seen = [];
+
+        foreach ($matches as $match) {
+            $slug = $match[1];
+            $id = $match[2];
+
+            if (isset($seen[$id])) {
                 continue;
             }
+            $seen[$id] = true;
 
-            $id = $this->extractIdFromUrl($download);
-            if (! $id) {
-                continue;
-            }
+            $title = ucfirst(str_replace('-', ' ', $slug));
+            $pageUrl = "https://mixkit.co/free-stock-video/{$slug}-{$id}/";
 
-            $attribution = MediaAttribution::forMixkitVideo([
-                'title' => $node['name'] ?? 'Vídeo Mixkit',
-                'original_url' => $node['@id'] ?? 'https://mixkit.co/free-stock-video/',
-            ]);
-
-            $items[] = [
-                'id' => $id,
-                'source' => 'mixkit',
-                'type' => 'video',
-                'title' => $node['name'] ?? 'Vídeo Mixkit',
-                'preview_url' => $node['thumbnailUrl'] ?? null,
-                'download_url' => $this->preferHdUrl($download),
-                'duration_seconds' => null,
-                'author' => 'Mixkit',
-                'original_url' => $node['@id'] ?? 'https://mixkit.co/free-stock-video/',
-                'license_type' => 'Mixkit License',
-                'requires_attribution' => $attribution['requires_attribution'],
-                'attribution_text' => $attribution['attribution_text'],
-            ];
+            $items[] = $this->videoItem(
+                $id,
+                $title,
+                "https://assets.mixkit.co/videos/{$id}/{$id}-thumb-360-0.jpg",
+                "https://assets.mixkit.co/videos/{$id}/{$id}-720.mp4",
+                $pageUrl,
+            );
         }
 
         return $items ?: $this->parseFromMp4Links($html);
@@ -175,34 +300,49 @@ class MixkitVideoService
 
         $items = [];
         foreach (array_unique($matches[1]) as $id) {
-            $pageUrl = "https://mixkit.co/free-stock-video/{$id}/";
-            $attribution = MediaAttribution::forMixkitVideo([
-                'title' => 'Vídeo Mixkit #'.$id,
-                'original_url' => $pageUrl,
-            ]);
-
-            $items[] = [
-                'id' => $id,
-                'source' => 'mixkit',
-                'type' => 'video',
-                'title' => 'Vídeo Mixkit #'.$id,
-                'preview_url' => "https://assets.mixkit.co/videos/{$id}/{$id}-thumb-360-0.jpg",
-                'download_url' => "https://assets.mixkit.co/videos/{$id}/{$id}-720.mp4",
-                'duration_seconds' => null,
-                'author' => 'Mixkit',
-                'original_url' => $pageUrl,
-                'license_type' => 'Mixkit License',
-                'requires_attribution' => $attribution['requires_attribution'],
-                'attribution_text' => $attribution['attribution_text'],
-            ];
+            $items[] = $this->videoItem(
+                $id,
+                'Vídeo Mixkit #'.$id,
+                "https://assets.mixkit.co/videos/{$id}/{$id}-thumb-360-0.jpg",
+                "https://assets.mixkit.co/videos/{$id}/{$id}-720.mp4",
+                "https://mixkit.co/free-stock-video/{$id}/",
+            );
         }
 
         return $items;
     }
 
+    /** @return array<string, mixed> */
+    private function videoItem(string $id, string $title, ?string $thumb, string $download, string $pageUrl): array
+    {
+        $attribution = MediaAttribution::forMixkitVideo([
+            'title' => $title,
+            'original_url' => $pageUrl,
+        ]);
+
+        return [
+            'id' => $id,
+            'source' => 'mixkit',
+            'type' => 'video',
+            'title' => $title,
+            'preview_url' => $thumb,
+            'download_url' => $download,
+            'duration_seconds' => null,
+            'author' => 'Mixkit',
+            'original_url' => $pageUrl,
+            'license_type' => 'Mixkit License',
+            'requires_attribution' => $attribution['requires_attribution'],
+            'attribution_text' => $attribution['attribution_text'],
+        ];
+    }
+
     private function extractIdFromUrl(string $url): ?string
     {
         if (preg_match('#/videos/(\d+)/#', $url, $m)) {
+            return $m[1];
+        }
+
+        if (preg_match('#/free-stock-video/[a-z0-9-]+-(\d+)/#i', $url, $m)) {
             return $m[1];
         }
 
