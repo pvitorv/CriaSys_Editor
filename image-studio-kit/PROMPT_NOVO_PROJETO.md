@@ -38,8 +38,9 @@ Objetivo de negócio:
 1. Atrair público com ferramentas úteis e grátis (studio + utilitários) sob a marca MarkCraft / CriaSys.
 2. Dentro da ferramenta: busca / recomendações / **links afiliados** nichados.
 3. Vender (como afiliado) **pacotes de imagens e templates** (especialmente **PSD**) que o usuário abre e edita **nesta** ferramenta.
-4. Monetizar também com **publicidade própria** e **ADS de terceiros** (slots reservados desde o MVP).
+4. Monetizar também com **publicidade própria**, **ADS de terceiros**, **doações** (Pix/cartão a partir de R$ 2) e, no futuro, afiliados de **hospedagem** (ex.: Hostinger).
 5. Permanecer **contido na família CriaSys** (subdomínio + branding cruzado).
+6. Estudar com cuidado uma **área de membros** para doadores (comunidade sem risco indevido de direitos autorais).
 
 **Núcleo técnico:** o Image Studio copiado deste kit (Fabric.js + Alpine + Laravel configs).
 
@@ -90,6 +91,7 @@ Objetivo de negócio:
    - Compressor de PDF
 10. **Slots de publicidade** no layout (landing + área logada): ver seção 7b.
 11. Tom e navegação pensados para **marketing** e **designers aventureiros** (atalhos claros, presets, copy sem jargão Adobe).
+12. Página/modal **Apoiar / Doações** com copy da seção 7c (Pix e cartão a partir de R$ 2; gateway pode ser stub).
 
 ### Explicitamente FORA do MVP (implementação completa)
 
@@ -126,8 +128,9 @@ Implementar de verdade, uma a uma, **sempre alinhadas** a marketing e designers 
 | 4 | **Compressor de PDF** | Reduzir tamanho mantendo legibilidade (campanhas, e-books leves, propostas) |
 | 5 | **Encurtador de URL** | Próprio (links `site/x/abc`) **ou** integração aceitável (ex.: Bitly/API própria); UTM opcional para marketers |
 | 6 | Carrossel / mini-slides polido | Só imagem + texto |
-| 7 | Afiliados | Busca, nichos, produtos recomendados (packs PSD/templates) |
+| 7 | Afiliados (packs + **hospedagem**) | Packs PSD/templates; depois **Hostinger** e similares (site/domínio/e-mail) — separado da doação |
 | 8 | Extras marketing (fase seguinte) | Gerador de UTM, checklist de formatos de rede, contador de caracteres de legenda, QR Code simples — só se couber no público |
+| 9 | Área de membros (apoiadores) | Só após estudo de copyright; começar com badge/comunidade, **sem** dump de arquivos |
 
 Critério de “aceitável”: gratuito ou freemium para o usuário final; rápido; sem exigir software instalado; privacidade (arquivos temporários apagados após download).
 
@@ -141,6 +144,7 @@ Toda feature nova deve servir criadores / marketing / designers aventureiros —
 - Dentro do app logado: área de **packs e links afiliados** alinhados ao uso (templates PSD, elementos, estoque visual, cursos/design tools, etc.).
 - Usuário compra pack (fora/afiliado) → importa PSD/PNG no Studio → edita → baixa.
 - Não precisa hospedar os arquivos dos packs no MVP (links externos).
+- **Hospedagem (futuro):** nicho forte para afiliados **Hostinger** e outras (site, e-mail, domínio) — quem cria arte muitas vezes precisa publicar. Tratar como recomendação comercial separada da mensagem de **doação** (não misturar os dois tons).
 
 ---
 
@@ -169,16 +173,58 @@ Regras:
 
 ---
 
+## 7c. Doações (Pix / cartão) + área de membros (estudar com cuidado)
+
+### Objetivo
+
+Manter o MarkCraft vivo: custos de servidor, ferramentas e evolução. Contribuição **opcional**, sem pressão.
+
+### MVP (layout + copy)
+
+- Página ou modal **“Ajude o MarkCraft a continuar”**
+- Contribuição a partir de **R$ 2,00** via **Pix** e **cartão**
+- Botão: `Contribuir a partir de R$ 2`
+- Rodapé: `Feito com carinho na família CriaSys · Contribuições opcionais mantêm o projeto vivo`
+- Integração de pagamento: stub no MVP (links Pix / gateway depois); não bloquear o uso gratuito
+
+### Copy oficial (elegante — usar no site)
+
+**Título:** Ajude o MarkCraft a continuar
+
+> O MarkCraft é gratuito para quem cria, vende e experimenta. Manter servidores, ferramentas e melhorias tem custo.
+>
+> Se esta ferramenta te ajudou e você quiser que ela continue existindo, considere uma contribuição a partir de **R$ 2,00** — via **Pix** ou **cartão**. Qualquer valor faz diferença.
+>
+> Não é obrigatório. É um “obrigado” opcional de quem acredita no projeto.
+>
+> No futuro, queremos estudar uma **área de membros** para quem contribui — um espaço de troca entre criadores. Isso será feito com cuidado, respeitando direitos autorais: cada pessoa responde pelo material que compartilha; o MarkCraft não hospeda nem endossa conteúdo protegido sem autorização.
+
+### Área de membros (roadmap — NÃO implementar dump de arquivos no MVP)
+
+Ideia: doadores viram **membros** com badge / acesso a comunidade. **Estudar antes de abrir upload de arquivos**, para não gerar responsabilidade por violação de direitos autorais.
+
+| Faça | Evite |
+|------|--------|
+| Fórum, dicas, presets **próprios**, links públicos | Upload livre de PSD/packs de terceiros |
+| Termo: usuário declara ser dono ou ter licença | “Biblioteca compartilhada” sem moderação |
+| Moderação, denúncia, remoção rápida | Dump anônimo de arquivos |
+| Começar com **badge de apoiador** + links | Storage de arquivos de terceiros no dia 1 |
+
+Frase segura: *“espaço de comunidade entre apoiadores — sem troca de arquivos protegidos por direitos autorais de terceiros.”*
+
+---
+
 ## 8. Arquitetura sugerida
 
 ```
-Landing (público)  [slots ads + CTA]
+Landing (público)  [slots ads + CTA + link doações]
   → Auth
     → /studio          (Alpine + Fabric; estado só no browser)  [ad_app_sidebar opcional]
          → Export download
          → Limpar canvas
     → /ferramentas     (hub: encurtador, conversores, compressor — stubs no MVP)
     → /packs           (afiliados — stub no MVP)  [ad_packs_inline]
+    → /apoiar          (doações Pix/cartão a partir de R$ 2 — copy §7c)
 ```
 
 - Backend Laravel: auth, catalog API, opcional rembg upload **temporário** (apagar após resposta).
@@ -212,7 +258,8 @@ Arquivos-fonte: ver `INVENTARIO.md`. Histórico de features: `source/handoffs/HA
 - [ ] Placeholder afiliados visível  
 - [ ] Hub **Ferramentas** com stubs: encurtador, conversor de imagens, conversor de PDF, compressor de PDF  
 - [ ] Slots de **ADS** e **publicidade própria** no layout (IDs documentados; podem estar vazios)  
-- [ ] README do novo repo explica formatos (PSD sim; Canva/Corel nativo não) + onde configurar ads  
+- [ ] Página/modal **Apoiar** com copy §7c (Pix/cartão a partir de R$ 2; gateway pode ser stub)  
+- [ ] README do novo repo explica formatos (PSD sim; Canva/Corel nativo não) + ads + doações + aviso de copyright da futura área de membros  
 
 ---
 
@@ -243,11 +290,13 @@ landing pública, auth obrigatória para /studio,
 Image Studio baseado em source/ (PSD + presets redes, só imagem/texto),
 sem persistir artes no servidor, com Baixar + Limpar,
 hub /ferramentas (stubs: encurtador URL, conversor imagens, conversor PDF, compressor PDF),
-stub de afiliados, e slots de layout para ADS + publicidade própria (seção 7b).
+stub de afiliados, slots ADS + publicidade própria (seção 7b),
+página Apoiar com doações Pix/cartão a partir de R$ 2 (copy seção 7c; gateway stub ok).
 Não implemente vídeo, áudio nem TTS. Não crie o database — já existe vazio.
+Não abra upload livre de arquivos na área de membros (copyright — ver §7c).
 ```
 
 ---
 
-*Atualizado em 2026-07-22 — MarkCraft + DB local mark_craft; utilitários; ads; público marketing/designers aventureiros.*
+*Atualizado em 2026-07-22 — MarkCraft; doações; membros cautelosos; Hostinger/afiliados; utilitários; ads.*
 *Origem: plano acordado no CriaSys Editor (Image Studio Kit).*
