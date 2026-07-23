@@ -1,12 +1,33 @@
-# PROMPT — Novo projeto a partir do Image Studio Kit
+# PROMPT — MarkCraft (família CriaSys)
 
-> **Instrução ao Agent:** leia este arquivo por completo, depois `DEPENDENCIAS.md`, `INVENTARIO.md` e o código em `source/`. Implemente um **novo produto web**, não continue o CriaSys Editor de slideshow.
+> **Instrução ao Agent:** leia este arquivo por completo, depois `DEPENDENCIAS.md`, `INVENTARIO.md` e o código em `source/`. Implemente o produto **MarkCraft** — app web **novo**, não continue o CriaSys Editor de slideshow.
+
+---
+
+## 0. Identidade e ambiente local (obrigatório)
+
+| Item | Valor |
+|------|--------|
+| **Nome do produto** | **MarkCraft** |
+| **Família** | Produto da família **CriaSys** (marca irmã do Editor) |
+| **URL** | **Subdomínio** do CriaSys (ex.: `markcraft.<dominio-criasys>`) — **não** domínio próprio separado |
+| **Branding** | MarkCraft em destaque + selo/rodapé “CriaSys” |
+| **Banco de dados** | `mark_craft` (MySQL/MariaDB — **já criado vazio** pelo dono antes do projeto) |
+| **Usuário DB (local)** | `vitor` |
+| **Senha DB (local)** | `Da1985790grs` — **somente desenvolvimento local**; o dono troca em produção |
+| **`.env` local (referência)** | `DB_DATABASE=mark_craft` · `DB_USERNAME=vitor` · `DB_PASSWORD=Da1985790grs` |
+
+Notas:
+
+- Não criar o database no Agent se já existir vazio — só rodar migrations.
+- Em produção: trocar senha; nunca reutilizar a senha local.
+- App name / `APP_NAME=MarkCraft`; schema e código podem usar prefixo `mark_craft` / namespace `MarkCraft` onde fizer sentido.
 
 ---
 
 ## 1. Visão do produto
 
-Ferramenta **web gratuita** (hub de utilitários + editor visual) para:
+**MarkCraft** é uma ferramenta **web gratuita** (hub de utilitários + editor visual) para:
 
 - criadores de conteúdo
 - profissionais de **marketing de vendas**
@@ -14,11 +35,11 @@ Ferramenta **web gratuita** (hub de utilitários + editor visual) para:
 
 Objetivo de negócio:
 
-1. Atrair público com ferramentas úteis e grátis (studio + utilitários).
+1. Atrair público com ferramentas úteis e grátis (studio + utilitários) sob a marca MarkCraft / CriaSys.
 2. Dentro da ferramenta: busca / recomendações / **links afiliados** nichados.
 3. Vender (como afiliado) **pacotes de imagens e templates** (especialmente **PSD**) que o usuário abre e edita **nesta** ferramenta.
 4. Monetizar também com **publicidade própria** e **ADS de terceiros** (slots reservados desde o MVP).
-5. Nome e banco de dados podem ser **familiares** ao CriaSys (definir branding no kickoff; manter schema limpo).
+5. Permanecer **contido na família CriaSys** (subdomínio + branding cruzado).
 
 **Núcleo técnico:** o Image Studio copiado deste kit (Fabric.js + Alpine + Laravel configs).
 
