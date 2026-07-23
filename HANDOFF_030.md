@@ -20,11 +20,15 @@
 - Não prometer abrir nativo Canva / Affinity / Corel `.cdr` — só exports (PNG/PDF/PSD).
 - Futuro: Drive, conversão de imagens, PDF, encurtador, afiliados/packs.
 
-## Ao retomar neste repo
+## Kit (feito na `040`)
 
-1. Checkout `040`
-2. Montar `image-studio-kit/` + `PROMPT_NOVO_PROJETO.md` + `DEPENDENCIAS.md` + `README_KIT.md`
-3. Cópia segura; CriaSys intacto; kit apagável depois
+Pasta `image-studio-kit/` criada (cópia + docs). Entrada: `image-studio-kit/README_KIT.md` e `PROMPT_NOVO_PROJETO.md`.
+
+## Ao usar o kit
+
+1. Copiar `image-studio-kit/` para o **novo** repositório
+2. Agent: ler `PROMPT_NOVO_PROJETO.md` e implementar MVP
+3. Pode apagar o kit depois — CriaSys permanece intacto
 
 ## Referências
 
