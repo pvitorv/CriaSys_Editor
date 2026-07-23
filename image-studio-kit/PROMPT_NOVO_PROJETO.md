@@ -237,15 +237,17 @@ Arquivos-fonte: ver `INVENTARIO.md`. Histórico de features: `source/handoffs/HA
 
 ```
 Leia image-studio-kit/PROMPT_NOVO_PROJETO.md, DEPENDENCIAS.md e INVENTARIO.md.
-Crie um app Laravel + Vite + Alpine com landing pública, auth obrigatória para /studio,
+Crie o app **MarkCraft** (família CriaSys, subdomínio) com Laravel + Vite + Alpine:
+APP_NAME=MarkCraft, DB mark_craft / user vitor / senha local do prompt (seção 0),
+landing pública, auth obrigatória para /studio,
 Image Studio baseado em source/ (PSD + presets redes, só imagem/texto),
 sem persistir artes no servidor, com Baixar + Limpar,
 hub /ferramentas (stubs: encurtador URL, conversor imagens, conversor PDF, compressor PDF),
 stub de afiliados, e slots de layout para ADS + publicidade própria (seção 7b).
-Não implemente vídeo, áudio nem TTS.
+Não implemente vídeo, áudio nem TTS. Não crie o database — já existe vazio.
 ```
 
 ---
 
-*Atualizado em 2026-07-22 — utilitários, público marketing/designers aventureiros, slots ADS/publicidade própria.*
+*Atualizado em 2026-07-22 — MarkCraft + DB local mark_craft; utilitários; ads; público marketing/designers aventureiros.*
 *Origem: plano acordado no CriaSys Editor (Image Studio Kit).*
