@@ -10,6 +10,7 @@ Pacote de viagem com o código-fonte do **Image Studio** + documentação + prom
 
 - **PSD** (formato de trabalho com camadas)
 - **Slides / artes para redes sociais** (só **imagem + texto**)
+- Hub futuro: encurtador, conversores, compressor PDF + **slots ADS / publicidade própria**
 - **Sem** vídeo, áudio, TTS ou render de slideshow
 
 ## Conteúdo
