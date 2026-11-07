@@ -19,7 +19,14 @@ class EdgeTtsEngine implements TtsEngineInterface
             throw new \RuntimeException('Texto de narração vazio.');
         }
 
-        app(TtsNodeRunner::class)->synthesize($text, $voice, $outputPath);
+        $preset = $this->preset($voice);
+        app(TtsNodeRunner::class)->synthesize(
+            $text,
+            $preset['voice'],
+            $outputPath,
+            $preset['rate'],
+            $preset['pitch'],
+        );
 
         if (! file_exists($outputPath) || filesize($outputPath) === 0) {
             throw new \RuntimeException('Áudio não foi gerado.');
@@ -31,9 +38,30 @@ class EdgeTtsEngine implements TtsEngineInterface
         ];
     }
 
+    /**
+     * @return array{voice: string, rate: string, pitch: string}
+     */
+    private function preset(string $id): array
+    {
+        $meta = config('criasys.tts.edge_voices.'.$id);
+        if (is_array($meta)) {
+            return [
+                'voice' => (string) ($meta['voice'] ?? $id),
+                'rate' => (string) ($meta['rate'] ?? '-8%'),
+                'pitch' => (string) ($meta['pitch'] ?? '+0Hz'),
+            ];
+        }
+
+        return [
+            'voice' => $id,
+            'rate' => '-8%',
+            'pitch' => '+0Hz',
+        ];
+    }
+
     private function probeDuration(string $path): float
     {
-        $ffprobe = config('criasys.ffprobe_path');
+        $ffprobe = app(TtsEngineFactory::class)->resolveFfprobePath();
         $result = Process::timeout(30)->quietly()->run([
             $ffprobe, '-v', 'error', '-show_entries', 'format=duration',
             '-of', 'default=noprint_wrappers=1:nokey=1', $path,

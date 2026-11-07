@@ -162,7 +162,7 @@ class TtsEngineFactory
 
     public function recommendedEngine(): string
     {
-        foreach (['piper', 'openai', config('criasys.tts.default_engine'), 'edge', 'elevenlabs'] as $slug) {
+        foreach (['edge', 'piper', 'openai', config('criasys.tts.default_engine'), 'elevenlabs'] as $slug) {
             if ($slug && $this->isAvailable($slug)) {
                 return $slug;
             }
@@ -196,19 +196,25 @@ class TtsEngineFactory
             return false;
         }
 
-        if (str_contains($voice, 'Neural')) {
+        if (array_key_exists($voice, config('criasys.tts.edge_voices', []))) {
             return true;
         }
 
-        return (bool) preg_match('/^pt-[A-Z]{2}-/i', $voice);
+        return str_contains($voice, 'Neural');
     }
 
     private function defaultEdgeVoice(): string
     {
-        $voices = config('criasys.tts.voices', []);
+        $voices = config('criasys.tts.edge_voices', []);
+        foreach (['pt-BR-AntonioNeural-doc', 'pt-BR-AntonioNeural', 'pt-BR-ThalitaMultilingualNeural'] as $id) {
+            if (isset($voices[$id])) {
+                return $id;
+            }
+        }
+
         $first = array_key_first($voices);
 
-        return is_string($first) && $first !== '' ? $first : 'pt-BR-FranciscaNeural';
+        return is_string($first) && $first !== '' ? $first : 'pt-BR-AntonioNeural';
     }
 
     private function defaultPiperVoice(): string

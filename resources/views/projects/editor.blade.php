@@ -30,6 +30,7 @@
         'defaultVoice' => app(\App\Services\Tts\TtsEngineFactory::class)->defaultVoiceFor(
             app(\App\Services\Tts\TtsEngineFactory::class)->recommendedEngine()
         ),
+        'stageUrl' => route('projects.stage', $project),
     ]))"
     x-init="init()"
     class="flex flex-col gap-4 w-[70vw] max-w-[70vw] mx-auto px-1 sm:px-2 pb-10"
@@ -109,6 +110,13 @@
                         :title="previewShowSubtitles ? 'Com legendas no preview' : 'Sem legendas no preview'"
                     ></button>
                     <button
+                        type="button"
+                        x-show="slides.length"
+                        @click="openStagePreview()"
+                        class="text-[10px] px-2 py-1 rounded border border-zinc-600 text-zinc-300 bg-zinc-800 hover:bg-zinc-700"
+                        title="Abre esta sequência no tamanho da tela, em outra aba"
+                    >Outra aba</button>
+                    <button
                         x-show="canPlayPreview"
                         @click="previewPlaying ? stopSlideshow() : playSlideshow(true)"
                         class="text-xs px-2 py-1 rounded"
@@ -142,7 +150,7 @@
                             ></video>
                         </template>
                         <template x-if="previewSlide && !previewSlide?.video_url && previewSlide?.image_url">
-                            <img :src="previewSlide.image_url" class="absolute inset-0 w-full h-full object-cover opacity-80">
+                            <img :src="previewSlide.image_url" class="absolute inset-0 w-full h-full object-contain">
                         </template>
                         <div
                             class="absolute inset-0 flex flex-col items-center text-center p-4 sm:p-6 overflow-hidden"
@@ -701,11 +709,13 @@ O narrador continua a história com calma."
                         Sincronizar duração
                     </button>
                     <p class="w-full text-xs text-zinc-500">
-                        <strong class="text-zinc-400">Recomendado:</strong>
-                        OpenAI TTS (~US$ 0,015 / 1.000 caracteres — muito mais barato que ElevenLabs) ou
-                        <strong class="text-zinc-400">Piper</strong> (100% grátis no seu PC).
-                        Edge TTS é gratuito mas a Microsoft bloqueia com frequência (“Output has been disabled”).
-                        Configure em <a href="{{ route('integrations.edit') }}" class="text-violet-400 hover:text-violet-300">Integrações</a>.
+                        As vozes <strong class="text-zinc-400">Microsoft neural</strong> são gratuitas e as mais próximas de gente.
+                        Em português do Brasil existem só três pessoas: Antonio, Francisca e Thalita.
+                        “Documentário” e “calma” são a mesma voz, mais lenta e um pouco mais grave.
+                        Raquel e Duarte são de Portugal.
+                        Ao gerar, a voz entra junto com cada slide: se a fala for mais curta, a pausa do slide continua;
+                        se for mais longa, o slide cresce. Slide sem texto vira silêncio, para a imagem não adiantar.
+                        Se a Microsoft não responder, em cerca de meio minuto o app troca sozinho para o Piper, que roda no PC e soa mais sintético.
                     </p>
                 </div>
 

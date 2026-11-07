@@ -33,6 +33,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
     return {
         ...imageStudioMethods(),
         projectId,
+        stageUrl: projectMeta.stageUrl || '',
         projectDescription: projectMeta.description || '',
         projectStatus: projectMeta.status || 'active',
         deployment: projectMeta.deployment || { is_online: false, is_desktop: true },
@@ -1023,7 +1024,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
             this.ttsEngines = data;
 
             const recommended = data.find((e) => e.recommended && e.available);
-            const preferred = ['piper', 'openai', 'edge', 'elevenlabs'];
+            const preferred = ['edge', 'piper', 'openai', 'elevenlabs'];
             const current = data.find((e) => e.slug === this.ttsEngine && e.available);
 
             if (!current) {
@@ -1332,6 +1333,18 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 await this.syncPublish();
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao salvar descrição';
+            }
+        },
+
+        openStagePreview() {
+            if (!this.stageUrl || !this.slides.length) {
+                return;
+            }
+            const cc = this.previewShowSubtitles ? '1' : '0';
+            const url = `${this.stageUrl}?cc=${cc}&t=${Date.now()}`;
+            const win = window.open(url, 'criasys-tela');
+            if (win) {
+                win.focus();
             }
         },
 
@@ -2125,9 +2138,6 @@ window.editorApp = function (projectId, projectMeta = {}) {
         enrichSlide(slide) {
             slide.text_style = this.normalizeTextStyle(slide.text_style);
             slide.duration_mode = slide.duration_mode || 'narration';
-            if (!(slide.body_text || '').trim() && (slide.narration_text || '').trim()) {
-                slide.body_text = slide.narration_text;
-            }
             if (slide.image_path) {
                 slide.image_url = this.fileUrl('assets', slide.image_path.split(/[/\\]/).pop());
             }
@@ -3778,7 +3788,8 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 const data = await this.pollNarrationUntilDone(this.narrationProgress?.total || null);
                 this.narration = data;
                 this.previewAudioUrl = data.audio_url;
-                this.message = `Narração completa pronta (${Math.round(data.duration_seconds || 0)}s)`;
+                await this.loadSlides();
+                this.message = `Narração pronta e encaixada nos slides (${Math.round(data.duration_seconds || 0)}s)`;
             } catch (e) {
                 this.error = e.message || 'Erro ao gerar narração';
             } finally {
@@ -3880,15 +3891,15 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 this.narration = narration;
                 this.previewAudioUrl = narration.audio_url;
                 this.narrationProgress = null;
+                await this.loadSlides();
 
+                const seconds = Math.round(narration.duration_seconds || 0);
                 if (narration?.engine && narration.engine !== this.ttsEngine) {
                     this.ttsEngine = narration.engine;
                     await this.loadVoices();
-                    this.message = `Narração gerada com ${narration.engine} (${Math.round(narration.duration_seconds || 0)}s)`;
+                    this.message = `A Microsoft falhou. Narração gerada com ${narration.engine} e encaixada nos slides (${seconds}s)`;
                 } else {
-                    this.message = narration?.duration_seconds
-                        ? `Narração completa gerada (${Math.round(narration.duration_seconds)}s) — ouça abaixo`
-                        : 'Narração completa gerada — ouça abaixo';
+                    this.message = `Narração encaixada nos slides (${seconds}s). A voz começa com cada imagem; a pausa que sobra continua no slide.`;
                 }
                 await this.loadDownloads();
             } catch (e) {
@@ -3911,7 +3922,7 @@ window.editorApp = function (projectId, projectMeta = {}) {
                 const { data } = await api.post(`/projects/${this.projectId}/narration/sync`);
                 this.slides = data.map(s => this.enrichSlide(s));
                 this.syncSelection();
-                this.message = 'Slides sincronizados';
+                this.message = 'Duração dos slides igualada à narração. O tempo ficou manual, para não ser recalculado.';
             } catch (e) {
                 this.error = e.response?.data?.message || 'Erro ao sincronizar';
             }

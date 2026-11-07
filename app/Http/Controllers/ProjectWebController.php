@@ -73,4 +73,19 @@ class ProjectWebController extends Controller
 
         return view('projects.editor', compact('project', 'imageStudioCatalog', 'deployment'));
     }
+
+    public function stage(Project $project): View
+    {
+        $this->authorize('view', $project);
+
+        $aspect = $project->settings['aspect_ratio'] ?? '16:9';
+        if (! in_array($aspect, ['16:9', '9:16'], true)) {
+            $aspect = '16:9';
+        }
+
+        return view('projects.stage', [
+            'project' => $project,
+            'aspect' => $aspect,
+        ]);
+    }
 }

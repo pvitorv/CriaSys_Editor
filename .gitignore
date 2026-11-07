@@ -28,5 +28,7 @@
 /bin/piper/*.onnx.json
 /bin/piper/piper.exe
 /bin/
+/electron/ffmpeg/win/
+/electron/php/win/
 Homestead.yaml
 Thumbs.db

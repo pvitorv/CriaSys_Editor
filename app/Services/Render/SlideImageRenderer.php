@@ -37,7 +37,7 @@ class SlideImageRenderer
         $height = $preset->height;
 
         $image = imagecreatetruecolor($width, $height);
-        $bgColor = imagecolorallocate($image, 24, 24, 27);
+        $bgColor = imagecolorallocate($image, 0, 0, 0);
         imagefill($image, 0, 0, $bgColor);
 
         if ($slide->image_path && file_exists($slide->image_path)) {
@@ -132,17 +132,14 @@ class SlideImageRenderer
 
         $srcW = imagesx($source);
         $srcH = imagesy($source);
-        $scale = max($width / $srcW, $height / $srcH);
-        $newW = (int) ($srcW * $scale);
-        $newH = (int) ($srcH * $scale);
+        $scale = min($width / $srcW, $height / $srcH);
+        $newW = max(1, (int) round($srcW * $scale));
+        $newH = max(1, (int) round($srcH * $scale));
         $dstX = (int) (($width - $newW) / 2);
         $dstY = (int) (($height - $newH) / 2);
 
         imagecopyresampled($canvas, $source, $dstX, $dstY, 0, 0, $newW, $newH, $srcW, $srcH);
         imagedestroy($source);
-
-        $overlay = imagecolorallocatealpha($canvas, 0, 0, 0, 80);
-        imagefilledrectangle($canvas, 0, 0, $width, $height, $overlay);
     }
 
     private function loadImage(string $path): ?\GdImage

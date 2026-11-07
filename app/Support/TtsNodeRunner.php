@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Process;
 
 class TtsNodeRunner
 {
-    public function synthesize(string $text, string $voice, string $outputPath): void
+    public function synthesize(string $text, string $voice, string $outputPath, ?string $rate = null, ?string $pitch = null): void
     {
         @set_time_limit(0);
 
@@ -60,13 +60,17 @@ class TtsNodeRunner
             $result = Process::timeout(180)
                 ->path(base_path())
                 ->env($env)
-                ->run([
+                ->run(array_values(array_filter([
                     $node,
                     $script,
                     '--voice', $voice,
+                    $rate ? '--rate' : null,
+                    $rate ?: null,
+                    $pitch ? '--pitch' : null,
+                    $pitch ?: null,
                     '--input', $textFile,
                     '--output', $tempOutput,
-                ]);
+                ], fn ($part) => $part !== null)));
 
             $stdout = trim($result->output());
             $stderr = trim($result->errorOutput());
@@ -88,7 +92,7 @@ class TtsNodeRunner
 
                 if (app(TtsPythonRunner::class)->isAvailable()) {
                     try {
-                        app(TtsPythonRunner::class)->synthesize($text, $voice, $outputPath);
+                        app(TtsPythonRunner::class)->synthesize($text, $voice, $outputPath, $rate, $pitch);
 
                         return;
                     } catch (\Throwable $pyError) {

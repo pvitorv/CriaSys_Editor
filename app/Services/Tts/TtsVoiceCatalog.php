@@ -28,10 +28,13 @@ class TtsVoiceCatalog
      */
     private function edgeVoices(): array
     {
-        $voices = config('criasys.tts.voices', []);
+        $voices = config('criasys.tts.edge_voices', []);
         $out = [];
-        foreach ($voices as $id => $name) {
-            $out[] = ['id' => $id, 'name' => $name];
+        foreach ($voices as $id => $meta) {
+            $out[] = [
+                'id' => $id,
+                'name' => is_array($meta) ? ($meta['label'] ?? $id) : (string) $meta,
+            ];
         }
 
         return $out;

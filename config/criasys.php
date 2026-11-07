@@ -77,17 +77,63 @@ return [
         'elevenlabs_voice_id' => env('ELEVENLABS_VOICE_ID', '21m00Tcm4TlvDq8ikWAM'),
         'openai_api_key' => env('OPENAI_API_KEY'),
         'openai_voice' => env('OPENAI_TTS_VOICE', 'nova'),
-        'voices' => [
-            'pt-BR-FranciscaNeural' => 'Francisca (feminina)',
-            'pt-BR-AntonioNeural' => 'Antonio (masculino)',
-            'pt-BR-ThalitaNeural' => 'Thalita (feminina)',
-            'pt-BR-DonatoNeural' => 'Donato (masculino)',
+        // Vozes neurais reais da Microsoft. O ritmo muda a mesma pessoa:
+        // mais lento e um pouco mais grave soa menos apressado, mais perto de narração.
+        'edge_voices' => [
+            'pt-BR-AntonioNeural' => [
+                'label' => 'Antonio — natural (masculina)',
+                'voice' => 'pt-BR-AntonioNeural',
+                'rate' => '-8%',
+                'pitch' => '-1Hz',
+            ],
+            'pt-BR-AntonioNeural-doc' => [
+                'label' => 'Antonio — documentário, pausado',
+                'voice' => 'pt-BR-AntonioNeural',
+                'rate' => '-18%',
+                'pitch' => '-4Hz',
+            ],
+            'pt-BR-FranciscaNeural' => [
+                'label' => 'Francisca — natural (feminina)',
+                'voice' => 'pt-BR-FranciscaNeural',
+                'rate' => '-8%',
+                'pitch' => '-1Hz',
+            ],
+            'pt-BR-FranciscaNeural-calma' => [
+                'label' => 'Francisca — calma',
+                'voice' => 'pt-BR-FranciscaNeural',
+                'rate' => '-16%',
+                'pitch' => '-2Hz',
+            ],
+            'pt-BR-ThalitaMultilingualNeural' => [
+                'label' => 'Thalita — natural (feminina, a mais recente)',
+                'voice' => 'pt-BR-ThalitaMultilingualNeural',
+                'rate' => '-6%',
+                'pitch' => '+0Hz',
+            ],
+            'pt-BR-ThalitaMultilingualNeural-pausa' => [
+                'label' => 'Thalita — conversa pausada',
+                'voice' => 'pt-BR-ThalitaMultilingualNeural',
+                'rate' => '-14%',
+                'pitch' => '-1Hz',
+            ],
+            'pt-PT-RaquelNeural' => [
+                'label' => 'Raquel — Portugal (feminina)',
+                'voice' => 'pt-PT-RaquelNeural',
+                'rate' => '-8%',
+                'pitch' => '+0Hz',
+            ],
+            'pt-PT-DuarteNeural' => [
+                'label' => 'Duarte — Portugal (masculina)',
+                'voice' => 'pt-PT-DuarteNeural',
+                'rate' => '-8%',
+                'pitch' => '-2Hz',
+            ],
         ],
         'engines' => [
-            ['slug' => 'openai', 'name' => 'OpenAI TTS (barato, instantâneo)', 'price_hint' => '~US$ 0,015 / 1.000 caracteres', 'unavailable_note' => 'Conecte sua chave em Integrações'],
-            ['slug' => 'piper', 'name' => 'Piper (grátis, rápido, robótico)', 'price_hint' => 'Grátis — roda no seu PC', 'unavailable_note' => 'Rode scripts/setup-piper.ps1'],
-            ['slug' => 'edge', 'name' => 'Edge TTS (grátis, instável)', 'price_hint' => 'Grátis — Microsoft pode bloquear', 'unavailable_note' => null],
-            ['slug' => 'elevenlabs', 'name' => 'ElevenLabs (premium / voz clonada)', 'price_hint' => 'Plano pago', 'unavailable_note' => 'Conecte sua chave em Integrações'],
+            ['slug' => 'edge', 'name' => 'Microsoft neural (grátis, mais humana)', 'price_hint' => 'Grátis, com internet. Três vozes brasileiras de verdade; o ritmo é ajuste da mesma pessoa.', 'unavailable_note' => null],
+            ['slug' => 'piper', 'name' => 'Piper (grátis no PC, mais sintético)', 'price_hint' => 'Grátis e offline. Serve de reserva quando a Microsoft bloqueia.', 'unavailable_note' => 'Rode scripts/setup-piper.ps1'],
+            ['slug' => 'openai', 'name' => 'OpenAI TTS (pago, instantâneo)', 'price_hint' => '~US$ 0,015 / 1.000 caracteres', 'unavailable_note' => 'Conecte sua chave em Integrações'],
+            ['slug' => 'elevenlabs', 'name' => 'ElevenLabs (pago / voz clonada)', 'price_hint' => 'Plano pago', 'unavailable_note' => 'Conecte sua chave em Integrações'],
         ],
     ],
 

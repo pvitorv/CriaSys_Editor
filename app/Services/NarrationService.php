@@ -93,7 +93,6 @@ class NarrationService
 
         try {
             $segments = [];
-            $segmentFiles = [];
             $fullScript = '';
 
             foreach ($slides as $index => $slide) {
@@ -117,17 +116,15 @@ class NarrationService
                     'audio_path' => $result['audio_path'],
                     'duration_seconds' => $result['duration_seconds'],
                 ];
-                $segmentFiles[] = $result['audio_path'];
-
                 $narration->update(['segments' => $segments]);
             }
 
-            if ($segmentFiles === []) {
+            if ($segments === []) {
                 throw new \RuntimeException('Nenhum slide selecionado possui texto para narração.');
             }
 
             $outputPath = $this->storage->audioPath($project, "narracao_{$narration->id}.mp3");
-            $this->concatAudio($segmentFiles, $outputPath);
+            $segments = $this->alignNarrationToTimeline($project, $segments, $slideIds, $outputPath);
             $duration = $this->ffmpeg->getAudioDuration($outputPath);
 
             $narration->update([
@@ -165,9 +162,122 @@ class NarrationService
                 }
                 Slide::where('id', $segment['slide_id'])->update([
                     'duration_seconds' => max(0.5, (float) ($segment['duration_seconds'] ?? 0)),
+                    'duration_mode' => 'manual',
                 ]);
             }
         });
+    }
+
+    /**
+     * Um arquivo só, do tamanho da linha do tempo. Cada slide falado ocupa
+     * o maior entre o tempo que você planejou e o tempo que a voz levou.
+     * O que sobra fica em silêncio no fim do slide. Slide sem fala vira
+     * silêncio do tamanho dele, para a voz não adiantar a imagem.
+     *
+     * @param  list<array<string, mixed>>  $segments
+     * @param  list<int>|null  $slideIds
+     * @return list<array<string, mixed>>
+     */
+    private function alignNarrationToTimeline(Project $project, array $segments, ?array $slideIds, string $outputPath): array
+    {
+        $bySlide = [];
+        foreach ($segments as $segment) {
+            if (is_array($segment) && ! empty($segment['slide_id'])) {
+                $bySlide[(int) $segment['slide_id']] = $segment;
+            }
+        }
+
+        $selected = null;
+        if ($slideIds !== null && $slideIds !== []) {
+            $selected = array_flip(array_map('intval', $slideIds));
+        }
+
+        $ffmpeg = $this->ttsFactory->resolveFfmpegPath();
+        $dir = dirname($outputPath);
+        $files = [];
+        $temps = [];
+        $stored = [];
+        $updates = [];
+
+        $project->load('slides');
+
+        foreach ($project->slides->sortBy('order') as $slide) {
+            $planned = max(0.5, (float) ($slide->duration_seconds ?: 5));
+            $inSelection = $selected === null || isset($selected[$slide->id]);
+            $segment = $bySlide[$slide->id] ?? null;
+            $speech = is_array($segment) ? ($segment['audio_path'] ?? null) : null;
+
+            if ($inSelection && is_string($speech) && is_file($speech)) {
+                $spoken = max(0.1, (float) ($segment['duration_seconds'] ?? 0));
+                $hold = round(max($planned, $spoken), 2);
+                $files[] = $speech;
+                $pad = round($hold - $spoken, 2);
+                if ($pad >= 0.12) {
+                    $silence = $this->makeSilence($dir, $pad, $ffmpeg);
+                    $files[] = $silence;
+                    $temps[] = $silence;
+                }
+                $updates[] = ['id' => $slide->id, 'duration_seconds' => $hold];
+                $stored[] = [
+                    'slide_id' => $slide->id,
+                    'slide_order' => $slide->order,
+                    'text' => $segment['text'] ?? '',
+                    'audio_path' => $speech,
+                    'duration_seconds' => $hold,
+                    'spoken_seconds' => round($spoken, 2),
+                ];
+
+                continue;
+            }
+
+            $silence = $this->makeSilence($dir, round($planned, 2), $ffmpeg);
+            $files[] = $silence;
+            $temps[] = $silence;
+        }
+
+        try {
+            $this->concatAudioReencode($files, $outputPath, $ffmpeg);
+        } finally {
+            foreach ($temps as $temp) {
+                if (is_file($temp)) {
+                    File::delete($temp);
+                }
+            }
+        }
+
+        DB::transaction(function () use ($updates) {
+            foreach ($updates as $update) {
+                Slide::where('id', $update['id'])->update([
+                    'duration_seconds' => $update['duration_seconds'],
+                    'duration_mode' => 'manual',
+                ]);
+            }
+        });
+
+        return $stored;
+    }
+
+    private function makeSilence(string $dir, float $seconds, string $ffmpeg): string
+    {
+        $seconds = round(max(0.1, $seconds), 2);
+        $path = $dir.DIRECTORY_SEPARATOR.'silencio_'.str_replace('.', 'p', (string) $seconds).'_'.uniqid('', false).'.mp3';
+
+        $result = Process::timeout(60)->run([
+            $ffmpeg, '-y',
+            '-f', 'lavfi',
+            '-i', 'anullsrc=r=24000:cl=mono',
+            '-t', number_format($seconds, 2, '.', ''),
+            '-c:a', 'libmp3lame', '-q:a', '4',
+            $path,
+        ]);
+
+        if (! $result->successful() || ! is_file($path) || filesize($path) === 0) {
+            throw new \RuntimeException(
+                'Falha ao gerar a pausa entre slides: '.trim($result->errorOutput() ?: $result->output())
+            );
+        }
+
+        return $path;
     }
 
     private function concatAudio(array $files, string $outputPath): void
@@ -232,22 +342,27 @@ class NarrationService
     /** @param  list<string>  $files */
     private function concatAudioReencode(array $files, string $outputPath, string $ffmpeg): void
     {
-        $args = [$ffmpeg, '-y'];
-        foreach ($files as $file) {
-            $args[] = '-i';
-            $args[] = $file;
+        if ($files === []) {
+            throw new \RuntimeException('Nenhum segmento de áudio para concatenar.');
         }
 
-        $args = array_merge($args, [
-            '-filter_complex', 'concat=n='.count($files).':v=0:a=1[out]',
-            '-map', '[out]',
+        $listPath = dirname($outputPath).DIRECTORY_SEPARATOR.'concat_audio_'.uniqid().'.txt';
+        $lines = array_map(function (string $file) {
+            $normalized = str_replace('\\', '/', $file);
+
+            return "file '".str_replace("'", "'\\''", $normalized)."'";
+        }, $files);
+        File::put($listPath, implode(PHP_EOL, $lines));
+
+        $result = Process::timeout(600)->run([
+            $ffmpeg, '-y', '-f', 'concat', '-safe', '0', '-i', $listPath,
             '-c:a', 'libmp3lame', '-q:a', '2',
             $outputPath,
         ]);
 
-        $result = Process::timeout(300)->run($args);
+        File::delete($listPath);
 
-        if (! $result->successful() || ! is_file($outputPath)) {
+        if (! $result->successful() || ! is_file($outputPath) || filesize($outputPath) === 0) {
             throw new \RuntimeException(
                 'Falha ao concatenar áudio: '.trim($result->errorOutput() ?: $result->output())
             );

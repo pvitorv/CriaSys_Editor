@@ -72,7 +72,7 @@ function splitText(text, maxBytes = 3200) {
 function friendlyError(raw) {
     const msg = String(raw || '');
     if (/output has been disabled/i.test(msg)) {
-        return 'Microsoft bloqueou o Edge TTS (“Output has been disabled”). Use OpenAI TTS (barato, em Integrações) ou instale Piper (grátis local — veja docs/DESENVOLVIMENTO.md).';
+        return 'Microsoft bloqueou o Edge TTS (“Output has been disabled”). O app troca sozinho para o Piper, que é grátis e roda no PC.';
     }
     if (/403|401|invalid response/i.test(msg)) {
         return 'Edge TTS recusado pela Microsoft (403). Tente de novo em alguns minutos ou mude o motor em Narração.';
@@ -83,9 +83,9 @@ function friendlyError(raw) {
     return msg;
 }
 
-async function synthesizeChunk(text, voice) {
+async function synthesizeChunk(text, voice, rate, pitch) {
     const { Communicate } = await import('edge-tts-universal');
-    const communicate = new Communicate(text, { voice });
+    const communicate = new Communicate(text, { voice, rate, pitch });
     const buffers = [];
 
     for await (const chunk of communicate.stream()) {
@@ -101,18 +101,22 @@ async function synthesizeChunk(text, voice) {
     return Buffer.concat(buffers);
 }
 
-async function synthesizeWithRetry(text, voice, attempts = 3) {
+async function synthesizeWithRetry(text, voice, rate, pitch, attempts = 2) {
     let lastError = null;
 
     for (let i = 0; i < attempts; i++) {
         try {
             dbg(`synthesize attempt ${i + 1}`);
-            return await withTimeout(synthesizeChunk(text, voice), 60000, 'Timeout ao conectar no Edge TTS (60s)');
+            return await withTimeout(synthesizeChunk(text, voice, rate, pitch), 25000, 'Timeout ao conectar no Edge TTS (25s)');
         } catch (err) {
             lastError = err;
             dbg(`attempt failed: ${err?.message || err}`);
+            const msg = String(err && err.message ? err.message : err);
+            if (/output has been disabled|timeout/i.test(msg)) {
+                throw err;
+            }
             if (i < attempts - 1) {
-                await sleep(1500 * (i + 1));
+                await sleep(1200 * (i + 1));
             }
         }
     }
@@ -158,7 +162,9 @@ function concatMp3(files, output) {
 
 async function run() {
     const args = process.argv.slice(2);
-    const voice = getArg(args, '--voice') || 'pt-BR-FranciscaNeural';
+    const voice = getArg(args, '--voice') || 'pt-BR-AntonioNeural';
+    const rate = getArg(args, '--rate') || '-8%';
+    const pitch = getArg(args, '--pitch') || '+0Hz';
     const input = getArg(args, '--input');
     const output = getArg(args, '--output');
 
@@ -183,7 +189,7 @@ async function run() {
 
     for (let i = 0; i < chunks.length; i++) {
         const partPath = path.join(tempDir, `tts_part_${Date.now()}_${i}.mp3`);
-        const buffer = await synthesizeWithRetry(chunks[i], voice);
+        const buffer = await synthesizeWithRetry(chunks[i], voice, rate, pitch);
         fs.writeFileSync(partPath, buffer);
         partFiles.push(partPath);
     }

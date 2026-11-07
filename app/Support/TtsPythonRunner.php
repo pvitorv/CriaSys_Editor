@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Process;
 
 class TtsPythonRunner
 {
-    public function synthesize(string $text, string $voice, string $outputPath): void
+    public function synthesize(string $text, string $voice, string $outputPath, ?string $rate = null, ?string $pitch = null): void
     {
         $python = $this->pythonBinary();
         if (! $python) {
@@ -23,12 +23,22 @@ class TtsPythonRunner
         File::put($textFile, Utf8::clean($text) ?? '');
 
         try {
-            $result = Process::timeout(120)->run([
+            $command = [
                 $python, $script,
                 '--voice', $voice,
                 '--input', $textFile,
                 '--output', $tempOutput,
-            ]);
+            ];
+            if ($rate) {
+                $command[] = '--rate';
+                $command[] = $rate;
+            }
+            if ($pitch) {
+                $command[] = '--pitch';
+                $command[] = $pitch;
+            }
+
+            $result = Process::timeout(120)->run($command);
 
             if (! file_exists($tempOutput) || filesize($tempOutput) === 0) {
                 $detail = trim($result->errorOutput() ?: $result->output()) ?: 'exit='.$result->exitCode();

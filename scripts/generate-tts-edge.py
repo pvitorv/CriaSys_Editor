@@ -7,7 +7,9 @@ import sys
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('--voice', default='pt-BR-FranciscaNeural')
+    parser.add_argument('--voice', default='pt-BR-AntonioNeural')
+    parser.add_argument('--rate', default='-8%')
+    parser.add_argument('--pitch', default='+0Hz')
     parser.add_argument('--input', required=True)
     parser.add_argument('--output', required=True)
     args = parser.parse_args()
@@ -25,7 +27,7 @@ async def main() -> None:
         print('Pacote edge-tts não instalado. Execute: pip install edge-tts', file=sys.stderr)
         sys.exit(1)
 
-    communicate = edge_tts.Communicate(text, args.voice)
+    communicate = edge_tts.Communicate(text, args.voice, rate=args.rate, pitch=args.pitch)
     await communicate.save(args.output)
 
 

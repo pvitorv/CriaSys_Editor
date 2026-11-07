@@ -29,6 +29,7 @@ Route::middleware(['auth', 'active'])->group(function () {
     Route::get('/projects/create', [ProjectWebController::class, 'create'])->name('projects.create');
     Route::post('/projects', [ProjectWebController::class, 'store'])->name('projects.store');
     Route::get('/projects/{project}/editor', [ProjectWebController::class, 'editor'])->name('projects.editor');
+    Route::get('/projects/{project}/tela', [ProjectWebController::class, 'stage'])->name('projects.stage');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('/profile/email', [ProfileController::class, 'updateEmail'])->name('profile.email');
